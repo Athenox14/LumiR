@@ -85,11 +85,11 @@ export default defineEventHandler(async (event) => {
       reject(err)
     })
 
-    // Timeout after 30 seconds
+    // Timeout after 120 seconds (large MKV files can take a while to extract subtitles)
     setTimeout(() => {
       if (!proc.killed) proc.kill('SIGTERM')
       reject(new Error('Subtitle extraction timeout'))
-    }, 30000)
+    }, 120000)
   })
 
   // Cache the result

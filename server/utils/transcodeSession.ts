@@ -4,8 +4,9 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
 
-const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
+export const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
+const BUFFER_AHEAD_SEGMENTS = 12 // max 2 minutes (12 * 10s) ahead of player position
 
 // Video codecs that can be copied into MPEGTS with h264_mp4toannexb and played by browsers
 // mpeg4 (DivX/Xvid) is NOT h264 — it cannot use h264_mp4toannexb and browsers can't play it in MPEGTS
@@ -29,6 +30,7 @@ export interface TranscodeSession {
   error: string | null
   codecArgs: string[]
   audioTrackIndex: number | undefined // absolute stream index from ffprobe
+  lastRequestedSegment: number // highest segment requested by the player (for buffer limiting)
 }
 
 const sessions = new Map<string, TranscodeSession>()
@@ -206,6 +208,23 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProce
     }
   })
 
+  // Buffer limiter: kill ffmpeg when it's BUFFER_AHEAD_SEGMENTS ahead of the player
+  // waitForSegment() will restart it when the player needs more segments
+  const bufferCheck = setInterval(() => {
+    if (session.ffmpegProcess !== proc || !session.ffmpegProcess || session.ffmpegProcess.killed) {
+      clearInterval(bufferCheck)
+      return
+    }
+    const highest = getHighestReadySegment(session)
+    if (highest >= session.lastRequestedSegment + BUFFER_AHEAD_SEGMENTS) {
+      console.log(`[HLS] Buffer limit reached: highest=${highest}, lastRequested=${session.lastRequestedSegment}, pausing ffmpeg`)
+      session.ffmpegProcess.kill('SIGTERM')
+      session.ffmpegDone = true
+      session.error = null // not an error, just buffer limit
+      clearInterval(bufferCheck)
+    }
+  }, 1000)
+
   return proc
 }
 
@@ -267,6 +286,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     error: null,
     codecArgs,
     audioTrackIndex,
+    lastRequestedSegment: 0,
   }
 
   // Store ffmpeg path for reuse
@@ -321,6 +341,9 @@ export function isSegmentReady(session: TranscodeSession, segmentIndex: number):
 }
 
 export async function waitForSegment(session: TranscodeSession, segmentIndex: number, timeoutMs = 30_000): Promise<boolean> {
+  // Track the highest segment the player has requested (for buffer limiting)
+  session.lastRequestedSegment = Math.max(session.lastRequestedSegment, segmentIndex)
+
   if (isSegmentReady(session, segmentIndex)) return true
 
   // Lazy start: if ffmpeg hasn't been started yet, start from the requested segment
@@ -335,7 +358,7 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
   const needsSeek =
     // Backward: segment is before where ffmpeg started
     segmentIndex < session.startSegment ||
-    // ffmpeg done but segment doesn't exist
+    // ffmpeg done but segment doesn't exist (includes buffer-limit pause)
     (session.ffmpegDone && !segmentFileExists(session, segmentIndex)) ||
     // Far ahead of production, but ONLY if ffmpeg has started producing new segments
     // (prevents thundering herd: concurrent requests after a seek/start won't re-seek)
@@ -398,6 +421,15 @@ export function readSegment(session: TranscodeSession, segmentIndex: number): Bu
   } catch {
     return null
   }
+}
+
+export function preheatSession(session: TranscodeSession, fromSegment: number): void {
+  if (session.ffmpegProcess || session.ffmpegDone) return
+  console.log(`[HLS] Preheating session ${session.id} from segment ${fromSegment}`)
+  // Set lastRequestedSegment so the global buffer limiter in startFfmpeg()
+  // will stop ffmpeg after BUFFER_AHEAD_SEGMENTS (2 min) ahead of this position
+  session.lastRequestedSegment = fromSegment
+  startFfmpeg(session, fromSegment)
 }
 
 export function destroyMediaSession(mediaId: string) {
