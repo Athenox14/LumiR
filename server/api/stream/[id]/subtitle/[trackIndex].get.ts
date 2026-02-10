@@ -1,12 +1,15 @@
 import { db } from '../../../../db'
-import { media } from '../../../../db/schema'
-import { eq } from 'drizzle-orm'
+import { media, subtitleTracks } from '../../../../db/schema'
+import { eq, and } from 'drizzle-orm'
 import { promises as fs } from 'fs'
 import { spawn } from 'child_process'
 import { findFfmpeg } from '../../../../utils/ffmpeg'
 
 // In-memory cache for extracted subtitles (mediaId:trackIndex → VTT content)
 const subtitleCache = new Map<string, string>()
+
+// Bitmap subtitle codecs that CANNOT be converted to WebVTT (they hang ffmpeg)
+const BITMAP_SUBTITLE_CODECS = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvdsub', 'dvb_subtitle', 'xsub', 'pgssub'])
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -27,6 +30,20 @@ export default defineEventHandler(async (event) => {
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
     setHeader(event, 'Cache-Control', 'public, max-age=86400')
     return subtitleCache.get(cacheKey)
+  }
+
+  // Check if this is a bitmap subtitle (PGS/VOBSUB) — cannot convert to VTT
+  const [trackInfo] = await db
+    .select({ codec: subtitleTracks.codec })
+    .from(subtitleTracks)
+    .where(and(eq(subtitleTracks.mediaId, id), eq(subtitleTracks.trackIndex, trackIndex)))
+    .limit(1)
+
+  if (trackInfo?.codec && BITMAP_SUBTITLE_CODECS.has(trackInfo.codec)) {
+    throw createError({
+      statusCode: 422,
+      message: `Bitmap subtitle codec (${trackInfo.codec}) cannot be converted to WebVTT`,
+    })
   }
 
   const [mediaItem] = await db
@@ -53,7 +70,7 @@ export default defineEventHandler(async (event) => {
   // Extract subtitle stream as WebVTT using ffmpeg
   const vttContent = await new Promise<string>((resolve, reject) => {
     const args = [
-      '-v', 'quiet',
+      '-v', 'error',
       '-i', mediaItem.filePath,
       '-map', `0:${trackIndex}`,
       '-f', 'webvtt',
@@ -85,11 +102,11 @@ export default defineEventHandler(async (event) => {
       reject(err)
     })
 
-    // Timeout after 120 seconds (large MKV files can take a while to extract subtitles)
+    // Timeout after 30 seconds (text subtitles extract quickly, hangs mean unsupported codec)
     setTimeout(() => {
       if (!proc.killed) proc.kill('SIGTERM')
-      reject(new Error('Subtitle extraction timeout'))
-    }, 120000)
+      reject(new Error('Subtitle extraction timeout — possibly a bitmap subtitle codec'))
+    }, 30000)
   })
 
   // Cache the result

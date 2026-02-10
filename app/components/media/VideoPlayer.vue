@@ -90,7 +90,7 @@ onMounted(() => {
 
   const video = videoRef.value
 
-  const isHls = props.src.endsWith('.m3u8') || props.src.includes('/hls')
+  const isHls = props.src.includes('.m3u8') || props.src.includes('/hls')
 
   if (isHls && Hls.isSupported()) {
     console.log(`[VideoPlayer] HLS mode, src=${props.src}, initialPosition=${props.initialPosition}`)
