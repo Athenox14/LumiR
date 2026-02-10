@@ -7,6 +7,7 @@ import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
 export const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
 const BUFFER_AHEAD_SEGMENTS = 12 // max 2 minutes (12 * 10s) ahead of player position
+const BUFFER_RESTART_THRESHOLD = 3 // restart ffmpeg when less than 30s of buffer remaining
 
 // Video codecs that can be copied into MPEGTS with h264_mp4toannexb and played by browsers
 // mpeg4 (DivX/Xvid) is NOT h264 — it cannot use h264_mp4toannexb and browsers can't play it in MPEGTS
@@ -232,7 +233,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
   // Reuse existing session for same media (but recreate if audio track changed)
   if (sessions.has(mediaId)) {
     const session = sessions.get(mediaId)!
-    if (session.audioTrackIndex !== audioTrackIndex) {
+    if (audioTrackIndex !== undefined && session.audioTrackIndex !== audioTrackIndex) {
       console.log(`[HLS] Audio track changed from ${session.audioTrackIndex} to ${audioTrackIndex}, recreating session`)
       destroySession(mediaId)
     } else {
@@ -343,6 +344,16 @@ export function isSegmentReady(session: TranscodeSession, segmentIndex: number):
 export async function waitForSegment(session: TranscodeSession, segmentIndex: number, timeoutMs = 30_000): Promise<boolean> {
   // Track the highest segment the player has requested (for buffer limiting)
   session.lastRequestedSegment = Math.max(session.lastRequestedSegment, segmentIndex)
+
+  // Proactive restart: if ffmpeg was paused (buffer limit) and buffer is running low, restart early
+  // This avoids waiting until buffer hits 0 — keeps playback smooth
+  if (session.ffmpegDone && !session.error) {
+    const highestReady = getHighestReadySegment(session)
+    if (highestReady >= 0 && highestReady < session.totalSegments - 1 && highestReady - segmentIndex < BUFFER_RESTART_THRESHOLD) {
+      console.log(`[HLS] Buffer running low (${highestReady - segmentIndex} segments ahead), restarting ffmpeg from segment ${highestReady + 1}`)
+      startFfmpeg(session, highestReady + 1)
+    }
+  }
 
   if (isSegmentReady(session, segmentIndex)) return true
 

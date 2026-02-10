@@ -36,14 +36,20 @@ const streamUrl = computed(() => {
   return url
 })
 
-// Transform DB subtitle tracks into URLs for the VideoPlayer
+// Text-based subtitle codecs that ffmpeg can convert to WebVTT
+// Bitmap codecs (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle) CANNOT be converted
+const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text', 'srt'])
+
+// Transform DB subtitle tracks into URLs for the VideoPlayer (skip bitmap subtitles)
 const subtitleUrls = computed(() => {
   if (!media.value?.subtitleTracks?.length) return []
-  return media.value.subtitleTracks.map(track => ({
-    url: `/api/stream/${mediaId.value}/subtitle/${track.trackIndex}`,
-    lang: track.language || 'und',
-    label: track.title || track.language || `Track ${track.trackIndex}`,
-  }))
+  return media.value.subtitleTracks
+    .filter(track => !track.codec || TEXT_SUBTITLE_CODECS.has(track.codec))
+    .map(track => ({
+      url: `/api/stream/${mediaId.value}/subtitle/${track.trackIndex}`,
+      lang: track.language || 'und',
+      label: track.title || track.language || `Track ${track.trackIndex}`,
+    }))
 })
 
 const backUrl = computed(() => {
