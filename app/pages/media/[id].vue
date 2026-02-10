@@ -211,6 +211,35 @@ async function reidentifyMedia(tmdbId: number) {
   }
 }
 
+// Pre-heat transcode session so playback starts faster when user clicks Play
+// Skip if coming back from the watch page (user already watched, no need to preheat)
+const cameFromWatch = !!(window?.history?.state?.back as string)?.startsWith('/watch/')
+const preheated = ref(false)
+watch(media, (m) => {
+  if (!m?.filePath || cameFromWatch) return
+  const position = m.watchProgress?.position || 0
+  $fetch(`/api/stream/${m.id}/preheat`, {
+    params: { position },
+  }).then((res: any) => {
+    preheated.value = !!res?.preheated
+  }).catch(() => {})
+}, { once: true })
+
+// Cancel any HLS session when navigating away (unless going to watch this media)
+onBeforeRouteLeave((to) => {
+  if (!media.value) return
+  if (to.path === `/watch/${media.value.id}`) return
+  $fetch(`/api/stream/${media.value.id}/preheat`, { method: 'DELETE' }).catch(() => {})
+})
+
+// Also cancel on tab/browser close (onBeforeRouteLeave doesn't fire for that)
+function cancelOnUnload() {
+  if (!media.value) return
+  fetch(`/api/stream/${media.value.id}/preheat`, { method: 'DELETE', keepalive: true })
+}
+onMounted(() => window.addEventListener('beforeunload', cancelOnUnload))
+onUnmounted(() => window.removeEventListener('beforeunload', cancelOnUnload))
+
 const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"%3E%3Crect fill="%230a0a0a" width="1920" height="1080"/%3E%3C/svg%3E'
 </script>
 
