@@ -280,6 +280,26 @@ export default {
     cancel: 'Annuler',
     createUserBtn: 'Créer l\'Utilisateur',
     saveChanges: 'Enregistrer les Modifications',
+    viewProfile: 'Voir le profil',
+    publicProfile: 'Profil public',
+  },
+
+  // Admin dashboard tools
+  adminDash: {
+    searchDeindex: 'Rechercher et Désindexer',
+    searchDeindexDesc: 'Cherchez un film ou une série dans votre bibliothèque pour le supprimer de la base de données.',
+    searchPlaceholder: 'Rechercher par titre ou "chemin d\'accès"...',
+    deindex: 'Désindexer',
+    confirmDeindex: 'Supprimer ce média de la base de données ? Le fichier ne sera pas supprimé.',
+    noResults: 'Aucun résultat',
+    noTmdbId: 'Sans identifiant TMDB',
+    noTmdbIdDesc: 'Ces médias n\'ont pas été identifiés sur TMDB. Cliquez sur "Identifier" pour les associer manuellement.',
+    noTmdbCount: '{count} média(s) sans identifiant TMDB',
+    allHaveTmdb: 'Tous les médias ont un identifiant TMDB.',
+    identify: 'Identifier',
+    duplicates: 'Doublons',
+    duplicatesDesc: 'Films présents plusieurs fois dans la bibliothèque (même titre ou même ID TMDB).',
+    noDuplicates: 'Aucun doublon détecté.',
   },
 
   // Admin library
@@ -310,6 +330,11 @@ export default {
     failed: 'Échoué',
     stopped: 'Arrêté',
     running: 'En cours',
+    imageCache: 'Cache des Images',
+    imageCacheDesc: 'Télécharger toutes les images (affiches, fonds, photos acteurs) pour un accès hors-ligne.',
+    cacheImages: 'Télécharger les images',
+    caching: 'Téléchargement...',
+    cacheResult: '{cached} nouvelles images téléchargées, {skipped} déjà en cache, {failed} échouées',
   },
 
   // Admin settings
@@ -361,6 +386,7 @@ export default {
     seasonsCount: '{count} saisons',
     totalSeasons: '{count} saison | {count} saisons',
     totalEpisodes: '{count} épisode | {count} épisodes',
+    offlineWarning: 'Le catalogue en ligne nécessite une connexion internet. Vérifiez votre connexion et réessayez.',
   },
 
   // Catalog watch (online streaming player)

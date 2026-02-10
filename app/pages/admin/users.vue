@@ -170,14 +170,47 @@ function formatDate(date: Date | null | undefined): string {
           class="px-6 py-4 flex items-center justify-between"
         >
           <div class="flex items-center gap-4">
-            <div class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-              <span class="text-sm font-medium text-primary">
-                {{ user.displayName?.charAt(0).toUpperCase() || 'U' }}
-              </span>
+            <!-- Avatar: actor image or initials -->
+            <NuxtLink
+              v-if="user.isProfilePublic"
+              :to="`/user/${user.id}`"
+              class="flex-shrink-0"
+            >
+              <img
+                v-if="user.favoriteActorImage"
+                :src="user.favoriteActorImage"
+                :alt="user.displayName"
+                class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/30 hover:ring-primary transition-all"
+              />
+              <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center ring-2 ring-primary/30 hover:ring-primary transition-all">
+                <span class="text-sm font-medium text-primary">
+                  {{ user.displayName?.charAt(0).toUpperCase() || 'U' }}
+                </span>
+              </div>
+            </NuxtLink>
+            <div v-else class="flex-shrink-0">
+              <img
+                v-if="user.favoriteActorImage"
+                :src="user.favoriteActorImage"
+                :alt="user.displayName"
+                class="w-10 h-10 rounded-full object-cover"
+              />
+              <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <span class="text-sm font-medium text-primary">
+                  {{ user.displayName?.charAt(0).toUpperCase() || 'U' }}
+                </span>
+              </div>
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <p class="font-medium text-text-primary">
+                <NuxtLink
+                  v-if="user.isProfilePublic"
+                  :to="`/user/${user.id}`"
+                  class="font-medium text-text-primary hover:text-primary transition-colors"
+                >
+                  {{ user.displayName }}
+                </NuxtLink>
+                <p v-else class="font-medium text-text-primary">
                   {{ user.displayName }}
                 </p>
                 <span
@@ -188,6 +221,12 @@ function formatDate(date: Date | null | undefined): string {
                 >
                   {{ user.role }}
                 </span>
+                <span v-if="user.isProfilePublic" class="text-xs text-green-500" :title="t('adminUsers.publicProfile')">
+                  <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </span>
               </div>
               <p class="text-sm text-text-muted">
                 {{ user.email }}
@@ -195,6 +234,16 @@ function formatDate(date: Date | null | undefined): string {
             </div>
           </div>
           <div class="flex items-center gap-2">
+            <NuxtLink
+              v-if="user.isProfilePublic"
+              :to="`/user/${user.id}`"
+              class="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-primary/10 transition-colors"
+              :title="t('adminUsers.viewProfile')"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </NuxtLink>
             <button
               type="button"
               class="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-secondary transition-colors"

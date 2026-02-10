@@ -280,6 +280,26 @@ export default {
     cancel: 'Cancel',
     createUserBtn: 'Create User',
     saveChanges: 'Save Changes',
+    viewProfile: 'View profile',
+    publicProfile: 'Public profile',
+  },
+
+  // Admin dashboard tools
+  adminDash: {
+    searchDeindex: 'Search & Deindex',
+    searchDeindexDesc: 'Search for a movie or series in your library to remove it from the database.',
+    searchPlaceholder: 'Search by title or "file path"...',
+    deindex: 'Deindex',
+    confirmDeindex: 'Remove this media from the database? The file will not be deleted.',
+    noResults: 'No results',
+    noTmdbId: 'Without TMDB ID',
+    noTmdbIdDesc: 'These media have not been identified on TMDB. Click "Identify" to manually associate them.',
+    noTmdbCount: '{count} media without TMDB ID',
+    allHaveTmdb: 'All media have a TMDB ID.',
+    identify: 'Identify',
+    duplicates: 'Duplicates',
+    duplicatesDesc: 'Movies present multiple times in the library (same title or same TMDB ID).',
+    noDuplicates: 'No duplicates detected.',
   },
 
   // Admin library
@@ -310,6 +330,11 @@ export default {
     failed: 'Failed',
     stopped: 'Stopped',
     running: 'Running',
+    imageCache: 'Image Cache',
+    imageCacheDesc: 'Download all images (posters, backdrops, cast photos) for offline access.',
+    cacheImages: 'Download images',
+    caching: 'Downloading...',
+    cacheResult: '{cached} new images downloaded, {skipped} already cached, {failed} failed',
   },
 
   // Admin settings
@@ -361,6 +386,7 @@ export default {
     seasonsCount: '{count} seasons',
     totalSeasons: '{count} season | {count} seasons',
     totalEpisodes: '{count} episode | {count} episodes',
+    offlineWarning: 'The online catalog requires an internet connection. Check your connection and try again.',
   },
 
   // Catalog watch (online streaming player)

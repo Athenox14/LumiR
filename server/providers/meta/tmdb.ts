@@ -74,7 +74,7 @@ class TMDB extends MovieParser {
           const movie: IMovieResult = {
             id: item.id,
             title: item?.title || item?.name,
-            image: `https://image.tmdb.org/t/p/original${item?.poster_path}`,
+            image: `/api/images/original${item?.poster_path}`,
             type: item.media_type === 'movie' ? TvType.MOVIE : TvType.TVSERIES,
             rating: item?.vote_average || 0,
             releaseDate: `${date.getFullYear()}` || '0',
@@ -86,7 +86,7 @@ class TMDB extends MovieParser {
             id: item.id,
             name: item.name,
             rating: item.popularity,
-            image: `https://image.tmdb.org/t/p/original${item?.profile_path}`,
+            image: `/api/images/original${item?.profile_path}`,
             movies: [],
           }
 
@@ -96,7 +96,7 @@ class TMDB extends MovieParser {
             const xmovie: IMovieResult = {
               id: movie.id,
               title: movie?.title || movie?.name,
-              image: `https://image.tmdb.org/t/p/original${movie?.poster_path}`,
+              image: `/api/images/original${movie?.poster_path}`,
               type: movie.media_type === 'movie' ? TvType.MOVIE : TvType.TVSERIES,
               rating: movie?.vote_average || 0,
               releaseDate: `${date.getFullYear()}` || '0',
@@ -143,7 +143,7 @@ class TMDB extends MovieParser {
         const movie: IMovieResult = {
           id: item.id,
           title: item?.title || item?.name,
-          image: `https://image.tmdb.org/t/p/original${item?.poster_path}`,
+          image: `/api/images/original${item?.poster_path}`,
           type: item.media_type === 'movie' ? TvType.MOVIE : TvType.TVSERIES,
           rating: item?.vote_average || 0,
           releaseDate: `${date.getFullYear()}` || '0',
@@ -190,11 +190,11 @@ class TMDB extends MovieParser {
         language: translation?.english_name || undefined,
       }))
 
-      info.image = `https://image.tmdb.org/t/p/original${data?.poster_path}`
-      info.cover = `https://image.tmdb.org/t/p/original${data?.backdrop_path}`
+      info.image = `/api/images/original${data?.poster_path}`
+      info.cover = `/api/images/original${data?.backdrop_path}`
       info.logos = data?.images?.logos.map(
         (logo: { file_path: string; aspect_ratio: number; width: number }) => ({
-          url: `https://image.tmdb.org/t/p/original${logo.file_path}`,
+          url: `/api/images/original${logo.file_path}`,
           aspectRatio: logo?.aspect_ratio,
           width: logo?.width,
         })
@@ -220,7 +220,7 @@ class TMDB extends MovieParser {
         name: cast.name,
         url: `https://www.themoviedb.org/person/${cast.id}`,
         character: cast.character,
-        image: `https://image.tmdb.org/t/p/original${cast.profile_path}`,
+        image: `/api/images/original${cast.profile_path}`,
       }))
       info.trailer = {
         id: data?.videos?.results[0]?.key,
@@ -240,7 +240,7 @@ class TMDB extends MovieParser {
               return {
                 id: item.id,
                 title: item.title || item.name,
-                image: `https://image.tmdb.org/t/p/original${item.poster_path}`,
+                image: `/api/images/original${item.poster_path}`,
                 type: type === 'movie' ? TvType.MOVIE : TvType.TVSERIES,
                 rating: item.vote_average || 0,
                 releaseDate: item.release_date || item.first_air_date,
@@ -254,7 +254,7 @@ class TMDB extends MovieParser {
               return {
                 id: item.id,
                 title: item.title || item.name,
-                image: `https://image.tmdb.org/t/p/original${item.poster_path}`,
+                image: `/api/images/original${item.poster_path}`,
                 type: type === 'movie' ? TvType.MOVIE : TvType.TVSERIES,
                 rating: item.vote_average || 0,
                 releaseDate: item.release_date || item.first_air_date,
@@ -307,8 +307,8 @@ class TMDB extends MovieParser {
                     img: !episode?.still_path
                       ? undefined
                       : {
-                          mobile: `https://image.tmdb.org/t/p/w300${episode.still_path}`,
-                          hd: `https://image.tmdb.org/t/p/w780${episode.still_path}`,
+                          mobile: `/api/images/w300${episode.still_path}`,
+                          hd: `/api/images/w780${episode.still_path}`,
                         },
                   }
                 })
@@ -318,8 +318,8 @@ class TMDB extends MovieParser {
             image: !seasonData?.poster_path
               ? undefined
               : {
-                  mobile: `https://image.tmdb.org/t/p/w300${seasonData.poster_path}`,
-                  hd: `https://image.tmdb.org/t/p/w780${seasonData.poster_path}`,
+                  mobile: `/api/images/w300${seasonData.poster_path}`,
+                  hd: `/api/images/w780${seasonData.poster_path}`,
                 },
             episodes,
             isReleased: seasonData?.episodes[0]?.air_date > new Date().toISOString() ? false : true,

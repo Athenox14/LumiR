@@ -65,6 +65,22 @@ watch(data, async (val) => {
   }
 }, { immediate: true })
 
+// Normalize cast to handle old format (string[]) and new format (object[])
+const normalizedCast = computed(() => {
+  if (!data.value?.show?.cast) return []
+  return (data.value.show.cast as any[]).map((actor: any) => {
+    if (typeof actor === 'string') {
+      return { id: null, name: actor, character: '', profilePath: null }
+    }
+    return {
+      id: actor.id || null,
+      name: actor.name || '',
+      character: actor.character || '',
+      profilePath: actor.profilePath || null,
+    }
+  })
+})
+
 const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"%3E%3Crect fill="%230a0a0a" width="1920" height="1080"/%3E%3C/svg%3E'
 </script>
 
@@ -119,8 +135,8 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
               <!-- Meta -->
               <div class="flex flex-wrap items-center gap-3 text-white/80 mb-4">
                 <span v-if="data.show.year">{{ data.show.year }}</span>
-                <span>{{ data.seasons.length }} {{ t('tv.seasons') }}</span>
-                <span>{{ data.totalEpisodes }} {{ t('tv.episodes') }}</span>
+                <span>{{ data.seasons.length }} {{ t('tv.seasons', data.seasons.length) }}</span>
+                <span>{{ data.totalEpisodes }} {{ t('tv.episodes', data.totalEpisodes) }}</span>
                 <span v-if="data.show.rating" class="flex items-center gap-1">
                   <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -159,15 +175,16 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
         </div>
 
         <!-- Cast -->
-        <div v-if="data.show.cast?.length" class="mb-8">
+        <div v-if="normalizedCast.length" class="mb-8">
           <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('tv.casting') }}</h2>
           <div class="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
-            <div
-              v-for="actor in data.show.cast"
+            <NuxtLink
+              v-for="actor in normalizedCast"
               :key="actor.name"
-              class="flex-shrink-0 w-28 text-center"
+              :to="actor.id ? `/catalog/person/${actor.id}` : '#'"
+              class="flex-shrink-0 w-28 text-center group"
             >
-              <div class="w-28 h-28 rounded-full overflow-hidden bg-surface mx-auto mb-2">
+              <div class="w-28 h-28 rounded-full overflow-hidden bg-surface mx-auto mb-2 ring-2 ring-transparent group-hover:ring-primary transition-all">
                 <img
                   v-if="actor.profilePath"
                   :src="actor.profilePath"
@@ -181,9 +198,9 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   </svg>
                 </div>
               </div>
-              <p class="text-sm font-medium text-text-primary truncate">{{ actor.name }}</p>
-              <p class="text-xs text-text-muted truncate">{{ actor.character }}</p>
-            </div>
+              <p class="text-sm font-medium text-text-primary truncate group-hover:text-primary transition-colors">{{ actor.name }}</p>
+              <p v-if="actor.character" class="text-xs text-text-muted truncate">{{ actor.character }}</p>
+            </NuxtLink>
           </div>
         </div>
 
@@ -199,7 +216,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                 {{ t('tv.season', { number: season.number }) }}
               </h3>
               <span class="text-sm text-text-muted">
-                {{ season.episodes.length }} {{ t('tv.episodes') }}
+                {{ season.episodes.length }} {{ t('tv.episodes', season.episodes.length) }}
               </span>
             </div>
 

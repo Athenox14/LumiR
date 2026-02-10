@@ -10,16 +10,44 @@ const searchQuery = ref('')
 const activeTab = ref<'movie' | 'tv'>('movie')
 const isSearching = ref(false)
 
+// Offline detection via real connectivity check
+const isOffline = ref(false)
+const networkError = ref(false)
+
+async function checkConnectivity() {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 5000)
+    await fetch('https://www.google.com/generate_204', {
+      mode: 'no-cors',
+      signal: controller.signal,
+    })
+    clearTimeout(timeout)
+    isOffline.value = false
+  } catch {
+    isOffline.value = true
+  }
+}
+
+onMounted(() => {
+  checkConnectivity()
+})
+
 // Fetch trending
-const { data: trendingMovies, pending: trendingMoviesLoading } = useAsyncData(
+const { data: trendingMovies, pending: trendingMoviesLoading, error: trendingMoviesError } = useAsyncData(
   'trending-movies',
   () => trpc.catalog.trending.query({ type: 'movie' })
 )
 
-const { data: trendingTv, pending: trendingTvLoading } = useAsyncData(
+const { data: trendingTv, pending: trendingTvLoading, error: trendingTvError } = useAsyncData(
   'trending-tv',
   () => trpc.catalog.trending.query({ type: 'tv' })
 )
+
+// Detect network errors from failed TMDB calls
+watch([trendingMoviesError, trendingTvError], ([movErr, tvErr]) => {
+  networkError.value = !!(movErr || tvErr)
+})
 
 // Search results
 const searchResults = ref<any[]>([])
@@ -94,6 +122,16 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
     <div class="mb-6">
       <h1 class="text-2xl font-bold text-text-primary mb-1">{{ t('catalog.title') }}</h1>
       <p class="text-text-secondary">{{ t('catalog.subtitle') }}</p>
+    </div>
+
+    <!-- Offline / Network error banner -->
+    <div v-if="isOffline || networkError" class="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex items-center gap-3">
+      <svg class="w-5 h-5 text-yellow-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636a9 9 0 010 12.728M5.636 5.636a9 9 0 000 12.728M12 9v4m0 4h.01" />
+      </svg>
+      <p class="text-sm text-yellow-500">
+        {{ t('catalog.offlineWarning') }}
+      </p>
     </div>
 
     <!-- Search bar -->

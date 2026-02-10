@@ -136,7 +136,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
 
           <!-- Episode count badge -->
           <div class="absolute top-2 left-2 bg-primary text-white text-xs font-medium px-2 py-1 rounded-full">
-            {{ show.episodeCount }} {{ t('tv.episodes') }}
+            {{ show.episodeCount }} {{ t('tv.episodes', show.episodeCount) }}
           </div>
         </div>
 
@@ -146,7 +146,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
             {{ show.title }}
           </h3>
           <p v-if="show.year" class="text-xs text-text-muted mt-0.5">
-            {{ show.year }} · {{ show.seasonCount }} {{ t('tv.seasons') }}
+            {{ show.year }} · {{ show.seasonCount }} {{ t('tv.seasons', show.seasonCount) }}
           </p>
         </div>
       </NuxtLink>

@@ -3,7 +3,7 @@ import { settings } from '../db/schema'
 import { eq } from 'drizzle-orm'
 
 const TMDB_BASE = 'https://api.themoviedb.org/3'
-const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p'
+const TMDB_IMAGE_BASE = '/api/images'
 
 // ===== Types (compatible with existing frontend) =====
 
