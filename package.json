@@ -1,0 +1,42 @@
+{
+  "name": "ProjetLucas",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@nuxtjs/tailwindcss": "^6.14.0",
+    "@trpc/client": "^11.8.1",
+    "@trpc/server": "^11.8.1",
+    "autoprefixer": "^10.4.23",
+    "axios": "^1.13.5",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.6.2",
+    "cheerio": "^1.2.0",
+    "drizzle-orm": "^0.45.1",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "groq-sdk": "^0.37.0",
+    "hls.js": "^1.6.15",
+    "nuxt": "^4.3.0",
+    "nuxt-auth-utils": "^0.5.28",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "uuid": "^13.0.0",
+    "video.js": "^8.23.4",
+    "vue": "^3.5.27",
+    "vue-router": "^4.6.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.8"
+  }
+}

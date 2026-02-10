@@ -1,0 +1,111 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2e2e2e;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #404040;
+}
+
+/* Base styles */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-background text-text-primary antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Focus styles */
+*:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+/* Selection */
+::selection {
+  @apply bg-primary/30 text-text-primary;
+}
+
+/* Custom utilities */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .glass {
+    @apply bg-surface/80 backdrop-blur-md border border-border;
+  }
+
+  .glass-hover {
+    @apply hover:bg-surface-secondary/80 transition-colors duration-200;
+  }
+}
+
+/* Video.js custom theme */
+.video-js {
+  @apply w-full h-full;
+}
+
+.video-js .vjs-big-play-button {
+  @apply bg-primary/90 border-none rounded-full w-20 h-20;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.video-js .vjs-big-play-button:hover {
+  @apply bg-primary;
+}
+
+.video-js .vjs-control-bar {
+  @apply bg-gradient-to-t from-black/90 to-transparent h-16;
+}
+
+.video-js .vjs-play-progress,
+.video-js .vjs-volume-level {
+  @apply bg-primary;
+}
+
+.video-js .vjs-slider {
+  @apply bg-white/20;
+}
+
+/* Loading skeleton */
+.skeleton {
+  @apply bg-surface-secondary animate-pulse rounded;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-primary/5;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary-light;
+}
+
+/* Hide scrollbar but keep functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

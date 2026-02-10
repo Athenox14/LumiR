@@ -1,0 +1,7 @@
+export { default as FrenchStream } from './frenchstream'
+export { default as EmpireStreaming } from './empire-streaming'
+export { default as MesFilms } from './mesfilms'
+export { default as HiMovies } from './himovies'
+export { default as FlixHQ } from './flixhq'
+export { default as Goku } from './goku'
+export { default as SFlix } from './sflix'

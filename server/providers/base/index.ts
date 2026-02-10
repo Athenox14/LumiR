@@ -1,0 +1,5 @@
+export { default as Proxy } from './proxy'
+export { default as BaseProvider } from './base-provider'
+export { default as BaseParser } from './base-parser'
+export { default as MovieParser } from './movie-parser'
+export { default as VideoExtractor } from './video-extractor'
