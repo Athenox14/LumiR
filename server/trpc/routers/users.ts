@@ -18,6 +18,9 @@ export const usersRouter = router({
         role: users.role,
         permissions: users.permissions,
         avatarUrl: users.avatarUrl,
+        favoriteActorImage: users.favoriteActorImage,
+        favoriteActorName: users.favoriteActorName,
+        isProfilePublic: users.isProfilePublic,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })

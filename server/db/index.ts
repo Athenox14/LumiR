@@ -227,6 +227,20 @@ export function initializeDatabase() {
     try { sqlite.exec(migration) } catch (_) { /* column already exists */ }
   }
 
+  // Migrate old TMDB image URLs to local proxy URLs
+  try {
+    const tmdbPrefix = 'https://image.tmdb.org/t/p'
+    const localPrefix = '/api/images'
+    sqlite.exec(`
+      UPDATE media SET poster_path = REPLACE(poster_path, '${tmdbPrefix}', '${localPrefix}') WHERE poster_path LIKE '${tmdbPrefix}%';
+      UPDATE media SET backdrop_path = REPLACE(backdrop_path, '${tmdbPrefix}', '${localPrefix}') WHERE backdrop_path LIKE '${tmdbPrefix}%';
+      UPDATE media SET cast = REPLACE(cast, '${tmdbPrefix}', '${localPrefix}') WHERE cast LIKE '%${tmdbPrefix}%';
+      UPDATE online_watch_progress SET poster_path = REPLACE(poster_path, '${tmdbPrefix}', '${localPrefix}') WHERE poster_path LIKE '${tmdbPrefix}%';
+      UPDATE downloads SET poster_path = REPLACE(poster_path, '${tmdbPrefix}', '${localPrefix}') WHERE poster_path LIKE '${tmdbPrefix}%';
+      UPDATE users SET favorite_actor_image = REPLACE(favorite_actor_image, '${tmdbPrefix}', '${localPrefix}') WHERE favorite_actor_image LIKE '${tmdbPrefix}%';
+    `)
+  } catch (_) { /* tables might not exist yet */ }
+
   console.log('Database initialized successfully')
 }
 

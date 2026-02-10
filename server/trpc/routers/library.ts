@@ -10,6 +10,7 @@ import { join, basename, extname, parse } from 'path'
 import { searchTmdb, getTmdbInfo, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { extractFileMetadata, extractStreams, type FileMetadata } from '../../utils/ffmpeg'
 import { askGroqForTitle } from '../../utils/groq'
+import { cacheLibraryImages } from '../../utils/imageCache'
 
 // Video file extensions to scan
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']
@@ -60,6 +61,18 @@ async function storeStreamTracks(mediaId: string, filePath: string) {
   }
 }
 
+// Release tags to strip from filenames before TMDB search
+const RELEASE_TAGS = /\b(DVDRIP|BDRIP|BRRIP|WEBRIP|HDTV|HDRIP|TVRIP|PPVRIP|DVDSCR|SCREENER|CAM|TS|TC|R5|BluRay|Blu-?Ray|REMUX|PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS\s*CUT|IMAX|720p|1080p|2160p|4K|UHD|x264|x265|h264|h265|HEVC|XviD|DivX|AVC|DTS|AC3|AAC|MP3|FLAC|TrueHD|Atmos|MULTI|FRENCH|VOSTFR|TRUEFRENCH|VFF|VFQ|VF|SUBFRENCH|MULTi)\b/gi
+
+// Clean release tags from a title string
+function cleanReleaseTags(title: string): string {
+  return title
+    .replace(RELEASE_TAGS, ' ')
+    .replace(/\s*[\[\(][^\]\)]*[\]\)]\s*/g, ' ')  // Remove [tags] and (tags) that are now empty or contain only tags
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 // Parse filename to extract title, year, season, and episode
 function parseFilename(filename: string): { title: string; year: number | null; season: number | null; episode: number | null } {
   const nameWithoutExt = parse(filename).name
@@ -83,7 +96,7 @@ function parseFilename(filename: string): { title: string; year: number | null; 
   for (const pattern of tvPatterns) {
     const match = normalized.match(pattern)
     if (match) {
-      const title = match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+      const title = cleanReleaseTags(match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
       console.log(`[Parser] TV match: title="${title}", s=${match[2]}, e=${match[3]}`)
       return {
         title,
@@ -106,14 +119,14 @@ function parseFilename(filename: string): { title: string; year: number | null; 
     if (match) {
       const year = parseInt(match[2])
       if (year >= 1900 && year <= new Date().getFullYear() + 2) {
-        const title = match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+        const title = cleanReleaseTags(match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
         return { title, year, season: null, episode: null }
       }
     }
   }
 
-  // No pattern found, use normalized name as title
-  const title = normalized.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  // No pattern found — clean release tags then use as title
+  const title = cleanReleaseTags(normalized.replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
 
   return { title, year: null, season: null, episode: null }
 }
@@ -372,6 +385,12 @@ export const libraryRouter = router({
         message: 'TMDB ID not found',
       })
     }),
+
+  // Pre-cache all library images for offline use
+  cacheImages: adminProcedure.mutation(async () => {
+    const result = await cacheLibraryImages()
+    return result
+  }),
 })
 
 /**
@@ -461,8 +480,16 @@ async function scanLibrary(scanId: string, mediaPath: string) {
           .limit(1)
 
         if (existing) {
-          // Re-fetch metadata if missing or incomplete (e.g. no cast)
+          // Skip recently scanned files that already have complete metadata
+          const SKIP_THRESHOLD_MS = 12 * 60 * 60 * 1000 // 12 hours
+          const lastScan = existing.lastScannedAt ? new Date(existing.lastScannedAt).getTime() : 0
+          const isRecentlyScan = (Date.now() - lastScan) < SKIP_THRESHOLD_MS
           const needsFetch = !existing.tmdbId || !existing.cast
+          if (isRecentlyScan && !needsFetch) {
+            // File was scanned recently and has complete data — skip
+            currentScan!.processedFiles++
+            continue
+          }
           if (needsFetch) {
             const parsed = parseFilename(existing.fileName)
             const isTv = parsed.season !== null && parsed.episode !== null
@@ -578,6 +605,9 @@ async function scanLibrary(scanId: string, mediaPath: string) {
       updatedFiles: currentScan!.updatedFiles,
       errors: currentScan!.errors.length > 0 ? currentScan!.errors : null,
     }).where(eq(scanHistory.id, scanId))
+
+    // Pre-cache all library images in background (fire and forget)
+    cacheLibraryImages().catch(err => console.error('[Scan] Image pre-cache failed:', err.message))
 
   } catch (error: any) {
     currentScan!.status = 'failed'

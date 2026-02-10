@@ -85,6 +85,22 @@ async function stopScan() {
   }
 }
 
+// Image pre-cache
+const cachingImages = ref(false)
+const cacheResult = ref<{ cached: number; failed: number; skipped: number } | null>(null)
+
+async function cacheImages() {
+  cachingImages.value = true
+  cacheResult.value = null
+  try {
+    cacheResult.value = await trpc.library.cacheImages.mutate()
+  } catch (e: any) {
+    scanError.value = e.message || 'Failed to cache images'
+  } finally {
+    cachingImages.value = false
+  }
+}
+
 function formatDate(date: Date | null | undefined): string {
   if (!date) return t('adminLibrary.never')
   return new Date(date).toLocaleString()
@@ -182,6 +198,31 @@ function formatDate(date: Date | null | undefined): string {
       <!-- Error -->
       <div v-if="scanError" class="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
         <p class="text-sm text-red-500">{{ scanError }}</p>
+      </div>
+    </div>
+
+    <!-- Image Cache -->
+    <div class="mb-6 p-6 bg-surface border border-border rounded-xl">
+      <div class="flex items-start justify-between">
+        <div>
+          <h3 class="font-semibold text-text-primary mb-1">{{ t('adminLibrary.imageCache') }}</h3>
+          <p class="text-sm text-text-secondary">
+            {{ t('adminLibrary.imageCacheDesc') }}
+          </p>
+        </div>
+        <UiButton
+          :loading="cachingImages"
+          :disabled="cachingImages"
+          variant="secondary"
+          @click="cacheImages"
+        >
+          {{ cachingImages ? t('adminLibrary.caching') : t('adminLibrary.cacheImages') }}
+        </UiButton>
+      </div>
+      <div v-if="cacheResult" class="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+        <p class="text-sm text-green-500">
+          {{ t('adminLibrary.cacheResult', { cached: cacheResult.cached, skipped: cacheResult.skipped, failed: cacheResult.failed }) }}
+        </p>
       </div>
     </div>
 

@@ -3,7 +3,7 @@ import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
 import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings } from '../../db/schema'
-import { eq, and, like, desc, asc, sql, or } from 'drizzle-orm'
+import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
@@ -916,6 +916,68 @@ export const mediaRouter = router({
 
       return { sections }
     }),
+
+  // Get media without TMDB ID (admin)
+  noTmdbMedia: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      mediaType: z.enum(['movie', 'tv']).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      const params = input || { limit: 50 }
+      const conditions = [isNull(media.tmdbId)]
+      if (params.mediaType) conditions.push(eq(media.mediaType, params.mediaType))
+
+      return db
+        .select({
+          id: media.id,
+          title: media.title,
+          fileName: media.fileName,
+          filePath: media.filePath,
+          year: media.year,
+          posterPath: media.posterPath,
+          mediaType: media.mediaType,
+          season: media.season,
+          episode: media.episode,
+        })
+        .from(media)
+        .where(and(...conditions))
+        .orderBy(asc(media.title))
+        .limit(params.limit)
+    }),
+
+  // Get duplicate media (same tmdb_id or same title, grouped)
+  duplicateMedia: adminProcedure.query(async () => {
+    // Find titles that appear more than once (for movies only)
+    const rows = sqlite.prepare(`
+      SELECT title, tmdb_id, media_type, COUNT(*) as count,
+        GROUP_CONCAT(id, '||') as ids,
+        GROUP_CONCAT(file_name, '||') as fileNames
+      FROM media
+      WHERE media_type = 'movie'
+      GROUP BY COALESCE(tmdb_id, ''), title
+      HAVING COUNT(*) > 1
+      ORDER BY title ASC
+    `).all() as Array<{
+      title: string
+      tmdb_id: number | null
+      media_type: string
+      count: number
+      ids: string
+      fileNames: string
+    }>
+
+    return rows.map(r => ({
+      title: r.title,
+      tmdbId: r.tmdb_id,
+      mediaType: r.media_type,
+      count: r.count,
+      items: r.ids.split('||').map((id, i) => ({
+        id,
+        fileName: r.fileNames.split('||')[i],
+      })),
+    }))
+  }),
 
   // Get stats
   stats: protectedProcedure.query(async ({ ctx }) => {

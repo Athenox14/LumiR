@@ -11,6 +11,54 @@ const { data: stats } = useAsyncData('admin-stats', () => trpc.media.stats.query
 const { data: users } = useAsyncData('admin-users', () => trpc.users.list.query())
 const { data: scanStatus } = useAsyncData('scan-status', () => trpc.library.scanStatus.query())
 
+// Media without TMDB ID
+const noTmdbTab = ref<'movie' | 'tv'>('movie')
+const { data: noTmdbMedia, refresh: refreshNoTmdb } = useAsyncData(
+  'no-tmdb-media',
+  () => trpc.media.noTmdbMedia.query({ limit: 50, mediaType: noTmdbTab.value }),
+  { watch: [noTmdbTab] }
+)
+
+// Duplicate media
+const { data: duplicates, refresh: refreshDuplicates } = useAsyncData(
+  'duplicate-media',
+  () => trpc.media.duplicateMedia.query()
+)
+
+// Library search (for deindexing)
+const searchQuery = ref('')
+const searchResults = ref<any[]>([])
+const searching = ref(false)
+let searchTimeout: NodeJS.Timeout | null = null
+
+watch(searchQuery, (val) => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  if (!val || val.length < 2) {
+    searchResults.value = []
+    return
+  }
+  searchTimeout = setTimeout(async () => {
+    searching.value = true
+    try {
+      const res = await trpc.media.list.query({ search: val, limit: 20 })
+      searchResults.value = res.items
+    } catch { searchResults.value = [] }
+    searching.value = false
+  }, 400)
+})
+
+async function deindexMedia(id: string) {
+  if (!confirm(t('adminDash.confirmDeindex'))) return
+  try {
+    await trpc.media.delete.mutate(id)
+    searchResults.value = searchResults.value.filter(m => m.id !== id)
+    refreshNoTmdb()
+    refreshDuplicates()
+  } catch (e: any) {
+    alert(e.message)
+  }
+}
+
 const adminSections = computed(() => [
   {
     title: t('admin.library'),
@@ -105,8 +153,8 @@ const adminSections = computed(() => [
       </div>
     </div>
 
-    <!-- Admin sections -->
-    <div class="grid md:grid-cols-3 gap-4">
+    <!-- Admin sections (Library / Users / Settings) -->
+    <div class="grid md:grid-cols-3 gap-4 mb-8">
       <NuxtLink
         v-for="section in adminSections"
         :key="section.to"
@@ -129,5 +177,175 @@ const adminSections = computed(() => [
         <p class="text-sm text-text-secondary">{{ section.description }}</p>
       </NuxtLink>
     </div>
+
+    <!-- Search & Deindex -->
+    <div class="mb-8 p-4 bg-surface border border-border rounded-xl">
+      <h3 class="font-semibold text-text-primary mb-3">{{ t('adminDash.searchDeindex') }}</h3>
+      <p class="text-sm text-text-muted mb-3">{{ t('adminDash.searchDeindexDesc') }}</p>
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          v-model="searchQuery"
+          type="text"
+          :placeholder="t('adminDash.searchPlaceholder')"
+          class="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
+        />
+      </div>
+      <!-- Results -->
+      <div v-if="searching" class="mt-3 text-sm text-text-muted">{{ t('common.loading') }}</div>
+      <div v-else-if="searchResults.length > 0" class="mt-3 divide-y divide-border max-h-80 overflow-y-auto rounded-lg border border-border">
+        <div
+          v-for="item in searchResults"
+          :key="item.id"
+          class="flex items-center justify-between px-3 py-2 hover:bg-surface-secondary"
+        >
+          <div class="flex items-center gap-3 min-w-0">
+            <img
+              v-if="item.posterPath"
+              :src="item.posterPath"
+              class="w-8 h-12 rounded object-cover flex-shrink-0"
+            />
+            <div class="w-8 h-12 rounded bg-surface-secondary flex-shrink-0 flex items-center justify-center" v-else>
+              <svg class="w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4" />
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-medium text-text-primary truncate">{{ item.title }}</p>
+              <p class="text-xs text-text-muted">
+                {{ item.mediaType === 'tv' && item.season != null ? `S${String(item.season).padStart(2,'0')}E${String(item.episode).padStart(2,'0')} - ` : '' }}{{ item.year || '' }}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="flex-shrink-0 px-3 py-1 text-xs font-medium text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+            @click="deindexMedia(item.id)"
+          >
+            {{ t('adminDash.deindex') }}
+          </button>
+        </div>
+      </div>
+      <div v-else-if="searchQuery.length >= 2 && !searching" class="mt-3 text-sm text-text-muted">
+        {{ t('adminDash.noResults') }}
+      </div>
+    </div>
+
+    <!-- No TMDB ID -->
+    <div class="mb-8 p-4 bg-surface border border-border rounded-xl">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-text-primary">{{ t('adminDash.noTmdbId') }}</h3>
+        <div class="flex gap-1 bg-background rounded-lg p-0.5">
+          <button
+            type="button"
+            class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+            :class="noTmdbTab === 'movie' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
+            @click="noTmdbTab = 'movie'"
+          >
+            {{ t('admin.totalMovies') }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+            :class="noTmdbTab === 'tv' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
+            @click="noTmdbTab = 'tv'"
+          >
+            {{ t('admin.totalTvShows') }}
+          </button>
+        </div>
+      </div>
+      <p class="text-sm text-text-muted mb-3">{{ t('adminDash.noTmdbIdDesc') }}</p>
+
+      <div v-if="!noTmdbMedia?.length" class="text-sm text-green-500 py-2">
+        {{ t('adminDash.allHaveTmdb') }}
+      </div>
+      <div v-else class="divide-y divide-border max-h-60 overflow-y-auto rounded-lg border border-border">
+        <div
+          v-for="item in noTmdbMedia"
+          :key="item.id"
+          class="flex items-center justify-between px-3 py-2 hover:bg-surface-secondary"
+        >
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-text-primary truncate">
+              {{ item.title }}
+              <span v-if="item.season != null" class="text-text-muted">
+                S{{ String(item.season).padStart(2,'0') }}E{{ String(item.episode).padStart(2,'0') }}
+              </span>
+            </p>
+            <p class="text-xs text-text-muted truncate">{{ item.fileName }}</p>
+          </div>
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <NuxtLink
+              :to="`/media/${item.id}`"
+              class="px-3 py-1 text-xs font-medium text-primary hover:bg-primary/10 rounded-lg transition-colors"
+            >
+              {{ t('adminDash.identify') }}
+            </NuxtLink>
+            <button
+              type="button"
+              class="px-3 py-1 text-xs font-medium text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+              @click="deindexMedia(item.id)"
+            >
+              {{ t('adminDash.deindex') }}
+            </button>
+          </div>
+        </div>
+      </div>
+      <p v-if="noTmdbMedia?.length" class="text-xs text-text-muted mt-2">
+        {{ t('adminDash.noTmdbCount', { count: noTmdbMedia.length }) }}
+      </p>
+    </div>
+
+    <!-- Duplicates -->
+    <div class="mb-8 p-4 bg-surface border border-border rounded-xl">
+      <h3 class="font-semibold text-text-primary mb-3">{{ t('adminDash.duplicates') }}</h3>
+      <p class="text-sm text-text-muted mb-3">{{ t('adminDash.duplicatesDesc') }}</p>
+
+      <div v-if="!duplicates?.length" class="text-sm text-green-500 py-2">
+        {{ t('adminDash.noDuplicates') }}
+      </div>
+      <div v-else class="space-y-3">
+        <div
+          v-for="dup in duplicates"
+          :key="dup.title"
+          class="border border-border rounded-lg overflow-hidden"
+        >
+          <div class="px-3 py-2 bg-surface-secondary flex items-center justify-between">
+            <p class="text-sm font-medium text-text-primary">
+              {{ dup.title }}
+              <span class="text-text-muted ml-1">(x{{ dup.count }})</span>
+              <span v-if="dup.tmdbId" class="text-xs text-text-muted ml-2">TMDB #{{ dup.tmdbId }}</span>
+            </p>
+          </div>
+          <div class="divide-y divide-border">
+            <div
+              v-for="item in dup.items"
+              :key="item.id"
+              class="flex items-center justify-between px-3 py-2"
+            >
+              <p class="text-xs text-text-muted truncate min-w-0 flex-1">{{ item.fileName }}</p>
+              <div class="flex items-center gap-2 flex-shrink-0 ml-2">
+                <NuxtLink
+                  :to="`/media/${item.id}`"
+                  class="text-xs text-primary hover:underline"
+                >
+                  {{ t('common.edit') }}
+                </NuxtLink>
+                <button
+                  type="button"
+                  class="text-xs text-red-500 hover:underline"
+                  @click="deindexMedia(item.id)"
+                >
+                  {{ t('adminDash.deindex') }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
