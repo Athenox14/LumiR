@@ -8,8 +8,13 @@ import { findFfmpeg } from '../../../../utils/ffmpeg'
 // In-memory cache for extracted subtitles (mediaId:trackIndex → VTT content)
 const subtitleCache = new Map<string, string>()
 
-// Bitmap subtitle codecs that CANNOT be converted to WebVTT (they hang ffmpeg)
-const BITMAP_SUBTITLE_CODECS = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvdsub', 'dvb_subtitle', 'xsub', 'pgssub'])
+// Text-based subtitle codecs that ffmpeg CAN convert to WebVTT
+// Everything else (PGS, VOBSUB, DVB, etc.) is bitmap and CANNOT be converted
+const TEXT_SUBTITLE_CODECS = new Set([
+  'subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text',
+  'microdvd', 'mpl2', 'realtext', 'sami', 'stl', 'subviewer',
+  'subviewer1', 'ttml', 'vplayer',
+])
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -32,17 +37,18 @@ export default defineEventHandler(async (event) => {
     return subtitleCache.get(cacheKey)
   }
 
-  // Check if this is a bitmap subtitle (PGS/VOBSUB) — cannot convert to VTT
+  // Check if this subtitle codec is text-based (whitelist approach)
+  // Bitmap codecs (PGS, VOBSUB, DVB) will hang ffmpeg forever
   const [trackInfo] = await db
     .select({ codec: subtitleTracks.codec })
     .from(subtitleTracks)
     .where(and(eq(subtitleTracks.mediaId, id), eq(subtitleTracks.trackIndex, trackIndex)))
     .limit(1)
 
-  if (trackInfo?.codec && BITMAP_SUBTITLE_CODECS.has(trackInfo.codec)) {
+  if (trackInfo?.codec && !TEXT_SUBTITLE_CODECS.has(trackInfo.codec)) {
     throw createError({
       statusCode: 422,
-      message: `Bitmap subtitle codec (${trackInfo.codec}) cannot be converted to WebVTT`,
+      message: `Subtitle codec "${trackInfo.codec}" is not text-based and cannot be converted to WebVTT`,
     })
   }
 
@@ -67,7 +73,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, message: 'FFmpeg not available' })
   }
 
-  // Extract subtitle stream as WebVTT using ffmpeg
+  // Extract subtitle as WebVTT using ffmpeg (handles all text codecs: SRT, ASS, SSA, mov_text, etc.)
   const vttContent = await new Promise<string>((resolve, reject) => {
     const args = [
       '-v', 'error',
@@ -91,8 +97,10 @@ export default defineEventHandler(async (event) => {
 
     proc.on('close', (code) => {
       if (code !== 0) {
-        console.error(`[Subtitle] FFmpeg failed for track ${trackIndex}:`, stderr.slice(-500))
+        console.error(`[Subtitle] FFmpeg failed for track ${trackIndex} (codec: ${trackInfo?.codec || 'unknown'}):`, stderr.slice(-500))
         reject(new Error(`FFmpeg exited with code ${code}`))
+      } else if (!output.trim()) {
+        reject(new Error('FFmpeg produced empty subtitle output'))
       } else {
         resolve(output)
       }
@@ -102,11 +110,11 @@ export default defineEventHandler(async (event) => {
       reject(err)
     })
 
-    // Timeout after 30 seconds (text subtitles extract quickly, hangs mean unsupported codec)
+    // Timeout after 5 minutes (large MPEG files need full read for subtitle extraction)
     setTimeout(() => {
       if (!proc.killed) proc.kill('SIGTERM')
-      reject(new Error('Subtitle extraction timeout — possibly a bitmap subtitle codec'))
-    }, 30000)
+      reject(new Error(`Subtitle extraction timeout for track ${trackIndex} (codec: ${trackInfo?.codec || 'unknown'})`))
+    }, 300000)
   })
 
   // Cache the result

@@ -63,6 +63,18 @@ function cleanDir(dir: string) {
   } catch { /* ignore */ }
 }
 
+/** Remove all segment files (.ts and .tmp) from the output directory without deleting the dir itself */
+function cleanSegmentFiles(session: TranscodeSession) {
+  try {
+    const files = readdirSync(session.outputDir)
+    for (const f of files) {
+      if (/^seg_\d+\.ts(\.tmp)?$/.test(f)) {
+        try { unlinkSync(join(session.outputDir, f)) } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
+}
+
 function destroySession(sessionId: string) {
   const session = sessions.get(sessionId)
   if (!session) return
@@ -199,13 +211,19 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProce
       console.log(`[HLS] Ignoring close event from old ffmpeg process (code ${code})`)
       return
     }
+    // If ffmpegDone was already set (by buffer limiter), don't treat non-zero exit as error
+    // On Windows, SIGTERM causes exit code 1 which would incorrectly overwrite error=null
+    const wasDone = session.ffmpegDone
+    session.ffmpegProcess = null
     session.ffmpegDone = true
-    if (code !== 0 && code !== null) {
+    if (code !== 0 && code !== null && !wasDone) {
       const lines = stderrBuf.trim().split('\n')
       console.error(`[HLS] FFmpeg exited with code ${code}`, lines.slice(-5).join('\n'))
       session.error = `FFmpeg exited with code ${code}`
-    } else {
+    } else if (code === 0 || code === null) {
       console.log(`[HLS] FFmpeg finished successfully for session ${session.id}`)
+    } else {
+      console.log(`[HLS] FFmpeg process ended (code ${code}, intentional kill - buffer limit or preheat)`)
     }
   })
 
@@ -377,6 +395,11 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
 
   if (needsSeek) {
     console.log(`[HLS] Seeking: requested seg ${segmentIndex}, highest ready ${highestReady}, startSegment ${session.startSegment}, ffmpegDone=${session.ffmpegDone}`)
+    // Clean old segment files so buffer limiter doesn't see stale segments from previous runs
+    // (e.g., seeking from seg 272 back to seg 64 — old seg_284.ts would confuse the limiter)
+    cleanSegmentFiles(session)
+    // Reset lastRequestedSegment to the new position (Math.max above kept the old high value)
+    session.lastRequestedSegment = segmentIndex
     startFfmpeg(session, segmentIndex)
     // Give ffmpeg a moment to start up
     await new Promise(resolve => setTimeout(resolve, 100))
