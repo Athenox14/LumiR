@@ -65,9 +65,10 @@ const showAudioMenu = ref(false)
 const hlsQualityLevels = ref<Array<{id: number, height: number, label: string}>>([])
 const activeQualityLevel = ref(-1)
 const showQualityMenu = ref(false)
-const subtitleBlobUrls: string[] = []
-const loadedSubtitleIndices = new Set<number>() // tracks which subtitle indices have been loaded
 const subtitleLoading = ref(false)
+
+// Subtitle system — fetches the full track once, adds cues via TextTrack API
+let activeTextTrack: TextTrack | null = null
 
 // Use knownDuration when available (fragmented MP4 reports growing partial duration).
 // Only use video.duration if it's finite AND close to/exceeds knownDuration (i.e. fully loaded).
@@ -330,11 +331,6 @@ onUnmounted(() => {
   }
   document.removeEventListener('keydown', handleKeydown)
 
-  // Clean up subtitle blob URLs
-  for (const url of subtitleBlobUrls) {
-    URL.revokeObjectURL(url)
-  }
-
   // Save final progress
   if (currentTime.value > 0) {
     emit('progress', currentTime.value, effectiveDuration.value)
@@ -450,6 +446,32 @@ function toggleFullscreen() {
   }
 }
 
+// Parse VTT content into individual cues
+function parseVttCues(vttText: string): Array<{ start: number, end: number, text: string }> {
+  const cues: Array<{ start: number, end: number, text: string }> = []
+  // Split on double newlines to get blocks
+  const blocks = vttText.split(/\n\s*\n/)
+  for (const block of blocks) {
+    const lines = block.trim().split('\n')
+    for (let i = 0; i < lines.length; i++) {
+      const match = lines[i].match(/(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})/)
+      if (match) {
+        const start = parseVttTime(match[1])
+        const end = parseVttTime(match[2])
+        const text = lines.slice(i + 1).join('\n').trim()
+        if (text) cues.push({ start, end, text })
+        break
+      }
+    }
+  }
+  return cues
+}
+
+function parseVttTime(time: string): number {
+  const parts = time.replace(',', '.').split(':')
+  return parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseFloat(parts[2])
+}
+
 async function setSubtitle(index: number) {
   if (!videoRef.value) return
   const video = videoRef.value
@@ -461,54 +483,52 @@ async function setSubtitle(index: number) {
     }
   }
 
-  activeSubtitleIndex.value = index
   showSubtitleMenu.value = false
 
-  if (index < 0 || !props.subtitles?.[index]) return
+  if (index < 0 || !props.subtitles?.[index]) {
+    activeSubtitleIndex.value = index
+    activeTextTrack = null
+    return
+  }
 
   const sub = props.subtitles[index]
+  activeSubtitleIndex.value = index
 
-  // Lazy load: fetch subtitle content on first selection
-  if (!loadedSubtitleIndices.has(index)) {
-    subtitleLoading.value = true
-    try {
-      const res = await fetch(sub.url)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      let text = await res.text()
+  // Create a new TextTrack
+  activeTextTrack = video.addTextTrack('subtitles', sub.label || sub.lang, sub.lang)
+  activeTextTrack.mode = 'showing'
 
-      // Ensure VTT format (convert SRT if needed)
-      if (!text.trimStart().startsWith('WEBVTT')) {
-        text = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+  // Fetch the full subtitle track
+  subtitleLoading.value = true
+  try {
+    console.log(`[Subtitles] Fetching full track: ${sub.url}`)
+    const res = await fetch(sub.url)
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`)
+    }
+
+    let text = await res.text()
+    // Ensure VTT format (in case server returns SRT)
+    if (!text.trimStart().startsWith('WEBVTT')) {
+      text = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+    }
+
+    const cues = parseVttCues(text)
+    console.log(`[Subtitles] Parsed ${cues.length} cues`)
+
+    for (const cue of cues) {
+      try {
+        activeTextTrack.addCue(new VTTCue(cue.start, cue.end, cue.text))
+      } catch (e) {
+        // Skip invalid cues silently
       }
-
-      const blob = new Blob([text], { type: 'text/vtt' })
-      const blobUrl = URL.createObjectURL(blob)
-      subtitleBlobUrls.push(blobUrl)
-
-      const trackEl = document.createElement('track')
-      trackEl.kind = 'subtitles'
-      trackEl.label = sub.label || sub.lang
-      trackEl.srclang = sub.lang
-      trackEl.src = blobUrl
-      video.appendChild(trackEl)
-
-      loadedSubtitleIndices.add(index)
-    } catch (err) {
-      console.error(`[Subtitles] Failed to load ${sub.label || sub.lang}:`, err)
-      subtitleLoading.value = false
-      return
     }
-    subtitleLoading.value = false
+  } catch (err) {
+    console.error(`[Subtitles] Failed to load subtitle track:`, err)
+    activeSubtitleIndex.value = -1
+    activeTextTrack = null
   }
-
-  // Show the selected track
-  const targetLabel = sub.label || sub.lang
-  for (let i = 0; i < video.textTracks.length; i++) {
-    if (video.textTracks[i].label === targetLabel) {
-      video.textTracks[i].mode = 'showing'
-      break
-    }
-  }
+  subtitleLoading.value = false
 }
 
 function setAudioTrack(index: number) {

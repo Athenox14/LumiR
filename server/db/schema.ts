@@ -68,6 +68,7 @@ export const subtitleTracks = sqliteTable('subtitle_tracks', {
   codec: text('codec'),
   title: text('title'),
   filePath: text('file_path'), // External subtitle file
+  content: text('content'), // Pre-extracted VTT content (from library scan)
   isDefault: integer('is_default', { mode: 'boolean' }).default(false),
   isForced: integer('is_forced', { mode: 'boolean' }).default(false),
 })

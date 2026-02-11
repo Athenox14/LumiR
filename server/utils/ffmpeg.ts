@@ -1,4 +1,4 @@
-import { execSync, execFile } from 'child_process'
+import { execSync, execFile, spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { dirname, join } from 'path'
 
@@ -228,5 +228,77 @@ export async function extractFileMetadata(filePath: string): Promise<FileMetadat
         }
       }
     )
+  })
+}
+
+// Codecs where -c:s copy -f srt works (fast, no transcoding)
+const SRT_COPY_CODECS = new Set(['subrip', 'srt'])
+
+// Text-based subtitle codecs that can be converted to WebVTT
+export const TEXT_SUBTITLE_CODECS = new Set([
+  'subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text',
+  'microdvd', 'mpl2', 'realtext', 'sami', 'stl', 'subviewer',
+  'subviewer1', 'ttml', 'vplayer',
+])
+
+function srtToVtt(srt: string): string {
+  return 'WEBVTT\n\n' + srt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+}
+
+/**
+ * Extract a single subtitle track content as WebVTT.
+ * Uses -c:s copy for subrip (fast demux), -f webvtt for other codecs.
+ * Returns null on failure.
+ */
+export async function extractSubtitleContent(
+  filePath: string,
+  trackIndex: number,
+  codec: string,
+): Promise<string | null> {
+  const ffmpegPath = await findFfmpeg()
+  if (!ffmpegPath) return null
+
+  const useCopyMode = SRT_COPY_CODECS.has(codec)
+  const args: string[] = ['-v', 'error', '-i', filePath, '-map', `0:${trackIndex}`]
+
+  if (useCopyMode) {
+    args.push('-c:s', 'copy', '-f', 'srt', 'pipe:1')
+  } else {
+    args.push('-f', 'webvtt', 'pipe:1')
+  }
+
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+
+    let output = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      output += chunk.toString('utf-8')
+    })
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf-8')
+    })
+
+    proc.on('close', (code) => {
+      if (code !== 0 && code !== 1) {
+        console.error(`[FFmpeg] Subtitle extraction failed (track ${trackIndex}):`, stderr.slice(-300))
+        resolve(null)
+        return
+      }
+      if (useCopyMode) {
+        resolve(output.trim() ? srtToVtt(output) : null)
+      } else {
+        resolve(output.trim() || null)
+      }
+    })
+
+    proc.on('error', () => resolve(null))
+
+    // 5 minute timeout for scan-time extraction (background, not blocking user)
+    setTimeout(() => {
+      if (!proc.killed) proc.kill('SIGTERM')
+      resolve(null)
+    }, 300000)
   })
 }

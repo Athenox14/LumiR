@@ -6,8 +6,8 @@ import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
 
 export const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
-const BUFFER_AHEAD_SEGMENTS = 12 // max 2 minutes (12 * 10s) ahead of player position
-const BUFFER_RESTART_THRESHOLD = 3 // restart ffmpeg when less than 30s of buffer remaining
+const BUFFER_AHEAD_SEGMENTS = 18 // max 3 minutes (18 * 10s) ahead — larger buffer = fewer restarts = fewer A/V desync
+const BUFFER_RESTART_THRESHOLD = 4 // restart ffmpeg when less than 40s of buffer remaining
 
 // Video codecs that can be copied into MPEGTS with h264_mp4toannexb and played by browsers
 // mpeg4 (DivX/Xvid) is NOT h264 — it cannot use h264_mp4toannexb and browsers can't play it in MPEGTS
@@ -365,11 +365,14 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
 
   // Proactive restart: if ffmpeg was paused (buffer limit) and buffer is running low, restart early
   // This avoids waiting until buffer hits 0 — keeps playback smooth
+  // Start 1 segment earlier for "warm-up": the overlapping segment ensures the video decoder
+  // has proper reference frames, avoiding the "video rollback + audio continues" desync
   if (session.ffmpegDone && !session.error) {
     const highestReady = getHighestReadySegment(session)
     if (highestReady >= 0 && highestReady < session.totalSegments - 1 && highestReady - segmentIndex < BUFFER_RESTART_THRESHOLD) {
-      console.log(`[HLS] Buffer running low (${highestReady - segmentIndex} segments ahead), restarting ffmpeg from segment ${highestReady + 1}`)
-      startFfmpeg(session, highestReady + 1)
+      const restartFrom = Math.max(0, highestReady)
+      console.log(`[HLS] Buffer running low (${highestReady - segmentIndex} segments ahead), restarting ffmpeg from segment ${restartFrom} (warm-up: ${restartFrom !== highestReady + 1})`)
+      startFfmpeg(session, restartFrom)
     }
   }
 

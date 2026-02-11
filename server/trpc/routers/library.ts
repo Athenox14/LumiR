@@ -8,7 +8,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { promises as fs } from 'fs'
 import { join, basename, extname, parse } from 'path'
 import { searchTmdb, getTmdbInfo, tmdbInfoToMediaFields } from '../../utils/tmdb'
-import { extractFileMetadata, extractStreams, type FileMetadata } from '../../utils/ffmpeg'
+import { extractFileMetadata, extractStreams, extractSubtitleContent, TEXT_SUBTITLE_CODECS, type FileMetadata } from '../../utils/ffmpeg'
 import { askGroqForTitle } from '../../utils/groq'
 import { cacheLibraryImages } from '../../utils/imageCache'
 
@@ -38,6 +38,18 @@ async function storeStreamTracks(mediaId: string, filePath: string) {
           isDefault: stream.isDefault,
         })
       } else if (stream.codecType === 'subtitle') {
+        // Pre-extract subtitle content for text-based codecs
+        let content: string | null = null
+        if (TEXT_SUBTITLE_CODECS.has(stream.codecName)) {
+          console.log(`[Scan] Pre-extracting subtitle track ${stream.index} (${stream.codecName}) from ${filePath}`)
+          content = await extractSubtitleContent(filePath, stream.index, stream.codecName)
+          if (content) {
+            console.log(`[Scan] Extracted ${content.length} bytes of VTT for track ${stream.index}`)
+          } else {
+            console.warn(`[Scan] Failed to pre-extract subtitle track ${stream.index}`)
+          }
+        }
+
         await db.insert(subtitleTracks).values({
           id: uuidv4(),
           mediaId,
@@ -45,6 +57,7 @@ async function storeStreamTracks(mediaId: string, filePath: string) {
           language: stream.language || null,
           codec: stream.codecName,
           title: stream.title || null,
+          content,
           isDefault: stream.isDefault,
           isForced: stream.isForced,
         })
