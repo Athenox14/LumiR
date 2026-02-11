@@ -66,6 +66,8 @@ const hlsQualityLevels = ref<Array<{id: number, height: number, label: string}>>
 const activeQualityLevel = ref(-1)
 const showQualityMenu = ref(false)
 const subtitleBlobUrls: string[] = []
+const loadedSubtitleIndices = new Set<number>() // tracks which subtitle indices have been loaded
+const subtitleLoading = ref(false)
 
 // Use knownDuration when available (fragmented MP4 reports growing partial duration).
 // Only use video.duration if it's finite AND close to/exceeds knownDuration (i.e. fully loaded).
@@ -316,34 +318,7 @@ onMounted(() => {
   // Keyboard controls
   document.addEventListener('keydown', handleKeydown)
 
-  // Load external subtitles via fetch + blob URL (more reliable than <track> with HLS.js)
-  if (props.subtitles?.length) {
-    props.subtitles.forEach((sub) => {
-      fetch(sub.url)
-        .then(res => res.text())
-        .then(text => {
-          // Ensure VTT format (convert SRT if needed)
-          let vtt = text
-          if (!text.trimStart().startsWith('WEBVTT')) {
-            vtt = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-          }
-          const blob = new Blob([vtt], { type: 'text/vtt' })
-          const blobUrl = URL.createObjectURL(blob)
-          subtitleBlobUrls.push(blobUrl)
-
-          const trackEl = document.createElement('track')
-          trackEl.kind = 'subtitles'
-          trackEl.label = sub.label || sub.lang
-          trackEl.srclang = sub.lang
-          trackEl.src = blobUrl
-          video.appendChild(trackEl)
-
-          // Keep hidden by default
-          if (trackEl.track) trackEl.track.mode = 'hidden'
-        })
-        .catch(err => console.error(`[Subtitles] Failed to load ${sub.lang}:`, err))
-    })
-  }
+  // Subtitles are loaded lazily when the user selects one (avoids I/O contention at startup)
 })
 
 onUnmounted(() => {
@@ -475,27 +450,65 @@ function toggleFullscreen() {
   }
 }
 
-function setSubtitle(index: number) {
+async function setSubtitle(index: number) {
   if (!videoRef.value) return
-  const tracks = videoRef.value.textTracks
-  // Hide all subtitle tracks (use 'hidden' not 'disabled' - disabled prevents loading)
-  for (let i = 0; i < tracks.length; i++) {
-    if (tracks[i].kind === 'subtitles') {
-      tracks[i].mode = 'hidden'
+  const video = videoRef.value
+
+  // Hide all subtitle tracks
+  for (let i = 0; i < video.textTracks.length; i++) {
+    if (video.textTracks[i].kind === 'subtitles') {
+      video.textTracks[i].mode = 'hidden'
     }
   }
-  // Show the selected one by matching label
-  if (index >= 0 && props.subtitles?.[index]) {
-    const targetLabel = props.subtitles[index].label || props.subtitles[index].lang
-    for (let i = 0; i < tracks.length; i++) {
-      if (tracks[i].label === targetLabel) {
-        tracks[i].mode = 'showing'
-        break
-      }
-    }
-  }
+
   activeSubtitleIndex.value = index
   showSubtitleMenu.value = false
+
+  if (index < 0 || !props.subtitles?.[index]) return
+
+  const sub = props.subtitles[index]
+
+  // Lazy load: fetch subtitle content on first selection
+  if (!loadedSubtitleIndices.has(index)) {
+    subtitleLoading.value = true
+    try {
+      const res = await fetch(sub.url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      let text = await res.text()
+
+      // Ensure VTT format (convert SRT if needed)
+      if (!text.trimStart().startsWith('WEBVTT')) {
+        text = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+      }
+
+      const blob = new Blob([text], { type: 'text/vtt' })
+      const blobUrl = URL.createObjectURL(blob)
+      subtitleBlobUrls.push(blobUrl)
+
+      const trackEl = document.createElement('track')
+      trackEl.kind = 'subtitles'
+      trackEl.label = sub.label || sub.lang
+      trackEl.srclang = sub.lang
+      trackEl.src = blobUrl
+      video.appendChild(trackEl)
+
+      loadedSubtitleIndices.add(index)
+    } catch (err) {
+      console.error(`[Subtitles] Failed to load ${sub.label || sub.lang}:`, err)
+      subtitleLoading.value = false
+      return
+    }
+    subtitleLoading.value = false
+  }
+
+  // Show the selected track
+  const targetLabel = sub.label || sub.lang
+  for (let i = 0; i < video.textTracks.length; i++) {
+    if (video.textTracks[i].label === targetLabel) {
+      video.textTracks[i].mode = 'showing'
+      break
+    }
+  }
 }
 
 function setAudioTrack(index: number) {
@@ -845,10 +858,12 @@ function handleMouseMove() {
                   v-for="(sub, i) in subtitles"
                   :key="i"
                   type="button"
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors"
+                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
                   :class="activeSubtitleIndex === i ? 'text-primary font-medium' : 'text-white'"
+                  :disabled="subtitleLoading"
                   @click="setSubtitle(i)"
                 >
+                  <span v-if="subtitleLoading && activeSubtitleIndex === i" class="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
                   {{ sub.label || sub.lang }}
                 </button>
               </div>
