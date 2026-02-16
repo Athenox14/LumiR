@@ -47,12 +47,13 @@ export default defineEventHandler(async (event) => {
     assets: Array<{ name: string; url: string; browser_download_url: string; size: number }>
   }
 
-  // Current version
+  // Current version - try root first, then .output/ (zip extracts build info inside .output/)
   let currentVersion = 'dev'
-  try {
-    currentVersion = readFileSync(join(process.cwd(), 'BUILD_VERSION'), 'utf-8').trim()
-  } catch {
-    // dev mode
+  for (const base of [process.cwd(), join(process.cwd(), '.output')]) {
+    try {
+      currentVersion = readFileSync(join(base, 'BUILD_VERSION'), 'utf-8').trim()
+      break
+    } catch {}
   }
 
   const asset = release.assets.find(a => a.name.endsWith('.zip'))
