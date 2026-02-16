@@ -7,6 +7,69 @@ const trpc = useTrpc()
 const { t } = useI18n()
 const { appName } = useAppName()
 
+// Version info
+const versionInfo = ref<{ commitSha: string; version: string } | null>(null)
+const updateInfo = ref<{
+  currentVersion: string
+  latestVersion: string
+  latestName: string
+  publishedAt: string
+  releaseUrl: string
+  releaseNotes: string
+  hasUpdate: boolean
+  downloadUrl: string | null
+  downloadSize: number
+} | null>(null)
+const checkingUpdate = ref(false)
+const updating = ref(false)
+const updateError = ref('')
+
+onMounted(async () => {
+  try {
+    versionInfo.value = await $fetch('/api/admin/version')
+  } catch {
+    // ignore
+  }
+})
+
+async function checkForUpdate() {
+  checkingUpdate.value = true
+  updateError.value = ''
+  try {
+    updateInfo.value = await $fetch('/api/admin/check-update')
+  } catch (e: any) {
+    updateError.value = e.data?.statusMessage || e.message || t('adminUpdate.checkFailed')
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+async function performUpdate() {
+  if (!updateInfo.value?.downloadUrl) return
+  if (!confirm(t('adminUpdate.confirmUpdate'))) return
+
+  updating.value = true
+  updateError.value = ''
+  try {
+    await $fetch('/api/admin/update', {
+      method: 'POST',
+      body: { downloadUrl: updateInfo.value.downloadUrl },
+    })
+    alert(t('adminUpdate.updateSuccess'))
+    setTimeout(() => window.location.reload(), 5000)
+  } catch (e: any) {
+    updateError.value = e.data?.statusMessage || e.message || t('adminUpdate.updateFailed')
+  } finally {
+    updating.value = false
+  }
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1048576).toFixed(1) + ' MB'
+}
+
 // Fetch stats
 const { data: stats } = useAsyncData('admin-stats', () => trpc.media.stats.query())
 const { data: users } = useAsyncData('admin-users', () => trpc.users.list.query())
@@ -177,6 +240,75 @@ const adminSections = computed(() => [
         <h3 class="font-semibold text-text-primary mb-1">{{ section.title }}</h3>
         <p class="text-sm text-text-secondary">{{ section.description }}</p>
       </NuxtLink>
+    </div>
+
+    <!-- Version & Update -->
+    <div class="mb-8 p-4 bg-surface border border-border rounded-xl">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h3 class="font-semibold text-text-primary">{{ t('adminUpdate.title') }}</h3>
+          <p v-if="versionInfo" class="text-sm text-text-muted mt-1">
+            {{ t('adminUpdate.currentVersion') }}:
+            <span class="font-mono text-text-primary">{{ versionInfo.version }}</span>
+            <span v-if="versionInfo.commitSha !== 'dev'" class="text-xs text-text-muted ml-2">
+              ({{ versionInfo.commitSha.slice(0, 7) }})
+            </span>
+          </p>
+        </div>
+        <UiButton
+          size="sm"
+          variant="secondary"
+          :loading="checkingUpdate"
+          @click="checkForUpdate"
+        >
+          {{ t('adminUpdate.checkUpdate') }}
+        </UiButton>
+      </div>
+
+      <!-- Update error -->
+      <div v-if="updateError" class="p-3 bg-red-500/10 border border-red-500/20 rounded-lg mb-3">
+        <p class="text-sm text-red-500">{{ updateError }}</p>
+      </div>
+
+      <!-- Update info -->
+      <div v-if="updateInfo" class="mt-3">
+        <div v-if="updateInfo.hasUpdate" class="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <p class="font-medium text-text-primary">
+                {{ t('adminUpdate.newVersionAvailable') }}: {{ updateInfo.latestName || updateInfo.latestVersion }}
+              </p>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminUpdate.publishedAt') }}: {{ new Date(updateInfo.publishedAt).toLocaleDateString() }}
+                <span v-if="updateInfo.downloadSize" class="ml-2">
+                  ({{ formatBytes(updateInfo.downloadSize) }})
+                </span>
+              </p>
+            </div>
+            <UiButton
+              size="sm"
+              :loading="updating"
+              :disabled="!updateInfo.downloadUrl"
+              @click="performUpdate"
+            >
+              {{ t('adminUpdate.installUpdate') }}
+            </UiButton>
+          </div>
+          <div v-if="updateInfo.releaseNotes" class="mt-3 p-3 bg-surface-secondary rounded-lg">
+            <p class="text-xs text-text-muted whitespace-pre-wrap">{{ updateInfo.releaseNotes }}</p>
+          </div>
+          <a
+            :href="updateInfo.releaseUrl"
+            target="_blank"
+            class="text-xs text-primary hover:underline mt-2 inline-block"
+          >
+            {{ t('adminUpdate.viewOnGithub') }}
+          </a>
+        </div>
+        <div v-else class="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+          <p class="text-sm text-green-500">{{ t('adminUpdate.upToDate') }}</p>
+        </div>
+      </div>
     </div>
 
     <!-- Search & Deindex -->
