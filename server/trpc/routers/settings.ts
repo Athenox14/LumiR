@@ -4,22 +4,6 @@ import { db } from '../../db'
 import { settings } from '../../db/schema'
 import { eq, inArray } from 'drizzle-orm'
 
-// Settings keys
-export const SETTINGS_KEYS = {
-  MEDIA_PATH: 'mediaPath',
-  TMDB_API_KEY: 'tmdbApiKey',
-  GROQ_API_KEY: 'groqApiKey',
-  SCAN_INTERVAL: 'scanInterval', // in hours
-  AUTO_SCAN_ENABLED: 'autoScanEnabled',
-  TRANSCODING_ENABLED: 'transcodingEnabled',
-  TRANSCODING_PRESET: 'transcodingPreset',
-  MAX_BITRATE: 'maxBitrate',
-  HLS_SEGMENT_DURATION: 'hlsSegmentDuration',
-  CATALOG_ENABLED: 'catalogEnabled',
-  DOWNLOADS_ENABLED: 'downloadsEnabled',
-  REGISTRATION_ENABLED: 'registrationEnabled',
-} as const
-
 export const settingsRouter = router({
   // Get a single setting
   get: protectedProcedure

@@ -54,7 +54,7 @@ export default defineEventHandler(async (event) => {
     throw createError({
       statusCode: 415,
       message: 'Use HLS endpoint for non-native formats',
-      data: { hlsUrl: `/api/stream/${id}/hls` },
+      data: { hlsUrl: `/api/stream/${id}/master.m3u8` },
     })
   }
 
