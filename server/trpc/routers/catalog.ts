@@ -41,13 +41,14 @@ async function resolveAllStreams(opts: {
     releaseYear: opts.releaseYear,
   })
 
-  console.log(`[resolveAllStreams] Pipeline result for "${opts.title}":`)
-  console.log(`  - providers found: ${result.providers.map(p => `${p.provider}(id=${p.id},sim=${p.similarity.toFixed(2)})`).join(', ')}`)
-  console.log(`  - allStreams: ${result.allStreams.length}`)
-  console.log(`  - errors: ${result.errors.map(e => `${e.provider}:${e.step}:${e.message}`).join(' | ')}`)
-  console.log(`  - timing: total=${result.timing.total}ms, per=${JSON.stringify(result.timing.perProvider)}`)
-  for (const s of result.allStreams) {
-    console.log(`    stream: ${s.provider}:${s.server} → ${s.sources.length} sources, first=${s.sources[0]?.url?.substring(0, 80)}`)
+  console.log(`[Catalog] Pipeline "${opts.title}" — ${result.timing.total}ms total`)
+  for (const [provider, ms] of Object.entries(result.timing.perProvider)) {
+    const match = result.providers.find(p => p.provider === provider)
+    const streamCount = result.allStreams.filter(s => s.provider === provider).length
+    console.log(`  [${provider}] ${ms}ms — ${match?.id ? `matched "${match.title}" (sim=${match.similarity.toFixed(2)})` : 'no match'} — ${streamCount} streams`)
+  }
+  if (result.errors.length > 0) {
+    console.log(`  errors: ${result.errors.map(e => `${e.provider}:${e.step}:${e.message}`).join(' | ')}`)
   }
 
   return result.allStreams

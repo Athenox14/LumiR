@@ -3,7 +3,7 @@
  * Usage: npx tsx server/providers/test-debug.ts
  */
 import axios from 'axios'
-import { FrenchStream, EmpireStreaming, MesFilms, FlixHQ, HiMovies, Goku, SFlix } from './movies'
+import { FlixHQ, FrenchStream } from './movies'
 
 const QUERY = 'Zootopia 2'
 const QUERY_FR = 'Zootopie 2'
@@ -67,13 +67,8 @@ async function testProviders() {
   console.log('\n=== PROVIDER TESTS ===\n')
 
   const providers = [
-    { name: 'FrenchStream', instance: new FrenchStream(), query: QUERY_FR },
-    { name: 'EmpireStreaming', instance: new EmpireStreaming(), query: QUERY_FR },
-    { name: 'MesFilms', instance: new MesFilms(), query: QUERY_FR },
     { name: 'FlixHQ', instance: new FlixHQ(), query: QUERY },
-    { name: 'HiMovies', instance: new HiMovies(), query: QUERY },
-    { name: 'Goku', instance: new Goku(), query: QUERY },
-    { name: 'SFlix', instance: new SFlix(), query: QUERY },
+    { name: 'FrenchStream', instance: new FrenchStream(), query: QUERY_FR },
   ]
 
   for (const { name, instance, query } of providers) {

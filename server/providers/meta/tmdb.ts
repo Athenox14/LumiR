@@ -13,7 +13,7 @@ import {
   ProxyConfig,
 } from '../types'
 import { compareTwoStrings } from '../utils'
-import HiMovies from '../movies/himovies'
+import FlixHQ from '../movies/flixhq'
 import { AxiosAdapter } from 'axios'
 
 class TMDB extends MovieParser {
@@ -33,7 +33,7 @@ class TMDB extends MovieParser {
     adapter?: AxiosAdapter
   ) {
     super(proxyConfig, adapter)
-    this.provider = provider || new HiMovies()
+    this.provider = provider || new FlixHQ()
   }
 
   fetchTrending = async (

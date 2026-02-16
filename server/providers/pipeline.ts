@@ -9,7 +9,7 @@ import {
   MoviePipelineResult,
 } from './types'
 import { compareTwoStrings } from './utils'
-import { FrenchStream, EmpireStreaming, MesFilms, HiMovies, FlixHQ, Goku, SFlix } from './movies'
+import { FlixHQ, FrenchStream } from './movies'
 import TMDB from './meta/tmdb'
 import { MovieParser } from './base'
 
@@ -19,15 +19,8 @@ import { MovieParser } from './base'
 
 function createProviders(): { name: string; instance: MovieParser }[] {
   return [
-    // English providers
     { name: 'FlixHQ', instance: new FlixHQ() },
-    { name: 'HiMovies', instance: new HiMovies() },
-    { name: 'Goku', instance: new Goku() },
-    { name: 'SFlix', instance: new SFlix() },
-    // French providers
     { name: 'FrenchStream', instance: new FrenchStream() },
-    { name: 'EmpireStreaming', instance: new EmpireStreaming() },
-    { name: 'MesFilms', instance: new MesFilms() },
   ]
 }
 
