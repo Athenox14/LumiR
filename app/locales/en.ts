@@ -362,6 +362,29 @@ export default {
     saveSettings: 'Save Settings',
     settingsSaved: 'Settings saved successfully!',
     failedToSave: 'Failed to save settings',
+    github: 'GitHub',
+    githubRepo: 'GitHub Repository',
+    githubRepoPlaceholder: 'Athenox14/LumiR',
+    githubRepoDesc: 'The GitHub repository of the project (format: owner/name). Used to check for updates.',
+    githubToken: 'GitHub Token',
+    githubTokenPlaceholder: 'ghp_...',
+    githubTokenDesc: 'GitHub personal access token. Required for private repositories and to download updates.',
+  },
+
+  // Admin update
+  adminUpdate: {
+    title: 'Version & Updates',
+    currentVersion: 'Current version',
+    checkUpdate: 'Check for updates',
+    checkFailed: 'Unable to check for updates. Verify GitHub settings.',
+    newVersionAvailable: 'New version available',
+    publishedAt: 'Published on',
+    installUpdate: 'Install update',
+    confirmUpdate: 'Install this update? The server will restart automatically.',
+    updateSuccess: 'Update installed! Server is restarting...',
+    updateFailed: 'Update failed',
+    upToDate: 'You are up to date!',
+    viewOnGithub: 'View on GitHub →',
   },
 
   // Catalog (online streaming)

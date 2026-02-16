@@ -15,6 +15,8 @@ const appNameInput = ref('')
 const mediaPath = ref('')
 const tmdbApiKey = ref('')
 const groqApiKey = ref('')
+const githubRepo = ref('')
+const githubToken = ref('')
 const autoScanEnabled = ref(false)
 const scanInterval = ref(24)
 
@@ -31,6 +33,8 @@ watch(settings, (data) => {
     mediaPath.value = (data.mediaPath as string) || ''
     tmdbApiKey.value = (data.tmdbApiKey as string) || ''
     groqApiKey.value = (data.groqApiKey as string) || ''
+    githubRepo.value = (data.githubRepo as string) || ''
+    githubToken.value = (data.githubToken as string) || ''
     autoScanEnabled.value = (data.autoScanEnabled as boolean) || false
     scanInterval.value = (data.scanInterval as number) || 24
   }
@@ -47,6 +51,8 @@ async function saveSettings() {
       mediaPath: mediaPath.value,
       tmdbApiKey: tmdbApiKey.value,
       groqApiKey: groqApiKey.value,
+      githubRepo: githubRepo.value || undefined,
+      githubToken: githubToken.value || undefined,
       autoScanEnabled: autoScanEnabled.value,
       scanInterval: scanInterval.value,
     })
@@ -178,6 +184,38 @@ async function saveSettings() {
               <p class="text-xs text-text-muted mt-1">
                 {{ t('adminSettings.groqApiKeyDesc') }}
                 <a href="https://console.groq.com" target="_blank" class="text-primary hover:underline">console.groq.com</a>
+              </p>
+            </template>
+          </UiInput>
+        </div>
+      </div>
+
+      <!-- Third row: GitHub -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.github') }}</h3>
+
+          <UiInput
+            v-model="githubRepo"
+            :label="t('adminSettings.githubRepo')"
+            :placeholder="t('adminSettings.githubRepoPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.githubRepoDesc') }}
+              </p>
+            </template>
+          </UiInput>
+
+          <UiInput
+            v-model="githubToken"
+            type="password"
+            :label="t('adminSettings.githubToken')"
+            :placeholder="t('adminSettings.githubTokenPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.githubTokenDesc') }}
               </p>
             </template>
           </UiInput>

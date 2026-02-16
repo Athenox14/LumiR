@@ -28,8 +28,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Write build info
+        run: |
+          echo "${{ github.sha }}" > BUILD_SHA
+          echo "${{ inputs.version }}" > BUILD_VERSION
+
       - name: Build
         run: npm run build
+
+      - name: Include build info in output
+        run: |
+          cp BUILD_SHA .output/BUILD_SHA
+          cp BUILD_VERSION .output/BUILD_VERSION
 
       - name: Zip build output
         run: |

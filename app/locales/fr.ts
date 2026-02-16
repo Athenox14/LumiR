@@ -362,6 +362,29 @@ export default {
     saveSettings: 'Enregistrer les Paramètres',
     settingsSaved: 'Paramètres enregistrés avec succès !',
     failedToSave: 'Échec de l\'enregistrement des paramètres',
+    github: 'GitHub',
+    githubRepo: 'Dépôt GitHub',
+    githubRepoPlaceholder: 'Athenox14/LumiR',
+    githubRepoDesc: 'Le dépôt GitHub du projet (format: propriétaire/nom). Utilisé pour vérifier les mises à jour.',
+    githubToken: 'Token GitHub',
+    githubTokenPlaceholder: 'ghp_...',
+    githubTokenDesc: 'Token d\'accès personnel GitHub. Nécessaire pour les dépôts privés et pour télécharger les mises à jour.',
+  },
+
+  // Admin update
+  adminUpdate: {
+    title: 'Version & Mises à jour',
+    currentVersion: 'Version actuelle',
+    checkUpdate: 'Vérifier les mises à jour',
+    checkFailed: 'Impossible de vérifier les mises à jour. Vérifiez les paramètres GitHub.',
+    newVersionAvailable: 'Nouvelle version disponible',
+    publishedAt: 'Publiée le',
+    installUpdate: 'Installer la mise à jour',
+    confirmUpdate: 'Installer cette mise à jour ? Le serveur redémarrera automatiquement.',
+    updateSuccess: 'Mise à jour installée ! Le serveur redémarre...',
+    updateFailed: 'Échec de la mise à jour',
+    upToDate: 'Vous êtes à jour !',
+    viewOnGithub: 'Voir sur GitHub →',
   },
 
   // Catalog (online streaming)
