@@ -28,13 +28,17 @@ fail()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 # ============================================
 usage() {
   echo ""
-  echo "Usage: sudo bash install.sh --repo <owner/repo> [--token <github_token>] [--port <port>]"
+  echo "Usage: sudo bash install.sh --repo <owner/repo> [options]"
   echo ""
   echo "Options:"
-  echo "  --repo    GitHub repository (ex: Athenox14/LumiR)  [requis]"
-  echo "  --token   GitHub token (pour les repos privés)      [optionnel]"
-  echo "  --port    Port de l'application (défaut: 3000)      [optionnel]"
-  echo "  --help    Afficher cette aide"
+  echo "  --repo      GitHub repository (ex: Athenox14/LumiR)       [requis]"
+  echo "  --token     GitHub token (pour les repos privés)            [optionnel]"
+  echo "  --port      Port de l'application (défaut: 3000)            [optionnel]"
+  echo "  --smb       Partage SMB (ex: //192.168.1.100/Films)         [optionnel]"
+  echo "  --smb-user  Utilisateur SMB                                 [optionnel]"
+  echo "  --smb-pass  Mot de passe SMB                                [optionnel]"
+  echo "  --smb-mount Point de montage (défaut: /mnt/lumir-media)     [optionnel]"
+  echo "  --help      Afficher cette aide"
   echo ""
   exit 1
 }
@@ -45,14 +49,22 @@ usage() {
 REPO=""
 TOKEN=""
 PORT=3000
+SMB_SHARE=""
+SMB_USER=""
+SMB_PASS=""
+SMB_MOUNT="/mnt/lumir-media"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo)   REPO="$2"; shift 2 ;;
-    --token)  TOKEN="$2"; shift 2 ;;
-    --port)   PORT="$2"; shift 2 ;;
-    --help)   usage ;;
-    *)        fail "Argument inconnu: $1" ;;
+    --repo)      REPO="$2"; shift 2 ;;
+    --token)     TOKEN="$2"; shift 2 ;;
+    --port)      PORT="$2"; shift 2 ;;
+    --smb)       SMB_SHARE="$2"; shift 2 ;;
+    --smb-user)  SMB_USER="$2"; shift 2 ;;
+    --smb-pass)  SMB_PASS="$2"; shift 2 ;;
+    --smb-mount) SMB_MOUNT="$2"; shift 2 ;;
+    --help)      usage ;;
+    *)           fail "Argument inconnu: $1" ;;
   esac
 done
 
@@ -91,6 +103,69 @@ if ! command -v curl &> /dev/null; then
   fail "curl n'est pas installé"
 fi
 ok "curl disponible"
+
+# ============================================
+#  Montage SMB (optionnel)
+# ============================================
+if [ -n "$SMB_SHARE" ]; then
+  log "Configuration du partage SMB..."
+
+  # Installer cifs-utils si nécessaire
+  if ! dpkg -s cifs-utils &> /dev/null; then
+    log "Installation de cifs-utils..."
+    apt-get update -qq && apt-get install -y -qq cifs-utils > /dev/null 2>&1
+    ok "cifs-utils installé"
+  else
+    ok "cifs-utils disponible"
+  fi
+
+  # Créer le point de montage
+  mkdir -p "$SMB_MOUNT"
+
+  # Créer le fichier de credentials (plus sûr que dans fstab)
+  SMB_CRED_FILE="/etc/lumir-smb-credentials"
+  if [ -n "$SMB_USER" ]; then
+    cat > "$SMB_CRED_FILE" <<CREDEOF
+username=$SMB_USER
+password=$SMB_PASS
+CREDEOF
+    chmod 600 "$SMB_CRED_FILE"
+    ok "Fichier de credentials créé ($SMB_CRED_FILE)"
+    MOUNT_OPTS="credentials=$SMB_CRED_FILE,uid=www-data,gid=www-data,iocharset=utf8,_netdev,nofail"
+  else
+    MOUNT_OPTS="guest,uid=www-data,gid=www-data,iocharset=utf8,_netdev,nofail"
+  fi
+
+  # Ajouter à fstab si pas déjà présent
+  FSTAB_ENTRY="$SMB_SHARE  $SMB_MOUNT  cifs  $MOUNT_OPTS  0  0"
+  if ! grep -qF "$SMB_SHARE" /etc/fstab; then
+    echo "" >> /etc/fstab
+    echo "# LumiR - Partage média SMB" >> /etc/fstab
+    echo "$FSTAB_ENTRY" >> /etc/fstab
+    ok "Entrée fstab ajoutée"
+  else
+    warn "Une entrée fstab pour $SMB_SHARE existe déjà, ignorée"
+  fi
+
+  # Monter maintenant
+  if mountpoint -q "$SMB_MOUNT"; then
+    ok "Partage déjà monté sur $SMB_MOUNT"
+  else
+    log "Montage de $SMB_SHARE sur $SMB_MOUNT..."
+    if mount "$SMB_MOUNT"; then
+      ok "Partage SMB monté sur $SMB_MOUNT"
+    else
+      warn "Impossible de monter le partage SMB. Vérifiez les paramètres."
+      warn "Vous pourrez monter manuellement avec: sudo mount $SMB_MOUNT"
+    fi
+  fi
+
+  # Vérifier l'accès
+  if [ -d "$SMB_MOUNT" ] && mountpoint -q "$SMB_MOUNT"; then
+    FILE_COUNT=$(ls -1 "$SMB_MOUNT" 2>/dev/null | wc -l)
+    ok "Partage accessible ($FILE_COUNT éléments trouvés)"
+  fi
+fi
 
 # ============================================
 #  Récupération de la dernière release
@@ -210,10 +285,16 @@ log "Configuration du service systemd..."
 
 NODE_PATH=$(which node)
 
+# Dépendances systemd : ajouter remote-fs si SMB configuré
+AFTER_TARGETS="network.target"
+if [ -n "$SMB_SHARE" ]; then
+  AFTER_TARGETS="network.target remote-fs.target"
+fi
+
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=LumiR Media Server
-After=network.target
+After=$AFTER_TARGETS
 
 [Service]
 Type=simple
@@ -267,6 +348,9 @@ echo -e "  Répertoire:   ${CYAN}$INSTALL_DIR${NC}"
 echo -e "  Port:         ${CYAN}$PORT${NC}"
 echo -e "  Config:       ${CYAN}$ENV_FILE${NC}"
 echo -e "  Service:      ${CYAN}$SERVICE_NAME${NC}"
+if [ -n "$SMB_SHARE" ]; then
+echo -e "  Partage SMB:  ${CYAN}$SMB_SHARE${NC} → ${CYAN}$SMB_MOUNT${NC}"
+fi
 echo ""
 echo -e "  ${YELLOW}Commandes utiles:${NC}"
 echo -e "    Statut:     sudo systemctl status $SERVICE_NAME"
