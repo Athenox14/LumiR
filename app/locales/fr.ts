@@ -498,6 +498,21 @@ export default {
     castRetry: 'Réessayer la connexion',
   },
 
+  // Update popup (global notification)
+  updatePopup: {
+    title: 'Mise à jour disponible',
+    publishedAt: 'Publiée le',
+    install: 'Installer',
+    confirmInstall: 'Confirmer l\'installation ?',
+    installing: 'Installation...',
+    later: 'Plus tard',
+    remind1h: 'Me rappeler dans 1 heure',
+    remind1d: 'Me rappeler demain',
+    remind3d: 'Me rappeler dans 3 jours',
+    remind7d: 'Me rappeler dans 7 jours',
+    dismissVersion: 'Ignorer cette version',
+  },
+
   // Language selector
   language: {
     selectLanguage: 'Langue',

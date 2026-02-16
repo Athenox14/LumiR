@@ -12,6 +12,7 @@ useHead(computed(() => ({
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <UpdateNotification />
   </div>
 </template>
 

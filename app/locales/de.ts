@@ -498,6 +498,21 @@ export default {
     castRetry: 'Verbindung erneut versuchen',
   },
 
+  // Update popup (global notification)
+  updatePopup: {
+    title: 'Update verfügbar',
+    publishedAt: 'Veröffentlicht am',
+    install: 'Installieren',
+    confirmInstall: 'Installation bestätigen?',
+    installing: 'Wird installiert...',
+    later: 'Später',
+    remind1h: 'In 1 Stunde erinnern',
+    remind1d: 'Morgen erinnern',
+    remind3d: 'In 3 Tagen erinnern',
+    remind7d: 'In 7 Tagen erinnern',
+    dismissVersion: 'Diese Version ignorieren',
+  },
+
   // Language selector
   language: {
     selectLanguage: 'Sprache',
