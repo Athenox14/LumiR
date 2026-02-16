@@ -49,7 +49,7 @@ const inputId = `input-${Math.random().toString(36).slice(2, 9)}`
         error ? 'border-red-500 focus:ring-red-500' : 'border-border hover:border-border-secondary',
       ]"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
-    />
+    >
     <p v-if="error" class="text-sm text-red-500">
       {{ error }}
     </p>

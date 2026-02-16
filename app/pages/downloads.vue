@@ -106,7 +106,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
             :src="dl.posterPath || placeholderImage"
             :alt="dl.title"
             class="w-full h-full object-cover"
-          />
+          >
         </div>
 
         <!-- Info -->

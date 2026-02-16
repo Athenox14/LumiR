@@ -1,5 +1,5 @@
 import VideoExtractor from '../base/video-extractor'
-import { IVideo, ISubtitle, Intro } from '../types'
+import type { IVideo, ISubtitle, Intro } from '../types'
 import { USER_AGENT } from '../utils'
 import axios from 'axios'
 

@@ -120,7 +120,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
             :alt="show.title"
             class="w-full h-full object-cover"
             loading="lazy"
-          />
+          >
 
           <!-- Overlay on hover -->
           <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">

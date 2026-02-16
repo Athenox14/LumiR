@@ -857,7 +857,7 @@ function handleMouseMove() {
                 :value="volume"
                 class="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                 @input="setVolume(parseFloat(($event.target as HTMLInputElement).value))"
-              />
+              >
             </div>
 
             <!-- Time -->

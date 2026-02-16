@@ -105,7 +105,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
           :src="info.cover || placeholderBackdrop"
           :alt="info.title"
           class="w-full h-[60vh] object-cover"
-        />
+        >
 
         <div class="absolute bottom-0 left-0 right-0 z-20 p-6 md:p-12">
           <div class="max-w-4xl">
@@ -243,7 +243,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   :alt="rec.title"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
-                />
+                >
               </div>
               <p class="mt-2 text-sm text-text-primary truncate group-hover:text-primary transition-colors">{{ rec.title }}</p>
             </NuxtLink>

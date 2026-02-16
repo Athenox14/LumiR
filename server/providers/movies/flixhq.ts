@@ -1,14 +1,15 @@
 import { load } from 'cheerio'
 
 import MovieParser from '../base/movie-parser'
-import {
-  TvType,
+import type {
   IMovieInfo,
   IEpisodeServer,
-  StreamingServers,
   ISource,
   IMovieResult,
-  ISearch,
+  ISearch} from '../types';
+import {
+  TvType,
+  StreamingServers
 } from '../types'
 import { MixDrop, VidCloud } from '../extractors'
 

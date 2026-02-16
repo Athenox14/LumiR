@@ -1,5 +1,5 @@
 import VideoExtractor from '../base/video-extractor'
-import { IVideo } from '../types'
+import type { IVideo } from '../types'
 import { safeUnpack } from '../utils'
 
 class MixDrop extends VideoExtractor {

@@ -5,10 +5,10 @@ export const safeUnpack = (packedSource: string): string => {
 
     if (!match) throw new Error('Invalid Packer format or unable to parse safely.')
 
-    let [_, p, aStr, cStr, kStr] = match
+    const [_, p, aStr, cStr, kStr] = match
     const a = parseInt(aStr)
     const c = parseInt(cStr)
-    let k = kStr.split('|')
+    const k = kStr.split('|')
 
     const base62 = (n: number): string => {
       const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'

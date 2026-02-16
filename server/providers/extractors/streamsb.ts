@@ -1,5 +1,5 @@
 import VideoExtractor from '../base/video-extractor'
-import { IVideo } from '../types'
+import type { IVideo } from '../types'
 import { USER_AGENT } from '../utils'
 
 class StreamSB extends VideoExtractor {

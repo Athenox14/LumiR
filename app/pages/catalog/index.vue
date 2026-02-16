@@ -145,7 +145,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
           type="text"
           :placeholder="t('catalog.searchPlaceholder')"
           class="w-full pl-10 pr-4 py-3 bg-surface border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-        />
+        >
       </div>
     </div>
 
@@ -215,7 +215,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
             :alt="item.title"
             class="w-full h-full object-cover"
             loading="lazy"
-          />
+          >
           <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             <div class="absolute bottom-0 left-0 right-0 p-4">
               <div class="flex justify-center mb-3">

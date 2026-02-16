@@ -50,7 +50,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
 const placeholderEpisode = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180"%3E%3Crect fill="%231a1a1a" width="320" height="180"/%3E%3C/svg%3E'
 
 function getWatchUrl(ep: any): string {
-  let url = `/catalog/watch/${tmdbId.value}?type=tv&title=${encodeURIComponent(info.value?.title || '')}&episodeId=${encodeURIComponent(ep.id)}&season=${ep.season}&episode=${ep.episode}`
+  const url = `/catalog/watch/${tmdbId.value}?type=tv&title=${encodeURIComponent(info.value?.title || '')}&episodeId=${encodeURIComponent(ep.id)}&season=${ep.season}&episode=${ep.episode}`
   return url
 }
 
@@ -126,7 +126,7 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
           :src="info.cover || placeholderBackdrop"
           :alt="info.title"
           class="w-full h-[50vh] object-cover"
-        />
+        >
 
         <div class="absolute bottom-0 left-0 right-0 z-20 p-6 md:p-12">
           <div class="max-w-4xl">
@@ -228,7 +228,7 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
                   :alt="rec.title"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
-                />
+                >
               </div>
               <p class="mt-2 text-sm text-text-primary truncate group-hover:text-primary transition-colors">{{ rec.title }}</p>
             </NuxtLink>
@@ -257,7 +257,7 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
                     :alt="ep.title"
                     class="w-full h-full object-cover"
                     loading="lazy"
-                  />
+                  >
                   <!-- Play overlay -->
                   <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                     <div class="w-10 h-10 rounded-full bg-primary flex items-center justify-center">

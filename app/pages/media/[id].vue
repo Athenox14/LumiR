@@ -287,7 +287,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
           :src="media.backdropPath || placeholderBackdrop"
           :alt="media.title"
           class="w-full h-[60vh] object-cover"
-        />
+        >
 
         <!-- Rating ratio macaron (bottom right) -->
         <div
@@ -437,7 +437,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   :alt="actor.name"
                   class="w-full h-full object-cover"
                   loading="lazy"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <svg class="w-10 h-10 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -525,7 +525,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   :alt="item.title"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <svg class="w-10 h-10 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
@@ -557,7 +557,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   :alt="rec.title"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   loading="lazy"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <svg class="w-10 h-10 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
@@ -605,7 +605,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                     type="text"
                     class="w-full px-4 py-2.5 bg-background border border-white/10 rounded-xl text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
                     :placeholder="t('media.filePathPlaceholder')"
-                  />
+                  >
                   <div class="flex items-center gap-3 mt-3">
                     <button
                       type="button"
@@ -656,7 +656,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                     class="w-full pl-10 pr-4 py-2.5 bg-background border border-white/10 rounded-xl text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     :placeholder="t('media.tmdbSearchPlaceholder')"
                     @input="searchTmdbDebounced"
-                  />
+                  >
                 </div>
 
                 <!-- Loading -->
@@ -681,7 +681,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                         :src="result.image"
                         :alt="result.title"
                         class="w-full h-full object-cover"
-                      />
+                      >
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="text-sm font-medium text-text-primary truncate">{{ result.title }}</p>

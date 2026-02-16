@@ -1,5 +1,5 @@
 import BaseParser from './base-parser'
-import { TvType, ISource, IEpisodeServer, IMovieInfo, IAnimeInfo } from '../types'
+import type { TvType, ISource, IEpisodeServer, IMovieInfo, IAnimeInfo } from '../types'
 
 abstract class MovieParser extends BaseParser {
   abstract supportedTypes: Set<TvType>

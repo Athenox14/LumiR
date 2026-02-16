@@ -1,4 +1,4 @@
-import { IVideo, ISource } from '../types'
+import type { IVideo, ISource } from '../types'
 import Proxy from './proxy'
 
 abstract class VideoExtractor extends Proxy {

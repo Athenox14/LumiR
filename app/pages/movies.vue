@@ -169,7 +169,7 @@ function canScrollRight(idx: number) {
                   :alt="item.title"
                   class="w-full h-full object-cover"
                   loading="lazy"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center bg-surface-secondary">
                   <span class="text-text-muted text-xs">{{ t('common.noPoster') }}</span>
                 </div>

@@ -211,7 +211,7 @@ function toggleCollapse() {
             :src="user.favoriteActorImage"
             :alt="user.displayName"
             class="w-full h-full object-cover"
-          />
+          >
           <span v-else class="text-sm font-medium text-primary">
             {{ user?.displayName?.charAt(0).toUpperCase() || 'U' }}
           </span>

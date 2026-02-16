@@ -1,17 +1,18 @@
-import {
-  TvType,
+import type {
   IMovieResult,
   IMovieInfo,
   IEpisodeServer,
   StreamingServers,
   StreamingSource,
   ProviderMatch,
-  MoviePipelineResult,
+  MoviePipelineResult} from './types';
+import {
+  TvType
 } from './types'
 import { compareTwoStrings } from './utils'
 import { FlixHQ, FrenchStream } from './movies'
 import TMDB from './meta/tmdb'
-import { MovieParser } from './base'
+import type { MovieParser } from './base'
 
 // ============================================================
 //  Providers disponibles

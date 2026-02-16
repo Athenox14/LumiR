@@ -2,14 +2,15 @@ import axios from 'axios'
 import { load } from 'cheerio'
 
 import MovieParser from '../base/movie-parser'
-import {
-  TvType,
+import type {
   IMovieInfo,
   IEpisodeServer,
   StreamingServers,
   ISource,
   IMovieResult,
-  ISearch,
+  ISearch} from '../types';
+import {
+  TvType,
   IMovieEpisode,
 } from '../types'
 import { MixDrop, Voe, StreamSB, Uqload } from '../extractors'

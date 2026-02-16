@@ -161,7 +161,7 @@ async function handleSubmit() {
                   :src="selectedActor.image"
                   :alt="selectedActor.name"
                   class="w-full h-full object-cover"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <span class="text-2xl font-bold text-primary">
                     {{ user?.displayName?.charAt(0).toUpperCase() || 'U' }}
@@ -187,7 +187,7 @@ async function handleSubmit() {
                 type="text"
                 :placeholder="t('profile.searchActor')"
                 class="w-full px-4 py-2.5 rounded-lg bg-surface-secondary border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-              />
+              >
               <div
                 v-if="actorResults.length > 0"
                 class="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-xl shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto"
@@ -205,7 +205,7 @@ async function handleSubmit() {
                       :src="actor.profilePath"
                       :alt="actor.name"
                       class="w-full h-full object-cover"
-                    />
+                    >
                   </div>
                   <div class="min-w-0 flex-1">
                     <p class="text-sm font-medium text-text-primary">{{ actor.name }}</p>

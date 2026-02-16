@@ -1,5 +1,5 @@
 import VideoExtractor from '../base/video-extractor'
-import { IVideo } from '../types'
+import type { IVideo } from '../types'
 import { safeUnpack } from '../utils'
 
 class Kwik extends VideoExtractor {

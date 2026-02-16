@@ -1,5 +1,5 @@
 import VideoExtractor from '../base/video-extractor'
-import { IVideo, ISubtitle } from '../types'
+import type { IVideo, ISubtitle } from '../types'
 
 class StreamWish extends VideoExtractor {
   protected override serverName = 'streamwish'

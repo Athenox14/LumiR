@@ -1,13 +1,12 @@
 import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema'
-import { join } from 'path'
-
-const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'pipouflix.db')
+import { join, dirname  } from 'path'
 
 // Ensure data directory exists
 import { mkdirSync } from 'fs'
-import { dirname } from 'path'
+
+const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'pipouflix.db')
 try {
   mkdirSync(dirname(dbPath), { recursive: true })
 } catch (e) {

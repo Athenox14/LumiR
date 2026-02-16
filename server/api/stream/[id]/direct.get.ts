@@ -1,8 +1,7 @@
 import { db } from '../../../db'
 import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
-import { createReadStream, statSync } from 'fs'
-import { promises as fs } from 'fs'
+import { createReadStream, statSync, promises as fs  } from 'fs'
 import { extname } from 'path'
 
 // Formats natively supported by browsers (can be served directly with Range)

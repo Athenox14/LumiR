@@ -123,7 +123,7 @@ onMounted(() => {
             :placeholder="t('search.placeholder')"
             class="w-full pl-10 pr-4 py-2 rounded-lg bg-surface border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
             @focus="searchQuery.trim() && searchResults.length > 0 && (showSearchResults = true)"
-          />
+          >
         </div>
       </form>
 
@@ -160,7 +160,7 @@ onMounted(() => {
                   :src="item.posterPath"
                   :alt="item.title"
                   class="w-full h-full object-cover"
-                />
+                >
               </div>
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium text-text-primary truncate">{{ item.title }}</p>
@@ -311,7 +311,7 @@ onMounted(() => {
               :src="user.favoriteActorImage"
               :alt="user.displayName"
               class="w-full h-full object-cover"
-            />
+            >
             <span v-else class="text-sm font-medium text-primary">
               {{ user?.displayName?.charAt(0).toUpperCase() || 'U' }}
             </span>

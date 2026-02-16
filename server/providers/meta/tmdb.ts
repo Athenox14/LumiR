@@ -1,20 +1,21 @@
 import { MovieParser } from '../base'
-import {
+import type {
   ISearch,
   IAnimeInfo,
   IAnimeResult,
   ISource,
   IEpisodeServer,
-  TvType,
   IMovieResult,
   IMovieInfo,
   IMovieEpisode,
   IPeopleResult,
-  ProxyConfig,
+  ProxyConfig} from '../types';
+import {
+  TvType
 } from '../types'
 import { compareTwoStrings } from '../utils'
 import FlixHQ from '../movies/flixhq'
-import { AxiosAdapter } from 'axios'
+import type { AxiosAdapter } from 'axios'
 
 class TMDB extends MovieParser {
   override readonly name = 'TMDB'

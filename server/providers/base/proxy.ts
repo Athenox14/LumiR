@@ -1,5 +1,6 @@
-import axios, { AxiosAdapter, AxiosInstance } from 'axios'
-import { ProxyConfig } from '../types'
+import type { AxiosAdapter, AxiosInstance } from 'axios';
+import axios from 'axios'
+import type { ProxyConfig } from '../types'
 
 export class Proxy {
   protected client: AxiosInstance
