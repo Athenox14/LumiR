@@ -29,8 +29,9 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const audioTrack = query.audioTrack ? parseInt(query.audioTrack as string, 10) : undefined
+  const subtitleTrack = query.subtitleTrack ? parseInt(query.subtitleTrack as string, 10) : undefined
 
-  const session = await getOrCreateSession(id, mediaItem.filePath, audioTrack)
+  const session = await getOrCreateSession(id, mediaItem.filePath, audioTrack, subtitleTrack)
   if (!session) {
     throw createError({
       statusCode: 500,

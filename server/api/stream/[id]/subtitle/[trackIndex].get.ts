@@ -1,14 +1,15 @@
 import { db } from '../../../../db'
 import { media, subtitleTracks } from '../../../../db/schema'
 import { eq, and } from 'drizzle-orm'
+import { existsSync, mkdirSync } from 'fs'
 import { promises as fs } from 'fs'
-import { extractSubtitleContent, TEXT_SUBTITLE_CODECS } from '../../../../utils/ffmpeg'
+import { join } from 'path'
+import { extractAllSubtitles, convertFileToVtt, getSubtitleExtension, TEXT_SUBTITLE_CODECS } from '../../../../utils/ffmpeg'
 
-// In-memory cache for on-demand extractions (fallback for entries without pre-extracted content)
-const subtitleCache = new Map<string, string>()
+// Lock map: keyed by mediaId (not trackIndex) since batch extracts ALL tracks at once
+const extractionLocks = new Map<string, Promise<void>>()
 
-// Extraction lock: prevents concurrent ffmpeg processes for the same track
-const extractionLocks = new Map<string, Promise<string>>()
+const SUBTITLE_CACHE_DIR = join(process.cwd(), 'data', 'subtitles')
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -23,105 +24,98 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid track index' })
   }
 
-  // Look up the subtitle track in DB
+  // 1. Look up the requested track to get its codec
   const [trackInfo] = await db
-    .select({
-      codec: subtitleTracks.codec,
-      content: subtitleTracks.content,
-    })
+    .select({ codec: subtitleTracks.codec })
     .from(subtitleTracks)
     .where(and(eq(subtitleTracks.mediaId, id), eq(subtitleTracks.trackIndex, trackIndex)))
     .limit(1)
 
-  // Check codec is text-based
-  if (trackInfo?.codec && !TEXT_SUBTITLE_CODECS.has(trackInfo.codec)) {
+  if (!trackInfo) {
+    throw createError({ statusCode: 404, message: 'Subtitle track not found' })
+  }
+
+  const codec = trackInfo.codec || 'unknown'
+  if (!TEXT_SUBTITLE_CODECS.has(codec)) {
     throw createError({
       statusCode: 422,
-      message: `Subtitle codec "${trackInfo.codec}" is not text-based and cannot be converted to WebVTT`,
+      message: `Subtitle codec "${codec}" is not text-based and cannot be converted to WebVTT`,
     })
   }
 
-  // Fast path: serve pre-extracted content from DB (populated during library scan)
-  if (trackInfo?.content) {
-    console.log(`[Subtitle] Serving pre-extracted content for track ${trackIndex} (${trackInfo.content.length} bytes)`)
-    setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
-    setHeader(event, 'Cache-Control', 'public, max-age=86400')
-    return trackInfo.content
-  }
+  const ext = getSubtitleExtension(codec)
+  const cacheDir = join(SUBTITLE_CACHE_DIR, id)
+  const cachedFile = join(cacheDir, `${trackIndex}.${ext}`)
 
-  // Fallback: on-demand extraction (for entries added before pre-extraction was implemented)
-  const cacheKey = `${id}:${trackIndex}`
+  // 2. Check disk cache — if file exists, serve it immediately
+  if (!existsSync(cachedFile)) {
+    // 3. Batch extract ALL subtitle tracks for this media (Jellyfin-style)
+    // Acquire lock on mediaId — concurrent requests for any track of same media wait on same promise
+    if (!extractionLocks.has(id)) {
+      const extractionPromise = (async () => {
+        const [mediaItem] = await db
+          .select({ filePath: media.filePath })
+          .from(media)
+          .where(eq(media.id, id))
+          .limit(1)
 
-  if (subtitleCache.has(cacheKey)) {
-    setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
-    setHeader(event, 'Cache-Control', 'public, max-age=86400')
-    return subtitleCache.get(cacheKey)
-  }
+        if (!mediaItem) throw new Error('Media not found')
 
-  // Wait for in-progress extraction if any
-  if (extractionLocks.has(cacheKey)) {
-    console.log(`[Subtitle] Waiting for in-progress extraction: ${cacheKey}`)
+        try {
+          await fs.access(mediaItem.filePath)
+        } catch {
+          throw new Error('Media file not found on disk')
+        }
+
+        // Get ALL subtitle tracks for this media
+        const allTracks = await db
+          .select({ trackIndex: subtitleTracks.trackIndex, codec: subtitleTracks.codec })
+          .from(subtitleTracks)
+          .where(eq(subtitleTracks.mediaId, id))
+
+        const textTracks = allTracks.filter(t => t.codec && TEXT_SUBTITLE_CODECS.has(t.codec))
+        if (textTracks.length === 0) return
+
+        mkdirSync(cacheDir, { recursive: true })
+
+        console.log(`[Subtitle] Batch extracting ${textTracks.length} tracks for media ${id}`)
+
+        // Single ffmpeg call extracts all tracks at once
+        await extractAllSubtitles(
+          mediaItem.filePath,
+          textTracks.map(t => ({ index: t.trackIndex, codecName: t.codec! })),
+          cacheDir,
+        )
+      })()
+
+      extractionLocks.set(id, extractionPromise)
+      extractionPromise.finally(() => extractionLocks.delete(id))
+    }
+
+    // Wait for extraction to complete
     try {
-      const result = await extractionLocks.get(cacheKey)!
-      setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
-      setHeader(event, 'Cache-Control', 'public, max-age=86400')
-      return result
+      await extractionLocks.get(id)
     } catch (err: any) {
       throw createError({ statusCode: 500, message: `Subtitle extraction failed: ${err.message}` })
     }
   }
 
-  const [mediaItem] = await db
-    .select()
-    .from(media)
-    .where(eq(media.id, id))
-    .limit(1)
-
-  if (!mediaItem) {
-    throw createError({ statusCode: 404, message: 'Media not found' })
+  // 4. Read cached file and convert to VTT
+  if (!existsSync(cachedFile)) {
+    throw createError({
+      statusCode: 500,
+      message: `Subtitle track ${trackIndex} could not be extracted (codec: ${codec})`,
+    })
   }
 
   try {
-    await fs.access(mediaItem.filePath)
-  } catch {
-    throw createError({ statusCode: 404, message: 'Media file not found' })
-  }
+    const vttContent = await convertFileToVtt(cachedFile, codec)
 
-  const codec = trackInfo?.codec || 'unknown'
-  console.log(`[Subtitle] On-demand extraction for track ${trackIndex} (codec: ${codec}) — consider re-scanning to pre-extract`)
-
-  // Use shared extraction function (same as scan-time extraction)
-  const extractionPromise = extractSubtitleContent(mediaItem.filePath, trackIndex, codec)
-    .then(content => content || 'WEBVTT\n\n')
-
-  extractionLocks.set(cacheKey, extractionPromise)
-
-  let vttContent: string
-  try {
-    vttContent = await extractionPromise
+    setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'public, max-age=86400')
+    return vttContent
   } catch (err: any) {
-    extractionLocks.delete(cacheKey)
-    console.error(`[Subtitle] Extraction failed:`, err.message)
-    throw createError({ statusCode: 500, message: `Subtitle extraction failed: ${err.message}` })
+    console.error(`[Subtitle] VTT conversion failed for track ${trackIndex}:`, err.message)
+    throw createError({ statusCode: 500, message: `VTT conversion failed: ${err.message}` })
   }
-
-  extractionLocks.delete(cacheKey)
-
-  console.log(`[Subtitle] Extracted ${vttContent.length} bytes for track ${trackIndex}`)
-  subtitleCache.set(cacheKey, vttContent)
-
-  // Also store in DB for future requests
-  try {
-    await db.update(subtitleTracks)
-      .set({ content: vttContent })
-      .where(and(eq(subtitleTracks.mediaId, id), eq(subtitleTracks.trackIndex, trackIndex)))
-  } catch {
-    // Non-critical, just log
-    console.warn(`[Subtitle] Failed to cache content in DB for track ${trackIndex}`)
-  }
-
-  setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
-  setHeader(event, 'Cache-Control', 'public, max-age=86400')
-
-  return vttContent
 })

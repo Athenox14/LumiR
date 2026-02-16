@@ -29,9 +29,10 @@ export default defineEventHandler(async (event) => {
 
   const query = getQuery(event)
   const audioTrack = query.audioTrack ? parseInt(query.audioTrack as string, 10) : undefined
+  const subtitleTrack = query.subtitleTrack ? parseInt(query.subtitleTrack as string, 10) : undefined
 
   // Create the transcode session (probes file for duration/codecs)
-  const session = await getOrCreateSession(id, mediaItem.filePath, audioTrack)
+  const session = await getOrCreateSession(id, mediaItem.filePath, audioTrack, subtitleTrack)
   if (!session) {
     throw createError({
       statusCode: 500,
@@ -39,11 +40,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  console.log(`[HLS] Master playlist requested for ${id}${audioTrack !== undefined ? ` (audioTrack=${audioTrack})` : ''}`)
+  console.log(`[HLS] Master playlist requested for ${id}${audioTrack !== undefined ? ` (audioTrack=${audioTrack})` : ''}${subtitleTrack !== undefined ? ` (subtitleTrack=${subtitleTrack})` : ''}`)
 
-  // Propagate audioTrack to the playlist URL so HLS.js passes it through
-  const playlistUrl = audioTrack !== undefined
-    ? `/api/stream/${id}/playlist.m3u8?audioTrack=${audioTrack}`
+  // Propagate audioTrack/subtitleTrack to the playlist URL so HLS.js passes it through
+  const params = new URLSearchParams()
+  if (audioTrack !== undefined) params.set('audioTrack', audioTrack.toString())
+  if (subtitleTrack !== undefined) params.set('subtitleTrack', subtitleTrack.toString())
+  const qs = params.toString()
+  const playlistUrl = qs
+    ? `/api/stream/${id}/playlist.m3u8?${qs}`
     : `/api/stream/${id}/playlist.m3u8`
 
   // Master playlist with a single variant pointing to the media playlist

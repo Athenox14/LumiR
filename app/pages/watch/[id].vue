@@ -33,14 +33,18 @@ const streamUrl = computed(() => {
   if (selectedAudioTrack.value !== undefined && url.includes('.m3u8')) {
     url += (url.includes('?') ? '&' : '?') + `audioTrack=${selectedAudioTrack.value}`
   }
+  // Append subtitleTrack param for burn-in subtitles (bitmap codecs rendered into video by ffmpeg)
+  if (selectedBurnInSubtitle.value !== undefined && url.includes('.m3u8')) {
+    url += (url.includes('?') ? '&' : '?') + `subtitleTrack=${selectedBurnInSubtitle.value}`
+  }
   return url
 })
 
 // Text-based subtitle codecs that ffmpeg can convert to WebVTT
-// Bitmap codecs (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle) CANNOT be converted
+// Bitmap codecs (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle) require burn-in
 const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text', 'srt'])
 
-// Transform DB subtitle tracks into URLs for the VideoPlayer (skip bitmap subtitles)
+// Transform DB subtitle tracks into URLs for the VideoPlayer (text subtitles only)
 const subtitleUrls = computed(() => {
   if (!media.value?.subtitleTracks?.length) return []
   return media.value.subtitleTracks
@@ -51,6 +55,22 @@ const subtitleUrls = computed(() => {
       label: track.title || track.language || `Track ${track.trackIndex}`,
     }))
 })
+
+// Bitmap subtitles that require burn-in (rendered into the video by ffmpeg)
+const burnInSubtitles = computed(() => {
+  if (!media.value?.subtitleTracks?.length) return []
+  return media.value.subtitleTracks
+    .filter(track => track.codec && !TEXT_SUBTITLE_CODECS.has(track.codec))
+    .map(track => ({
+      trackIndex: track.trackIndex,
+      lang: track.language || 'und',
+      label: track.title || track.language || `Track ${track.trackIndex}`,
+      codec: track.codec,
+    }))
+})
+
+// Currently selected burn-in subtitle track index (absolute ffprobe index)
+const selectedBurnInSubtitle = ref<number | undefined>(undefined)
 
 const backUrl = computed(() => {
   if (!media.value) return '/'
@@ -85,6 +105,10 @@ async function handleProgress(position: number, duration: number) {
 
 function handleAudioTrackChange(trackIndex: number) {
   selectedAudioTrack.value = trackIndex
+}
+
+function handleBurnInSubtitleChange(trackIndex: number | undefined) {
+  selectedBurnInSubtitle.value = trackIndex
 }
 
 async function handleEnded() {
@@ -130,11 +154,14 @@ async function handleEnded() {
       :audio-tracks="media.audioTracks"
       :subtitle-tracks="media.subtitleTracks"
       :subtitles="subtitleUrls"
+      :burn-in-subtitles="burnInSubtitles"
+      :active-burn-in-subtitle="selectedBurnInSubtitle"
       :known-duration="streamInfo?.duration || (media.runtime ? media.runtime * 60 : 0)"
       autoplay
       @progress="handleProgress"
       @ended="handleEnded"
       @change-audio-track="handleAudioTrackChange"
+      @change-burn-in-subtitle="handleBurnInSubtitleChange"
     />
   </div>
 </template>

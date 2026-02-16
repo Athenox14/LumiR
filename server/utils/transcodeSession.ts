@@ -31,6 +31,7 @@ export interface TranscodeSession {
   error: string | null
   codecArgs: string[]
   audioTrackIndex: number | undefined // absolute stream index from ffprobe
+  subtitleTrackIndex: number | undefined // absolute stream index for burn-in (bitmap subs only)
   lastRequestedSegment: number // highest segment requested by the player (for buffer limiting)
 }
 
@@ -86,13 +87,14 @@ function destroySession(sessionId: string) {
   console.log(`[HLS] Session destroyed: ${sessionId}`)
 }
 
-function buildCodecArgs(videoCodec: string, audioCodec: string): string[] {
+function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: boolean): string[] {
   const videoOk = BROWSER_VIDEO_CODECS.has(videoCodec.toLowerCase())
   const audioOk = MPEGTS_SAFE_AUDIO_CODECS.has(audioCodec.toLowerCase())
 
   const args: string[] = []
 
-  if (videoOk) {
+  // Burn-in subtitles FORCE video transcoding (can't overlay on -c:v copy)
+  if (videoOk && !burnInSubtitle) {
     // Copy video but add bitstream filter for MPEGTS compatibility
     args.push('-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb')
   } else {
@@ -153,9 +155,25 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProce
     // the VOD playlist position (e.g. seg 1496 has PTS ~2992s, not 0)
     '-copyts',
     '-avoid_negative_ts', 'disabled',
-    // Select first video stream and the chosen audio track
-    '-map', '0:v:0',
-    '-map', session.audioTrackIndex !== undefined ? `0:${session.audioTrackIndex}` : '0:a:0?',
+  )
+
+  // Burn-in subtitle: overlay bitmap subtitle onto video using filter_complex
+  if (session.subtitleTrackIndex !== undefined) {
+    // filter_complex overlays the subtitle stream onto video, outputs as [vout]
+    args.push(
+      '-filter_complex', `[0:v:0][0:${session.subtitleTrackIndex}]overlay[vout]`,
+      '-map', '[vout]',
+      '-map', session.audioTrackIndex !== undefined ? `0:${session.audioTrackIndex}` : '0:a:0?',
+    )
+  } else {
+    // No burn-in: select first video stream and the chosen audio track
+    args.push(
+      '-map', '0:v:0',
+      '-map', session.audioTrackIndex !== undefined ? `0:${session.audioTrackIndex}` : '0:a:0?',
+    )
+  }
+
+  args.push(
     ...session.codecArgs,
     // Small muxing delay to help A/V sync (0 was too aggressive, caused desync)
     '-muxdelay', '0.1',
@@ -247,12 +265,14 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProce
   return proc
 }
 
-export async function getOrCreateSession(mediaId: string, filePath: string, audioTrackIndex?: number): Promise<TranscodeSession | null> {
-  // Reuse existing session for same media (but recreate if audio track changed)
+export async function getOrCreateSession(mediaId: string, filePath: string, audioTrackIndex?: number, subtitleTrackIndex?: number): Promise<TranscodeSession | null> {
+  // Reuse existing session for same media (but recreate if audio/subtitle track changed)
   if (sessions.has(mediaId)) {
     const session = sessions.get(mediaId)!
-    if (audioTrackIndex !== undefined && session.audioTrackIndex !== audioTrackIndex) {
-      console.log(`[HLS] Audio track changed from ${session.audioTrackIndex} to ${audioTrackIndex}, recreating session`)
+    const audioChanged = audioTrackIndex !== undefined && session.audioTrackIndex !== audioTrackIndex
+    const subtitleChanged = session.subtitleTrackIndex !== subtitleTrackIndex
+    if (audioChanged || subtitleChanged) {
+      console.log(`[HLS] Track changed (audio: ${session.audioTrackIndex}→${audioTrackIndex}, subtitle: ${session.subtitleTrackIndex}→${subtitleTrackIndex}), recreating session`)
       destroySession(mediaId)
     } else {
       session.lastAccess = Date.now()
@@ -283,7 +303,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     }
   }
 
-  const codecArgs = buildCodecArgs(videoCodec, audioCodec)
+  const codecArgs = buildCodecArgs(videoCodec, audioCodec, subtitleTrackIndex !== undefined)
 
   const totalSegments = Math.ceil(duration / SEGMENT_DURATION)
 
@@ -305,6 +325,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     error: null,
     codecArgs,
     audioTrackIndex,
+    subtitleTrackIndex,
     lastRequestedSegment: 0,
   }
 
@@ -317,7 +338,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
   // ffmpeg is started lazily on first segment request (waitForSegment)
   // This avoids starting from segment 0 when the player needs segment 748 (resume position)
 
-  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec} → ${codecArgs.join(' ')}`)
+  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec}${subtitleTrackIndex !== undefined ? `, burn-in sub: ${subtitleTrackIndex}` : ''} → ${codecArgs.join(' ')}`)
 
   return session
 }
@@ -467,6 +488,13 @@ export function preheatSession(session: TranscodeSession, fromSegment: number): 
   // will stop ffmpeg after BUFFER_AHEAD_SEGMENTS (2 min) ahead of this position
   session.lastRequestedSegment = fromSegment
   startFfmpeg(session, fromSegment)
+}
+
+/** Get an existing session without creating or recreating (no track comparison). */
+export function getSessionIfExists(mediaId: string): TranscodeSession | null {
+  const session = sessions.get(mediaId)
+  if (session) session.lastAccess = Date.now()
+  return session || null
 }
 
 export function destroyMediaSession(mediaId: string) {

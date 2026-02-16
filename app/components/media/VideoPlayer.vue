@@ -26,6 +26,13 @@ interface Props {
     lang: string
     label?: string
   }>
+  burnInSubtitles?: Array<{
+    trackIndex: number
+    lang: string
+    label: string
+    codec?: string | null
+  }>
+  activeBurnInSubtitle?: number
   autoplay?: boolean
   knownDuration?: number
 }
@@ -41,6 +48,7 @@ const emit = defineEmits<{
   ended: []
   error: []
   changeAudioTrack: [trackIndex: number]
+  changeBurnInSubtitle: [trackIndex: number | undefined]
 }>()
 
 const trpc = useTrpc()
@@ -372,8 +380,16 @@ function handleKeydown(e: KeyboardEvent) {
       break
     case 'c':
       e.preventDefault()
-      if (props.subtitles?.length || props.subtitleTracks?.length) {
-        setSubtitle(activeSubtitleIndex.value >= 0 ? -1 : 0)
+      if (props.subtitles?.length || props.burnInSubtitles?.length) {
+        // Toggle: if any subtitle is active, turn off; otherwise activate first available
+        if (activeSubtitleIndex.value >= 0 || props.activeBurnInSubtitle !== undefined) {
+          setSubtitle(-1)
+          setBurnInSubtitle(undefined)
+        } else if (props.subtitles?.length) {
+          setSubtitle(0)
+        } else if (props.burnInSubtitles?.length) {
+          setBurnInSubtitle(props.burnInSubtitles[0].trackIndex)
+        }
       }
       break
     case 'a':
@@ -529,6 +545,15 @@ async function setSubtitle(index: number) {
     activeTextTrack = null
   }
   subtitleLoading.value = false
+}
+
+function setBurnInSubtitle(trackIndex: number | undefined) {
+  showSubtitleMenu.value = false
+  // Disable any active text subtitle when switching to burn-in
+  if (trackIndex !== undefined && activeSubtitleIndex.value >= 0) {
+    setSubtitle(-1)
+  }
+  emit('changeBurnInSubtitle', trackIndex)
 }
 
 function setAudioTrack(index: number) {
@@ -849,12 +874,12 @@ function handleMouseMove() {
                 </button>
               </div>
             </div>
-            <!-- Subtitles -->
-            <div v-if="subtitles?.length" class="relative">
+            <!-- Subtitles (unified menu: text + burn-in) -->
+            <div v-if="subtitles?.length || burnInSubtitles?.length" class="relative">
               <button
                 type="button"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                :class="activeSubtitleIndex >= 0 ? 'text-primary' : 'text-white'"
+                :class="activeSubtitleIndex >= 0 || activeBurnInSubtitle !== undefined ? 'text-primary' : 'text-white'"
                 @click.stop="showSubtitleMenu = !showSubtitleMenu; showAudioMenu = false; showQualityMenu = false"
               >
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -863,29 +888,48 @@ function handleMouseMove() {
               </button>
               <div
                 v-if="showSubtitleMenu"
-                class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-1 min-w-[180px] max-h-60 overflow-y-auto z-50"
+                class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-1 min-w-[200px] max-h-60 overflow-y-auto z-50"
                 @click.stop
               >
+                <!-- Off -->
                 <button
                   type="button"
                   class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors"
-                  :class="activeSubtitleIndex === -1 ? 'text-primary font-medium' : 'text-white'"
-                  @click="setSubtitle(-1)"
+                  :class="activeSubtitleIndex === -1 && activeBurnInSubtitle === undefined ? 'text-primary font-medium' : 'text-white'"
+                  @click="setSubtitle(-1); setBurnInSubtitle(undefined)"
                 >
                   Off
                 </button>
-                <button
-                  v-for="(sub, i) in subtitles"
-                  :key="i"
-                  type="button"
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
-                  :class="activeSubtitleIndex === i ? 'text-primary font-medium' : 'text-white'"
-                  :disabled="subtitleLoading"
-                  @click="setSubtitle(i)"
-                >
-                  <span v-if="subtitleLoading && activeSubtitleIndex === i" class="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                  {{ sub.label || sub.lang }}
-                </button>
+                <!-- Text subtitles (VTT) -->
+                <template v-if="subtitles?.length">
+                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">Texte</p>
+                  <button
+                    v-for="(sub, i) in subtitles"
+                    :key="`text-${i}`"
+                    type="button"
+                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors flex items-center gap-2"
+                    :class="activeSubtitleIndex === i ? 'text-primary font-medium' : 'text-white'"
+                    :disabled="subtitleLoading"
+                    @click="setBurnInSubtitle(undefined); setSubtitle(i)"
+                  >
+                    <span v-if="subtitleLoading && activeSubtitleIndex === i" class="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                    {{ sub.label || sub.lang }}
+                  </button>
+                </template>
+                <!-- Burn-in subtitles (bitmap, rendered into video) -->
+                <template v-if="burnInSubtitles?.length">
+                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">Burn-in (image)</p>
+                  <button
+                    v-for="bi in burnInSubtitles"
+                    :key="`burn-${bi.trackIndex}`"
+                    type="button"
+                    class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors"
+                    :class="activeBurnInSubtitle === bi.trackIndex ? 'text-primary font-medium' : 'text-white'"
+                    @click="setBurnInSubtitle(bi.trackIndex)"
+                  >
+                    {{ bi.label }}
+                  </button>
+                </template>
               </div>
             </div>
             <!-- Fullscreen -->

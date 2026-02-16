@@ -6,6 +6,8 @@ import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings } from 
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
+import { promises as fs } from 'fs'
+import { join } from 'path'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
 
 export const mediaRouter = router({
@@ -497,6 +499,11 @@ export const mediaRouter = router({
     .input(z.string())
     .mutation(async ({ input }) => {
       await db.delete(media).where(eq(media.id, input))
+
+      // Clean up subtitle cache directory
+      const cacheDir = join(process.cwd(), 'data', 'subtitles', input)
+      await fs.rm(cacheDir, { recursive: true, force: true }).catch(() => {})
+
       return { success: true }
     }),
 
