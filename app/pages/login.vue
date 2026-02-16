@@ -56,8 +56,8 @@ async function handleSubmit() {
       <UiInput
         v-model="identifier"
         type="text"
-        :label="t('auth.emailOrUsername')"
-        :placeholder="t('auth.emailOrUsernamePlaceholder')"
+        :label="t('auth.emailOrDisplayName')"
+        :placeholder="t('auth.emailOrDisplayNamePlaceholder')"
         required
       />
 

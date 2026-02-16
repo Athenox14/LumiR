@@ -4,7 +4,6 @@ import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
 export const users = sqliteTable('users', {
   id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
-  username: text('username').unique(),
   passwordHash: text('password_hash').notNull(),
   displayName: text('display_name').notNull(),
   role: text('role', { enum: ['super_admin', 'admin', 'user'] }).notNull().default('user'),

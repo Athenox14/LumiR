@@ -217,8 +217,6 @@ export function initializeDatabase() {
     'ALTER TABLE users ADD COLUMN show_liked_films INTEGER DEFAULT 0',
     // Pre-extracted subtitle content
     'ALTER TABLE subtitle_tracks ADD COLUMN content TEXT',
-    // Username for login
-    'ALTER TABLE users ADD COLUMN username TEXT UNIQUE',
   ]
   for (const migration of migrations) {
     try { sqlite.exec(migration) } catch { /* column already exists */ }

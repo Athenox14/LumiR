@@ -9,7 +9,6 @@ const trpc = useTrpc()
 
 // Form state
 const displayName = ref(user.value?.displayName || '')
-const username = ref('')
 const bio = ref('')
 const isProfilePublic = ref(false)
 const showWatchedFilms = ref(false)
@@ -41,7 +40,6 @@ async function loadProfile() {
   try {
     const data = await trpc.users.getPublicProfile.query({ userId: user.value.id })
     displayName.value = data.displayName
-    username.value = (data as any).username || ''
     bio.value = data.bio || ''
     isProfilePublic.value = data.isProfilePublic || false
     showWatchedFilms.value = data.showWatchedFilms || false
@@ -116,7 +114,6 @@ async function handleSubmit() {
   try {
     await updateProfile({
       displayName: displayName.value !== user.value?.displayName ? displayName.value : undefined,
-      username: username.value || null,
       currentPassword: newPassword.value ? currentPassword.value : undefined,
       newPassword: newPassword.value || undefined,
       bio: bio.value,
@@ -232,12 +229,6 @@ async function handleSubmit() {
               v-model="displayName"
               :label="t('auth.displayName')"
               required
-            />
-
-            <UiInput
-              v-model="username"
-              :label="t('auth.username')"
-              :placeholder="t('auth.usernamePlaceholder')"
             />
 
             <div>
