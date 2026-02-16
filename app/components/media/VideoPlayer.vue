@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import Hls from 'hls.js'
 
+const { t } = useI18n()
+
 interface Props {
   src: string
   fallbackSrc?: string
@@ -74,6 +76,11 @@ const hlsQualityLevels = ref<Array<{id: number, height: number, label: string}>>
 const activeQualityLevel = ref(-1)
 const showQualityMenu = ref(false)
 const subtitleLoading = ref(false)
+const castAvailable = ref(false)
+const isCasting = ref(false)
+const castSupported = ref(false)
+const showCastMenu = ref(false)
+const castDeviceName = ref('')
 
 // Subtitle system — fetches the full track once, adds cues via TextTrack API
 let activeTextTrack: TextTrack | null = null
@@ -95,6 +102,84 @@ let hls: Hls | null = null
 let hideControlsTimeout: NodeJS.Timeout | null = null
 let usedFallback = false
 let progressSaveInterval: NodeJS.Timeout | null = null
+
+// Cast: setup detection for Chromecast (Remote Playback API) and AirPlay (WebKit)
+function setupCastDetection(video: HTMLVideoElement) {
+  // Chrome / Chromium — Remote Playback API
+  if ('remote' in video) {
+    castSupported.value = true
+    const remote = (video as any).remote
+    remote.watchAvailability((available: boolean) => {
+      castAvailable.value = available
+    }).catch(() => {
+      // watchAvailability not supported — we can still try prompt()
+    })
+    remote.addEventListener('connecting', () => {
+      isCasting.value = true
+      castDeviceName.value = ''
+    })
+    remote.addEventListener('connect', () => {
+      isCasting.value = true
+    })
+    remote.addEventListener('disconnect', () => {
+      isCasting.value = false
+      castDeviceName.value = ''
+    })
+  }
+
+  // Safari — WebKit AirPlay
+  if ('webkitShowPlaybackTargetPicker' in video) {
+    castSupported.value = true
+    video.addEventListener('webkitplaybacktargetavailabilitychanged', ((e: any) => {
+      castAvailable.value = e.availability === 'available'
+    }) as EventListener)
+    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', (() => {
+      isCasting.value = !!(video as any).webkitCurrentPlaybackTargetIsWireless
+    }) as EventListener)
+  }
+}
+
+async function startCast() {
+  const video = videoRef.value
+  if (!video) return
+
+  showCastMenu.value = false
+
+  // Chrome — Remote Playback API
+  if ('remote' in video) {
+    try {
+      await (video as any).remote.prompt()
+    } catch (e: any) {
+      if (e?.name !== 'NotAllowedError') {
+        console.log('[Cast] Remote playback prompt failed:', e)
+      }
+    }
+    return
+  }
+
+  // Safari — AirPlay
+  if ('webkitShowPlaybackTargetPicker' in video) {
+    (video as any).webkitShowPlaybackTargetPicker()
+  }
+}
+
+function stopCast() {
+  const video = videoRef.value
+  if (!video) return
+
+  showCastMenu.value = false
+
+  // Remote Playback API — prompt again toggles off
+  if ('remote' in video) {
+    (video as any).remote.prompt().catch(() => {})
+    return
+  }
+
+  // AirPlay — show picker again to disconnect
+  if ('webkitShowPlaybackTargetPicker' in video) {
+    (video as any).webkitShowPlaybackTargetPicker()
+  }
+}
 
 onMounted(() => {
   if (!videoRef.value) return
@@ -326,6 +411,9 @@ onMounted(() => {
 
   // Keyboard controls
   document.addEventListener('keydown', handleKeydown)
+
+  // Cast detection (Chromecast / AirPlay)
+  setupCastDetection(video)
 
   // Subtitles are loaded lazily when the user selects one (avoids I/O contention at startup)
 })
@@ -629,6 +717,7 @@ function handleMouseMove() {
       class="w-full h-full"
       :poster="poster"
       playsinline
+      x-webkit-airplay="allow"
       @click="togglePlay"
       @dblclick="toggleFullscreen"
     />
@@ -783,7 +872,7 @@ function handleMouseMove() {
               <button
                 type="button"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
-                @click.stop="showAudioMenu = !showAudioMenu; showSubtitleMenu = false; showQualityMenu = false"
+                @click.stop="showAudioMenu = !showAudioMenu; showSubtitleMenu = false; showQualityMenu = false; showCastMenu = false"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
@@ -794,7 +883,7 @@ function handleMouseMove() {
                 class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-1 min-w-[180px] max-h-60 overflow-y-auto z-50"
                 @click.stop
               >
-                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">Audio</p>
+                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">{{ t('player.audio') }}</p>
                 <button
                   v-for="track in hlsAudioTracks"
                   :key="track.id"
@@ -812,7 +901,7 @@ function handleMouseMove() {
               <button
                 type="button"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
-                @click.stop="showAudioMenu = !showAudioMenu; showSubtitleMenu = false; showQualityMenu = false"
+                @click.stop="showAudioMenu = !showAudioMenu; showSubtitleMenu = false; showQualityMenu = false; showCastMenu = false"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
@@ -823,7 +912,7 @@ function handleMouseMove() {
                 class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-1 min-w-[180px] max-h-60 overflow-y-auto z-50"
                 @click.stop
               >
-                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">Audio</p>
+                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">{{ t('player.audio') }}</p>
                 <button
                   v-for="track in audioTracks"
                   :key="track.id"
@@ -841,7 +930,7 @@ function handleMouseMove() {
               <button
                 type="button"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors text-white"
-                @click.stop="showQualityMenu = !showQualityMenu; showAudioMenu = false; showSubtitleMenu = false"
+                @click.stop="showQualityMenu = !showQualityMenu; showAudioMenu = false; showSubtitleMenu = false; showCastMenu = false"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -853,14 +942,14 @@ function handleMouseMove() {
                 class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-1 min-w-[140px] max-h-60 overflow-y-auto z-50"
                 @click.stop
               >
-                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">Quality</p>
+                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">{{ t('player.quality') }}</p>
                 <button
                   type="button"
                   class="w-full text-left px-3 py-1.5 text-sm hover:bg-white/10 transition-colors"
                   :class="activeQualityLevel === -1 ? 'text-primary font-medium' : 'text-white'"
                   @click="setQualityLevel(-1)"
                 >
-                  Auto
+                  {{ t('player.auto') }}
                 </button>
                 <button
                   v-for="level in hlsQualityLevels"
@@ -880,7 +969,7 @@ function handleMouseMove() {
                 type="button"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors"
                 :class="activeSubtitleIndex >= 0 || activeBurnInSubtitle !== undefined ? 'text-primary' : 'text-white'"
-                @click.stop="showSubtitleMenu = !showSubtitleMenu; showAudioMenu = false; showQualityMenu = false"
+                @click.stop="showSubtitleMenu = !showSubtitleMenu; showAudioMenu = false; showQualityMenu = false; showCastMenu = false"
               >
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V6h16v12zM6 10h2v2H6v-2zm0 4h8v2H6v-2zm10 0h2v2h-2v-2zm-6-4h8v2h-8v-2z" />
@@ -898,11 +987,11 @@ function handleMouseMove() {
                   :class="activeSubtitleIndex === -1 && activeBurnInSubtitle === undefined ? 'text-primary font-medium' : 'text-white'"
                   @click="setSubtitle(-1); setBurnInSubtitle(undefined)"
                 >
-                  Off
+                  {{ t('player.subtitlesOff') }}
                 </button>
                 <!-- Text subtitles (VTT) -->
                 <template v-if="subtitles?.length">
-                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">Texte</p>
+                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">{{ t('player.textSubtitles') }}</p>
                   <button
                     v-for="(sub, i) in subtitles"
                     :key="`text-${i}`"
@@ -918,7 +1007,7 @@ function handleMouseMove() {
                 </template>
                 <!-- Burn-in subtitles (bitmap, rendered into video) -->
                 <template v-if="burnInSubtitles?.length">
-                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">Burn-in (image)</p>
+                  <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide mt-1">{{ t('player.burnInSubtitles') }}</p>
                   <button
                     v-for="bi in burnInSubtitles"
                     :key="`burn-${bi.trackIndex}`"
@@ -929,6 +1018,80 @@ function handleMouseMove() {
                   >
                     {{ bi.label }}
                   </button>
+                </template>
+              </div>
+            </div>
+            <!-- Cast (Chromecast / AirPlay) -->
+            <div class="relative">
+              <button
+                type="button"
+                class="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                :class="isCasting ? 'text-primary' : 'text-white'"
+                @click.stop="showCastMenu = !showCastMenu; showAudioMenu = false; showQualityMenu = false; showSubtitleMenu = false"
+              >
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                </svg>
+              </button>
+              <div
+                v-if="showCastMenu"
+                class="absolute bottom-full right-0 mb-2 bg-black/90 backdrop-blur rounded-lg border border-white/10 py-2 min-w-[220px] z-50"
+                @click.stop
+              >
+                <p class="px-3 py-1 text-xs text-white/40 uppercase tracking-wide">{{ t('player.cast') }}</p>
+
+                <!-- Connected state -->
+                <template v-if="isCasting">
+                  <div class="px-3 py-2 flex items-center gap-2">
+                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                    <span class="text-sm text-green-400">{{ castDeviceName || t('player.castConnected') }}</span>
+                  </div>
+                  <button
+                    type="button"
+                    class="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-white/10 transition-colors"
+                    @click="stopCast"
+                  >
+                    {{ t('player.castDisconnect') }}
+                  </button>
+                </template>
+
+                <!-- Device available -->
+                <template v-else-if="castAvailable">
+                  <button
+                    type="button"
+                    class="w-full text-left px-3 py-1.5 text-sm text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+                    @click="startCast"
+                  >
+                    <svg class="w-4 h-4 text-primary flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
+                    </svg>
+                    {{ t('player.castDeviceAvailable') }}
+                  </button>
+                </template>
+
+                <!-- No device / not supported -->
+                <template v-else>
+                  <div class="px-3 py-2">
+                    <p v-if="!castSupported" class="text-sm text-text-muted">
+                      {{ t('player.castUnsupportedBrowser') }}
+                    </p>
+                    <template v-else>
+                      <div class="flex items-center gap-2 mb-2">
+                        <div class="w-2 h-2 rounded-full bg-white/30 flex-shrink-0" />
+                        <span class="text-sm text-text-muted">{{ t('player.castNoDevice') }}</span>
+                      </div>
+                      <p class="text-xs text-white/40 leading-relaxed">
+                        {{ t('player.castNoDeviceHint') }}
+                      </p>
+                      <button
+                        type="button"
+                        class="mt-2 w-full text-left px-2 py-1.5 text-xs text-primary hover:bg-white/10 rounded transition-colors"
+                        @click="startCast"
+                      >
+                        {{ t('player.castRetry') }}
+                      </button>
+                    </template>
+                  </div>
                 </template>
               </div>
             </div>

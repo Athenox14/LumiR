@@ -446,6 +446,24 @@ export default {
     series: 'Series',
   },
 
+  // Video player
+  player: {
+    audio: 'Audio',
+    quality: 'Quality',
+    auto: 'Auto',
+    subtitlesOff: 'Off',
+    textSubtitles: 'Text',
+    burnInSubtitles: 'Burn-in (image)',
+    cast: 'Cast',
+    castConnected: 'Connected',
+    castDisconnect: 'Disconnect',
+    castDeviceAvailable: 'Device available — Connect',
+    castUnsupportedBrowser: 'Unsupported browser. Use Chrome or Safari.',
+    castNoDevice: 'No device detected',
+    castNoDeviceHint: 'Make sure a Chromecast or Apple TV is turned on and connected to the same Wi-Fi network.',
+    castRetry: 'Retry connection',
+  },
+
   // Language selector
   language: {
     selectLanguage: 'Language',
