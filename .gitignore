@@ -21,6 +21,9 @@ logs
 .claude
 
 # Data
+data/*.db
+data/*.db-wal
+data/*.db-shm
 data/images/
 
 # Local env files
