@@ -3,6 +3,7 @@ import { media } from '../../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
 import {
+  getSessionIfExists,
   getOrCreateSession,
   waitForSegment,
   readSegment,
@@ -41,7 +42,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Media file not found' })
   }
 
-  const session = await getOrCreateSession(id, mediaItem.filePath)
+  // Use existing session first (avoids track comparison that would destroy a burn-in session)
+  // Only fall back to getOrCreateSession if no session exists (e.g., server restart)
+  const session = getSessionIfExists(id) || await getOrCreateSession(id, mediaItem.filePath)
   if (!session) {
     throw createError({ statusCode: 500, message: 'Failed to create transcode session.' })
   }

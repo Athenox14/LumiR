@@ -1,5 +1,6 @@
 import { execSync, execFile, spawn } from 'child_process'
 import { existsSync } from 'fs'
+import { promises as fsPromises } from 'fs'
 import { dirname, join } from 'path'
 
 /**
@@ -246,59 +247,127 @@ function srtToVtt(srt: string): string {
 }
 
 /**
- * Extract a single subtitle track content as WebVTT.
- * Uses -c:s copy for subrip (fast demux), -f webvtt for other codecs.
- * Returns null on failure.
+ * Get the file extension for a subtitle codec when extracting to disk.
  */
-export async function extractSubtitleContent(
+export function getSubtitleExtension(codec: string): string {
+  if (SRT_COPY_CODECS.has(codec)) return 'srt'
+  if (codec === 'webvtt') return 'vtt'
+  if (codec === 'ass' || codec === 'ssa') return 'ass'
+  // mov_text and others: ffmpeg transcodes to SRT
+  return 'srt'
+}
+
+/**
+ * Batch-extract ALL text subtitle tracks from a media file in a single ffmpeg call.
+ * Writes one file per track to outputDir: {streamIndex}.{ext}
+ * Resolves even on partial failure (some tracks may fail, others succeed).
+ */
+export async function extractAllSubtitles(
   filePath: string,
-  trackIndex: number,
-  codec: string,
-): Promise<string | null> {
+  subtitleStreams: Array<{ index: number; codecName: string }>,
+  outputDir: string,
+): Promise<void> {
   const ffmpegPath = await findFfmpeg()
-  if (!ffmpegPath) return null
+  if (!ffmpegPath) throw new Error('ffmpeg not found')
+  if (subtitleStreams.length === 0) return
 
-  const useCopyMode = SRT_COPY_CODECS.has(codec)
-  const args: string[] = ['-v', 'error', '-i', filePath, '-map', `0:${trackIndex}`]
+  const args: string[] = ['-v', 'error', '-copyts', '-i', filePath]
 
-  if (useCopyMode) {
-    args.push('-c:s', 'copy', '-f', 'srt', 'pipe:1')
-  } else {
-    args.push('-f', 'webvtt', 'pipe:1')
+  for (const stream of subtitleStreams) {
+    const ext = getSubtitleExtension(stream.codecName)
+    const outputPath = join(outputDir, `${stream.index}.${ext}`)
+
+    args.push('-map', `0:${stream.index}`, '-an', '-vn')
+
+    if (SRT_COPY_CODECS.has(stream.codecName)) {
+      args.push('-c:s', 'copy', '-f', 'srt')
+    } else if (stream.codecName === 'webvtt') {
+      args.push('-c:s', 'copy', '-f', 'webvtt')
+    } else if (stream.codecName === 'ass' || stream.codecName === 'ssa') {
+      args.push('-c:s', 'copy')
+    } else {
+      // mov_text, microdvd, etc. — transcode to SRT
+      args.push('-c:s', 'srt', '-f', 'srt')
+    }
+
+    args.push(outputPath)
   }
 
+  console.log(`[FFmpeg] Batch extracting ${subtitleStreams.length} subtitle tracks from ${filePath}`)
+
   return new Promise((resolve) => {
-    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
 
-    let output = ''
     let stderr = ''
-
-    proc.stdout.on('data', (chunk: Buffer) => {
-      output += chunk.toString('utf-8')
-    })
-    proc.stderr.on('data', (chunk: Buffer) => {
+    proc.stderr?.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf-8')
     })
 
     proc.on('close', (code) => {
-      if (code !== 0 && code !== 1) {
-        console.error(`[FFmpeg] Subtitle extraction failed (track ${trackIndex}):`, stderr.slice(-300))
-        resolve(null)
-        return
-      }
-      if (useCopyMode) {
-        resolve(output.trim() ? srtToVtt(output) : null)
+      if (code !== 0 && code !== null) {
+        console.warn(`[FFmpeg] Batch subtitle extraction exited with code ${code} (partial success possible):`, stderr.slice(-300))
       } else {
-        resolve(output.trim() || null)
+        console.log(`[FFmpeg] Batch subtitle extraction completed successfully`)
       }
+      resolve()
     })
 
-    proc.on('error', () => resolve(null))
+    proc.on('error', (err) => {
+      console.error(`[FFmpeg] Batch subtitle extraction error:`, err.message)
+      resolve() // Partial success is OK
+    })
 
-    // 5 minute timeout for scan-time extraction (background, not blocking user)
+    // 5 minute timeout
+    setTimeout(() => {
+      if (!proc.killed) {
+        proc.kill('SIGTERM')
+        console.warn(`[FFmpeg] Batch subtitle extraction timed out after 5 minutes`)
+      }
+      resolve()
+    }, 300000)
+  })
+}
+
+/**
+ * Read a cached subtitle file from disk and convert to WebVTT string.
+ */
+export async function convertFileToVtt(filePath: string, codec: string): Promise<string> {
+  const content = await fsPromises.readFile(filePath, 'utf-8')
+
+  if (codec === 'webvtt') return content
+  if (SRT_COPY_CODECS.has(codec) || codec === 'mov_text') return srtToVtt(content)
+  if (codec === 'ass' || codec === 'ssa') return await convertAssToVtt(filePath)
+
+  // Default: try SRT→VTT conversion
+  return srtToVtt(content)
+}
+
+/**
+ * Convert an ASS/SSA file to WebVTT via ffmpeg (loses styling but keeps timing + text).
+ */
+async function convertAssToVtt(assFilePath: string): Promise<string> {
+  const ffmpegPath = await findFfmpeg()
+  if (!ffmpegPath) throw new Error('ffmpeg not found')
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, [
+      '-v', 'error', '-i', assFilePath, '-f', 'webvtt', 'pipe:1',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+
+    let output = ''
+    let stderr = ''
+    proc.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf-8') })
+    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf-8') })
+
+    proc.on('close', (code) => {
+      if (output.trim()) resolve(output)
+      else reject(new Error(`ASS→VTT conversion failed (code ${code}): ${stderr.slice(-200)}`))
+    })
+    proc.on('error', reject)
+
     setTimeout(() => {
       if (!proc.killed) proc.kill('SIGTERM')
-      resolve(null)
-    }, 300000)
+      reject(new Error('ASS→VTT conversion timed out'))
+    }, 30000)
   })
 }
