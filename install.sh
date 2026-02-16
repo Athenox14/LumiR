@@ -282,13 +282,20 @@ ok "Extraction terminée"
 # Créer le fichier .env s'il n'existe pas
 if [ ! -f "$ENV_FILE" ]; then
   log "Création du fichier .env..."
+  # Générer des secrets aléatoires
+  SESSION_SECRET=$(openssl rand -hex 32)
+  JWT_SECRET_VAL=$(openssl rand -hex 32)
   cat > "$ENV_FILE" <<ENVEOF
 PORT=$PORT
 NODE_ENV=production
 HOST=0.0.0.0
 NUXT_HOST=0.0.0.0
+NUXT_SESSION_PASSWORD=$SESSION_SECRET
+JWT_SECRET=$JWT_SECRET_VAL
+DATABASE_PATH=./data/mediavault.db
 ENVEOF
-  ok "Fichier .env créé ($ENV_FILE)"
+  chmod 600 "$ENV_FILE"
+  ok "Fichier .env créé avec secrets générés ($ENV_FILE)"
 else
   ok "Fichier .env existant conservé"
 fi
