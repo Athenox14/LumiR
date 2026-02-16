@@ -72,7 +72,7 @@ export default {
 
   // Setup page
   setup: {
-    welcomeTitle: 'Bienvenue sur PipouFlix',
+    welcomeTitle: 'Bienvenue sur {appName}',
     setupAdminAccount: 'Configurons votre compte administrateur',
     yourName: 'Votre nom',
     adminPlaceholder: 'Admin',
@@ -84,7 +84,7 @@ export default {
 
   // Auth layout
   authLayout: {
-    appName: 'PipouFlix',
+    appName: 'LumiR',
     tagline: 'Votre bibliothèque multimédia personnelle',
     footerText: 'Solution de streaming multimédia auto-hébergée',
   },
@@ -235,7 +235,7 @@ export default {
   // Admin dashboard
   admin: {
     title: 'Tableau de Bord Admin',
-    subtitle: 'Gérez votre instance PipouFlix',
+    subtitle: 'Gérez votre instance {appName}',
     totalMedia: 'Contenus Total',
     totalMovies: 'Films',
     totalTvShows: 'Séries',
@@ -355,6 +355,10 @@ export default {
     groqApiKey: 'Clé API Groq',
     groqApiKeyPlaceholder: 'gsk_...',
     groqApiKeyDesc: "Clé API Groq utilisée en dernier recours pour identifier les films dont le nom de fichier est ambigu. Obtenez une clé sur console.groq.com",
+    appName: 'Nom de la plateforme',
+    appNameLabel: 'Nom affiché',
+    appNamePlaceholder: 'LumiR',
+    appNameDesc: 'Le nom affiché dans la barre latérale, la page de connexion et le titre du navigateur.',
     saveSettings: 'Enregistrer les Paramètres',
     settingsSaved: 'Paramètres enregistrés avec succès !',
     failedToSave: 'Échec de l\'enregistrement des paramètres',

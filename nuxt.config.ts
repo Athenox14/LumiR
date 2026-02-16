@@ -23,7 +23,7 @@ export default defineNuxtConfig({
     },
     // Public (exposed to client)
     public: {
-      appName: 'PipouFlix'
+      appName: 'LumiR'
     }
   },
 
@@ -34,7 +34,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'PipouFlix',
+      title: 'LumiR',
       meta: [
         { name: 'description', content: 'Self-hosted media library' },
         { name: 'theme-color', content: '#0a0a0a' }
