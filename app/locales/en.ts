@@ -503,5 +503,6 @@ export default {
     selectLanguage: 'Language',
     french: 'French',
     english: 'English',
+    german: 'German',
   },
 }

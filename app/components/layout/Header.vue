@@ -61,7 +61,7 @@ function goToMedia(item: any) {
   navigateTo(`/media/${item.id}`)
 }
 
-function selectLocale(code: 'fr' | 'en') {
+function selectLocale(code: 'fr' | 'en' | 'de') {
   setLocale(code)
   showLangMenu.value = false
 }
@@ -212,6 +212,12 @@ onMounted(() => {
             <rect width="213.3" x="213.3" fill="#fff" height="480" />
             <rect width="213.3" x="426.7" fill="#ce1126" height="480" />
           </svg>
+          <!-- German flag -->
+          <svg v-else-if="locale === 'de'" class="w-5 h-3.5 rounded-sm overflow-hidden" viewBox="0 0 640 480">
+            <rect width="640" fill="#000" height="160" />
+            <rect width="640" y="160" fill="#D00" height="160" />
+            <rect width="640" y="320" fill="#FFCE00" height="160" />
+          </svg>
           <!-- UK flag -->
           <svg v-else class="w-5 h-3.5 rounded-sm overflow-hidden" viewBox="0 0 640 480">
             <path fill="#012169" d="M0 0h640v480H0z" />
@@ -286,6 +292,29 @@ onMounted(() => {
               <span class="flex-1">{{ t('language.english') }}</span>
               <svg
                 v-if="locale === 'en'"
+                class="w-4 h-4 text-primary flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+            </button>
+            <!-- Deutsch -->
+            <button
+              type="button"
+              class="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left"
+              :class="locale === 'de' ? 'text-primary bg-primary/5' : 'text-text-secondary hover:text-text-primary hover:bg-surface-secondary'"
+              @click="selectLocale('de')"
+            >
+              <svg class="w-5 h-3.5 rounded-sm flex-shrink-0" viewBox="0 0 640 480">
+                <rect width="640" fill="#000" height="160" />
+                <rect width="640" y="160" fill="#D00" height="160" />
+                <rect width="640" y="320" fill="#FFCE00" height="160" />
+              </svg>
+              <span class="flex-1">{{ t('language.german') }}</span>
+              <svg
+                v-if="locale === 'de'"
                 class="w-4 h-4 text-primary flex-shrink-0"
                 fill="none"
                 stroke="currentColor"
