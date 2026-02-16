@@ -93,47 +93,6 @@ export const mediaRatings = sqliteTable('media_ratings', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
-// Media Groups & Collections
-export const mediaGroups = sqliteTable('media_groups', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description'),
-  coverPath: text('cover_path'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-})
-
-export const mediaGroupItems = sqliteTable('media_group_items', {
-  id: text('id').primaryKey(),
-  groupId: text('group_id').notNull().references(() => mediaGroups.id, { onDelete: 'cascade' }),
-  mediaId: text('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
-  sortOrder: integer('sort_order').default(0),
-})
-
-// User Groups
-export const userGroups = sqliteTable('user_groups', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-})
-
-export const userGroupMembers = sqliteTable('user_group_members', {
-  id: text('id').primaryKey(),
-  userGroupId: text('user_group_id').notNull().references(() => userGroups.id, { onDelete: 'cascade' }),
-  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-})
-
-// Permissions
-export const permissions = sqliteTable('permissions', {
-  id: text('id').primaryKey(),
-  targetType: text('target_type', { enum: ['media', 'mediaGroup'] }).notNull(),
-  targetId: text('target_id').notNull(),
-  granteeType: text('grantee_type', { enum: ['user', 'userGroup'] }).notNull(),
-  granteeId: text('grantee_id').notNull(),
-  accessLevel: text('access_level', { enum: ['view', 'download'] }).notNull().default('view'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
-})
-
 // Settings
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
@@ -198,9 +157,6 @@ export type NewMedia = typeof media.$inferInsert
 export type AudioTrack = typeof audioTracks.$inferSelect
 export type SubtitleTrack = typeof subtitleTracks.$inferSelect
 export type WatchProgress = typeof watchProgress.$inferSelect
-export type MediaGroup = typeof mediaGroups.$inferSelect
-export type UserGroup = typeof userGroups.$inferSelect
-export type Permission = typeof permissions.$inferSelect
 export type Setting = typeof settings.$inferSelect
 export type MediaRating = typeof mediaRatings.$inferSelect
 export type NewMediaRating = typeof mediaRatings.$inferInsert

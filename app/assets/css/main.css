@@ -56,35 +56,6 @@ body {
   }
 }
 
-/* Video.js custom theme */
-.video-js {
-  @apply w-full h-full;
-}
-
-.video-js .vjs-big-play-button {
-  @apply bg-primary/90 border-none rounded-full w-20 h-20;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-.video-js .vjs-big-play-button:hover {
-  @apply bg-primary;
-}
-
-.video-js .vjs-control-bar {
-  @apply bg-gradient-to-t from-black/90 to-transparent h-16;
-}
-
-.video-js .vjs-play-progress,
-.video-js .vjs-volume-level {
-  @apply bg-primary;
-}
-
-.video-js .vjs-slider {
-  @apply bg-white/20;
-}
-
 /* Loading skeleton */
 .skeleton {
   @apply bg-surface-secondary animate-pulse rounded;

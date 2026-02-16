@@ -95,44 +95,6 @@ export function initializeDatabase() {
       updated_at INTEGER NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS media_groups (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      cover_path TEXT,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS media_group_items (
-      id TEXT PRIMARY KEY,
-      group_id TEXT NOT NULL REFERENCES media_groups(id) ON DELETE CASCADE,
-      media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
-      sort_order INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS user_groups (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS user_group_members (
-      id TEXT PRIMARY KEY,
-      user_group_id TEXT NOT NULL REFERENCES user_groups(id) ON DELETE CASCADE,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS permissions (
-      id TEXT PRIMARY KEY,
-      target_type TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      grantee_type TEXT NOT NULL,
-      grantee_id TEXT NOT NULL,
-      access_level TEXT NOT NULL DEFAULT 'view',
-      created_at INTEGER NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT,

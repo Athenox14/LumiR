@@ -33,12 +33,6 @@ export interface Trailer {
   thumbnailHash?: string | null
 }
 
-export interface FuzzyDate {
-  year?: number
-  month?: number
-  day?: number
-}
-
 export enum MediaFormat {
   TV = 'TV',
   TV_SHORT = 'TV_SHORT',
