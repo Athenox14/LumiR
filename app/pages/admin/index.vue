@@ -5,6 +5,7 @@ definePageMeta({
 
 const trpc = useTrpc()
 const { t } = useI18n()
+const { appName } = useAppName()
 
 // Fetch stats
 const { data: stats } = useAsyncData('admin-stats', () => trpc.media.stats.query())
@@ -84,7 +85,7 @@ const adminSections = computed(() => [
 <template>
   <div class="p-6">
     <h1 class="text-2xl font-bold text-text-primary mb-2">{{ t('admin.title') }}</h1>
-    <p class="text-text-secondary mb-8">{{ t('admin.subtitle') }}</p>
+    <p class="text-text-secondary mb-8">{{ t('admin.subtitle', { appName: appName }) }}</p>
 
     <!-- Stats -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

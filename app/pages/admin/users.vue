@@ -138,7 +138,7 @@ function formatDate(date: Date | null | undefined): string {
 </script>
 
 <template>
-  <div class="p-6 max-w-4xl">
+  <div class="p-6 max-w-4xl mx-auto">
     <div class="flex items-center gap-4 mb-6">
       <NuxtLink to="/admin" class="text-text-muted hover:text-text-primary transition-colors">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

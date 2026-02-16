@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { t } = useI18n()
+const { appName } = useAppName()
 </script>
 
 <template>
@@ -12,7 +13,7 @@ const { t } = useI18n()
             <path d="M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v12h16V6H4zm7 2l5 4-5 4V8z" />
           </svg>
         </div>
-        <h1 class="text-2xl font-bold text-text-primary">PipouFlix</h1>
+        <h1 class="text-2xl font-bold text-text-primary">{{ appName }}</h1>
         <p class="text-text-secondary mt-1">{{ t('authLayout.tagline') }}</p>
       </div>
 

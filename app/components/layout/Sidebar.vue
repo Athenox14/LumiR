@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { user, isAdmin, logout } = useAuth()
 const { t } = useI18n()
+const { appName } = useAppName()
 const route = useRoute()
 
 const collapsed = useState('sidebar-collapsed', () => false)
@@ -57,7 +58,7 @@ function toggleCollapse() {
           v-if="!collapsed"
           class="text-xl font-bold text-text-primary"
         >
-          PipouFlix
+          {{ appName }}
         </span>
       </NuxtLink>
     </div>

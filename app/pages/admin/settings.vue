@@ -11,6 +11,7 @@ const success = ref(false)
 const error = ref('')
 
 // Form data
+const appNameInput = ref('')
 const mediaPath = ref('')
 const tmdbApiKey = ref('')
 const groqApiKey = ref('')
@@ -26,6 +27,7 @@ const { data: settings, pending } = useAsyncData('settings', async () => {
 // Initialize form when settings load
 watch(settings, (data) => {
   if (data) {
+    appNameInput.value = (data.appName as string) || ''
     mediaPath.value = (data.mediaPath as string) || ''
     tmdbApiKey.value = (data.tmdbApiKey as string) || ''
     groqApiKey.value = (data.groqApiKey as string) || ''
@@ -41,6 +43,7 @@ async function saveSettings() {
 
   try {
     await trpc.settings.setMany.mutate({
+      appName: appNameInput.value || undefined,
       mediaPath: mediaPath.value,
       tmdbApiKey: tmdbApiKey.value,
       groqApiKey: groqApiKey.value,
@@ -60,7 +63,7 @@ async function saveSettings() {
 </script>
 
 <template>
-  <div class="p-6 max-w-2xl">
+  <div class="p-6">
     <div class="flex items-center gap-4 mb-6">
       <NuxtLink to="/admin" class="text-text-muted hover:text-text-primary transition-colors">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -78,92 +81,115 @@ async function saveSettings() {
     </div>
 
     <!-- Settings form -->
-    <form v-else class="space-y-6" @submit.prevent="saveSettings">
-      <!-- Media Library -->
-      <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-        <h3 class="font-semibold text-text-primary">{{ t('adminSettings.mediaLibrary') }}</h3>
+    <form v-else @submit.prevent="saveSettings">
+      <!-- Top row: 2 columns -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- App Name -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.appName') }}</h3>
 
-        <UiInput
-          v-model="mediaPath"
-          :label="t('adminSettings.mediaPath')"
-          :placeholder="t('adminSettings.mediaPathPlaceholder')"
-        >
-          <template #description>
-            <p class="text-xs text-text-muted mt-1">
-              {{ t('adminSettings.mediaPathDesc') }}
-            </p>
-          </template>
-        </UiInput>
-
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.autoScan') }}</p>
-            <p class="text-xs text-text-muted">{{ t('adminSettings.autoScanDesc') }}</p>
-          </div>
-          <label class="relative inline-flex items-center cursor-pointer">
-            <input
-              v-model="autoScanEnabled"
-              type="checkbox"
-              class="sr-only peer"
-            />
-            <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
-          </label>
+          <UiInput
+            v-model="appNameInput"
+            :label="t('adminSettings.appNameLabel')"
+            :placeholder="t('adminSettings.appNamePlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.appNameDesc') }}
+              </p>
+            </template>
+          </UiInput>
         </div>
 
-        <UiInput
-          v-if="autoScanEnabled"
-          v-model.number="scanInterval"
-          type="number"
-          :label="t('adminSettings.scanInterval')"
-          :min="1"
-          :max="168"
-        />
+        <!-- Media Library -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.mediaLibrary') }}</h3>
+
+          <UiInput
+            v-model="mediaPath"
+            :label="t('adminSettings.mediaPath')"
+            :placeholder="t('adminSettings.mediaPathPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.mediaPathDesc') }}
+              </p>
+            </template>
+          </UiInput>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.autoScan') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.autoScanDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="autoScanEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              />
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
+
+          <UiInput
+            v-if="autoScanEnabled"
+            v-model.number="scanInterval"
+            type="number"
+            :label="t('adminSettings.scanInterval')"
+            :min="1"
+            :max="168"
+          />
+        </div>
       </div>
 
-      <!-- TMDB API -->
-      <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-        <h3 class="font-semibold text-text-primary">{{ t('adminSettings.tmdb') }}</h3>
+      <!-- Bottom row: API keys side by side -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- TMDB API -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.tmdb') }}</h3>
 
-        <UiInput
-          v-model="tmdbApiKey"
-          type="password"
-          :label="t('adminSettings.tmdbApiKey')"
-          :placeholder="t('adminSettings.tmdbApiKeyPlaceholder')"
-        >
-          <template #description>
-            <p class="text-xs text-text-muted mt-1">
-              {{ t('adminSettings.tmdbApiKeyDesc') }}
-              <a href="https://www.themoviedb.org/settings/api" target="_blank" class="text-primary hover:underline">themoviedb.org</a>
-            </p>
-          </template>
-        </UiInput>
-      </div>
+          <UiInput
+            v-model="tmdbApiKey"
+            type="password"
+            :label="t('adminSettings.tmdbApiKey')"
+            :placeholder="t('adminSettings.tmdbApiKeyPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.tmdbApiKeyDesc') }}
+                <a href="https://www.themoviedb.org/settings/api" target="_blank" class="text-primary hover:underline">themoviedb.org</a>
+              </p>
+            </template>
+          </UiInput>
+        </div>
 
-      <!-- Groq AI -->
-      <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-        <h3 class="font-semibold text-text-primary">{{ t('adminSettings.groqAi') }}</h3>
+        <!-- Groq AI -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.groqAi') }}</h3>
 
-        <UiInput
-          v-model="groqApiKey"
-          type="password"
-          :label="t('adminSettings.groqApiKey')"
-          :placeholder="t('adminSettings.groqApiKeyPlaceholder')"
-        >
-          <template #description>
-            <p class="text-xs text-text-muted mt-1">
-              {{ t('adminSettings.groqApiKeyDesc') }}
-              <a href="https://console.groq.com" target="_blank" class="text-primary hover:underline">console.groq.com</a>
-            </p>
-          </template>
-        </UiInput>
+          <UiInput
+            v-model="groqApiKey"
+            type="password"
+            :label="t('adminSettings.groqApiKey')"
+            :placeholder="t('adminSettings.groqApiKeyPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.groqApiKeyDesc') }}
+                <a href="https://console.groq.com" target="_blank" class="text-primary hover:underline">console.groq.com</a>
+              </p>
+            </template>
+          </UiInput>
+        </div>
       </div>
 
       <!-- Messages -->
-      <div v-if="error" class="p-4 bg-red-500/10 border border-red-500/20 rounded-xl">
+      <div v-if="error" class="p-4 bg-red-500/10 border border-red-500/20 rounded-xl mb-6">
         <p class="text-sm text-red-500">{{ error }}</p>
       </div>
 
-      <div v-if="success" class="p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+      <div v-if="success" class="p-4 bg-green-500/10 border border-green-500/20 rounded-xl mb-6">
         <p class="text-sm text-green-500">{{ t('adminSettings.settingsSaved') }}</p>
       </div>
 

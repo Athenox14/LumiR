@@ -72,7 +72,7 @@ export default {
 
   // Setup page
   setup: {
-    welcomeTitle: 'Welcome to PipouFlix',
+    welcomeTitle: 'Welcome to {appName}',
     setupAdminAccount: "Let's set up your admin account",
     yourName: 'Your name',
     adminPlaceholder: 'Admin',
@@ -84,7 +84,7 @@ export default {
 
   // Auth layout
   authLayout: {
-    appName: 'PipouFlix',
+    appName: 'LumiR',
     tagline: 'Your personal media library',
     footerText: 'Self-hosted media streaming solution',
   },
@@ -235,7 +235,7 @@ export default {
   // Admin dashboard
   admin: {
     title: 'Admin Dashboard',
-    subtitle: 'Manage your PipouFlix instance',
+    subtitle: 'Manage your {appName} instance',
     totalMedia: 'Total Media',
     totalMovies: 'Movies',
     totalTvShows: 'TV Shows',
@@ -355,6 +355,10 @@ export default {
     groqApiKey: 'Groq API Key',
     groqApiKeyPlaceholder: 'gsk_...',
     groqApiKeyDesc: 'Groq API key used as last resort to identify movies with ambiguous filenames. Get a key from',
+    appName: 'Platform Name',
+    appNameLabel: 'Display name',
+    appNamePlaceholder: 'LumiR',
+    appNameDesc: 'The name displayed in the sidebar, login page and browser title.',
     saveSettings: 'Save Settings',
     settingsSaved: 'Settings saved successfully!',
     failedToSave: 'Failed to save settings',
