@@ -2,7 +2,7 @@ import { db } from '../../db'
 import { settings } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import { execSync } from 'child_process'
-import { mkdirSync, createWriteStream, existsSync, renameSync, rmSync } from 'fs'
+import { mkdirSync, createWriteStream, writeFileSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event)
   const downloadUrl = body?.downloadUrl as string
+  const version = body?.version as string
 
   if (!downloadUrl) {
     throw createError({ statusCode: 400, statusMessage: 'Missing downloadUrl' })
@@ -80,12 +81,17 @@ export default defineEventHandler(async (event) => {
       renameSync(tempDir, outputDir)
     }
 
-    // 4. Cleanup
+    // 4. Write BUILD_VERSION
+    if (version) {
+      writeFileSync(join(appDir, 'BUILD_VERSION'), version + '\n', 'utf-8')
+    }
+
+    // 5. Cleanup
     if (existsSync(zipPath)) rmSync(zipPath, { force: true })
     if (existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true })
     if (existsSync(oldOutputDir)) rmSync(oldOutputDir, { recursive: true, force: true })
 
-    // 5. Restart - try pm2 first, then systemd, then just exit and let the process manager restart
+    // 6. Restart - try pm2 first, then systemd, then just exit and let the process manager restart
     try {
       execSync('pm2 restart all', { timeout: 5000 })
     } catch {
