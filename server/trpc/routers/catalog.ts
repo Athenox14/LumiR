@@ -83,6 +83,98 @@ async function resolveWithPipeline(opts: {
 // (used to pass user's source choice from startDownload to processDownload)
 const preselectedSources = new Map<string, { url: string, isM3U8: boolean, headers?: Record<string, string> }>()
 
+// ============================================================
+//  Streaming sources cache (preheat)
+// ============================================================
+const SOURCES_CACHE_TTL = 5 * 60 * 1000 // 5 min
+interface SourcesCacheEntry {
+  streams: ResolvedStream[]
+  timestamp: number
+  promise?: Promise<ResolvedStream[]> // in-flight promise to deduplicate
+}
+const sourcesCache = new Map<string, SourcesCacheEntry>()
+
+function sourcesCacheKey(tmdbId: number, type: string, season?: number, episode?: number): string {
+  return `${tmdbId}:${type}:${season || ''}:${episode || ''}`
+}
+
+/** Fetch streaming sources with deduplication + caching */
+async function fetchStreamingSources(opts: {
+  tmdbId: number
+  title: string
+  type: 'movie' | 'tv'
+  season?: number
+  episode?: number
+}): Promise<ResolvedStream[]> {
+  const key = sourcesCacheKey(opts.tmdbId, opts.type, opts.season, opts.episode)
+
+  // Check cache
+  const cached = sourcesCache.get(key)
+  if (cached) {
+    // If there's an in-flight promise, wait for it
+    if (cached.promise) {
+      return cached.promise
+    }
+    // If cache is fresh, return it
+    if (Date.now() - cached.timestamp < SOURCES_CACHE_TTL) {
+      console.log(`[Catalog] Cache HIT for ${key} (${cached.streams.length} streams)`)
+      return cached.streams
+    }
+  }
+
+  // Fetch: get TMDB info for original title + year
+  const tmdbInfo = await getTmdbInfo(opts.tmdbId, opts.type)
+  const originalTitle = tmdbInfo?.originalTitle || opts.title
+  const releaseYear = tmdbInfo?.releaseDate
+    ? parseInt(tmdbInfo.releaseDate.substring(0, 4))
+    : undefined
+
+  const titles = [opts.title]
+  if (originalTitle !== opts.title) titles.push(originalTitle)
+
+  console.log(`[Catalog] Fetching sources for ${key} titles=${JSON.stringify(titles)}`)
+
+  const pipelineOpts = { type: opts.type, season: opts.season, episode: opts.episode, releaseYear: releaseYear || undefined }
+
+  const work = (async () => {
+    const allResults = await Promise.all(
+      titles.map(async (t) => {
+        const result = await resolveAllStreams({ title: t, ...pipelineOpts })
+        console.log(`[Catalog] Pipeline "${t}" returned ${result.length} streams`)
+        return result
+      })
+    )
+
+    // Merge and deduplicate
+    const seen = new Set<string>()
+    const streams: ResolvedStream[] = []
+    for (const result of allResults) {
+      for (const stream of result) {
+        const streamKey = `${stream.provider}:${stream.server}`
+        if (!seen.has(streamKey)) {
+          seen.add(streamKey)
+          streams.push(stream)
+        }
+      }
+    }
+
+    console.log(`[Catalog] Total unique streams for ${key}: ${streams.length}`)
+    return streams
+  })()
+
+  // Store the in-flight promise so concurrent requests deduplicate
+  sourcesCache.set(key, { streams: [], timestamp: Date.now(), promise: work })
+
+  try {
+    const streams = await work
+    sourcesCache.set(key, { streams, timestamp: Date.now() })
+    return streams
+  } catch (err) {
+    sourcesCache.delete(key)
+    throw err
+  }
+}
+
 export const catalogRouter = router({
   // Search online catalog
   search: protectedProcedure
@@ -150,7 +242,37 @@ export const catalogRouter = router({
       return person
     }),
 
-  // Get streaming sources with multi-provider pipeline
+  // Preheat: trigger source fetching in background (fire-and-forget from detail pages)
+  preheatSources: protectedProcedure
+    .input(z.object({
+      tmdbId: z.number(),
+      title: z.string(),
+      type: z.enum(['movie', 'tv']),
+      season: z.number().optional(),
+      episode: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const key = sourcesCacheKey(input.tmdbId, input.type, input.season, input.episode)
+      const cached = sourcesCache.get(key)
+      if (cached && (cached.promise || Date.now() - cached.timestamp < SOURCES_CACHE_TTL)) {
+        console.log(`[Catalog] Preheat skip — already cached/in-flight for ${key}`)
+        return { status: 'already_cached' as const }
+      }
+
+      // Fire and forget — don't await
+      fetchStreamingSources({
+        tmdbId: input.tmdbId,
+        title: input.title,
+        type: input.type,
+        season: input.season,
+        episode: input.episode,
+      }).catch(err => console.error(`[Catalog] Preheat failed for ${key}:`, err.message))
+
+      console.log(`[Catalog] Preheat started for ${key}`)
+      return { status: 'started' as const }
+    }),
+
+  // Get streaming sources (uses cache from preheat if available)
   streamingSources: protectedProcedure
     .input(z.object({
       tmdbId: z.number(),
@@ -161,44 +283,13 @@ export const catalogRouter = router({
       episode: z.number().optional(),
     }))
     .query(async ({ input }) => {
-      // Get original (English) title + release year from TMDB for provider search
-      const tmdbInfo = await getTmdbInfo(input.tmdbId, input.type)
-      const originalTitle = tmdbInfo?.originalTitle || input.title
-      const releaseYear = tmdbInfo?.releaseDate
-        ? parseInt(tmdbInfo.releaseDate.substring(0, 4))
-        : undefined
-
-      // Run pipelines in parallel: French title + English title (if different)
-      const titles = [input.title]
-      if (originalTitle !== input.title) titles.push(originalTitle)
-
-      console.log(`[streamingSources] tmdbId=${input.tmdbId} type=${input.type} year=${releaseYear} titles=${JSON.stringify(titles)}`)
-
-      const pipelineOpts = { type: input.type, season: input.season, episode: input.episode, releaseYear: releaseYear || undefined }
-      const allResults = await Promise.all(
-        titles.map(async (t) => {
-          console.log(`[streamingSources] Running pipeline for title: "${t}"`)
-          const result = await resolveAllStreams({ title: t, ...pipelineOpts })
-          console.log(`[streamingSources] Pipeline "${t}" returned ${result.length} streams`)
-          return result
-        })
-      )
-
-      // Merge and deduplicate by provider:server
-      const seen = new Set<string>()
-      const streams: ResolvedStream[] = []
-      for (const result of allResults) {
-        for (const stream of result) {
-          const key = `${stream.provider}:${stream.server}`
-          console.log(`[streamingSources] Stream: ${key} → ${stream.sources.length} sources, first=${stream.sources[0]?.url?.substring(0, 80)}`)
-          if (!seen.has(key)) {
-            seen.add(key)
-            streams.push(stream)
-          }
-        }
-      }
-
-      console.log(`[streamingSources] Total unique streams: ${streams.length}`)
+      const streams = await fetchStreamingSources({
+        tmdbId: input.tmdbId,
+        title: input.title,
+        type: input.type,
+        season: input.season,
+        episode: input.episode,
+      })
 
       if (streams.length === 0) {
         throw new TRPCError({

@@ -14,6 +14,19 @@ const { data: info, pending, error } = useAsyncData(
   () => trpc.catalog.info.query({ tmdbId: tmdbId.value, type: 'tv' })
 )
 
+// Preheat streaming sources for first episode as soon as we have info
+watch(() => info.value?.title, (title) => {
+  if (!title || !info.value?.episodes?.length) return
+  const firstEp = info.value.episodes[0]
+  trpc.catalog.preheatSources.mutate({
+    tmdbId: tmdbId.value,
+    title,
+    type: 'tv',
+    season: firstEp.season || 1,
+    episode: firstEp.episode || 1,
+  }).catch(() => {}) // fire-and-forget
+}, { immediate: true })
+
 // Group episodes by season
 const seasons = computed(() => {
   if (!info.value?.episodes) return []

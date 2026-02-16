@@ -14,6 +14,16 @@ const { data: info, pending, error } = useAsyncData(
   () => trpc.catalog.info.query({ tmdbId: tmdbId.value, type: 'movie' })
 )
 
+// Preheat streaming sources as soon as we have the title
+watch(() => info.value?.title, (title) => {
+  if (!title) return
+  trpc.catalog.preheatSources.mutate({
+    tmdbId: tmdbId.value,
+    title,
+    type: 'movie',
+  }).catch(() => {}) // fire-and-forget
+}, { immediate: true })
+
 const showDownloadModal = ref(false)
 const downloading = ref(false)
 
