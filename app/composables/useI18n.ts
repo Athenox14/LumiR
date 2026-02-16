@@ -12,7 +12,7 @@ export function useI18n() {
     return 'fr'
   })
 
-  function t(key: string, params?: Record<string, string | number>): string {
+  function t(key: string, params?: Record<string, string | number> | number): string {
     const keys = key.split('.')
     let value: any = messages[locale.value]
     for (const k of keys) {
@@ -27,6 +27,17 @@ export function useI18n() {
       }
       value = typeof fb === 'string' ? fb : key
     }
+
+    // Pluralization: "singular | plural" with t(key, count)
+    if (typeof params === 'number') {
+      const count = params
+      if (value.includes(' | ')) {
+        const forms = value.split(' | ')
+        value = count <= 1 ? forms[0] : forms[1] || forms[0]
+      }
+      return value.replace(/\{count\}/g, String(count))
+    }
+
     if (params) {
       return value.replace(/\{(\w+)\}/g, (_: any, k: string) => String(params[k] ?? `{${k}}`))
     }
