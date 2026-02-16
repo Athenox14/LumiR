@@ -7,6 +7,8 @@ const trpc = useTrpc()
 const { user } = useAuth()
 const { t } = useI18n()
 
+useHead({ title: computed(() => t('nav.home')) })
+
 // Fetch data
 const { data: continueWatching, pending: continueLoading } = useAsyncData(
   'continue-watching',

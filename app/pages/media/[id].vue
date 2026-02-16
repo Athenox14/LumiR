@@ -15,6 +15,8 @@ const { data: media, pending, error } = useAsyncData(
   () => trpc.media.getById.query(mediaId.value)
 )
 
+useHead({ title: computed(() => media.value?.title || t('common.loading')) })
+
 function formatRuntime(minutes: number | null | undefined): string {
   if (!minutes) return ''
   const hours = Math.floor(minutes / 60)

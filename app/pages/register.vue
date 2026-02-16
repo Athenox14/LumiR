@@ -8,6 +8,8 @@ const { register } = useAuth()
 const { t } = useI18n()
 const { registrationEnabled } = useFeatureFlags()
 
+useHead({ title: computed(() => t('auth.signUp')) })
+
 watch(registrationEnabled, (val) => {
   if (!val) navigateTo('/login')
 }, { immediate: true })

@@ -6,6 +6,8 @@ definePageMeta({
 const trpc = useTrpc()
 const { t, locale } = useI18n()
 
+useHead({ title: computed(() => t('nav.movies')) })
+
 // Filters
 const sortBy = ref<'title' | 'year' | 'rating' | 'addedAt'>('addedAt')
 const sortOrder = ref<'asc' | 'desc'>('desc')

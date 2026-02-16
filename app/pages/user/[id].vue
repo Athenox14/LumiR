@@ -16,6 +16,8 @@ const { data: profile, error: profileError, refresh: refreshProfile } = useAsync
   () => trpc.users.getPublicProfile.query({ userId: userId.value })
 )
 
+useHead({ title: computed(() => profile.value?.displayName || t('common.profile')) })
+
 const { data: stats } = useAsyncData(
   `user-stats-${userId.value}`,
   () => trpc.users.getUserStats.query({ userId: userId.value }),

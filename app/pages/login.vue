@@ -6,6 +6,8 @@ definePageMeta({
 
 const { login } = useAuth()
 const { t } = useI18n()
+
+useHead({ title: computed(() => t('auth.signIn')) })
 const trpc = useTrpc()
 const { registrationEnabled } = useFeatureFlags()
 

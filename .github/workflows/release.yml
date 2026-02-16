@@ -1,6 +1,8 @@
 name: Build & Release
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
     inputs:
       version:
@@ -19,6 +21,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+            DATE=$(date -u +%Y%m%d-%H%M%S)
+            echo "tag=auto-${DATE}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -31,7 +44,7 @@ jobs:
       - name: Write build info
         run: |
           echo "${{ github.sha }}" > BUILD_SHA
-          echo "${{ inputs.version }}" > BUILD_VERSION
+          echo "${{ steps.version.outputs.tag }}" > BUILD_VERSION
 
       - name: Build
         run: npm run build
@@ -44,13 +57,14 @@ jobs:
       - name: Zip build output
         run: |
           cd .output
-          zip -r ../lumir-${{ inputs.version }}.zip .
+          zip -r ../lumir-${{ steps.version.outputs.tag }}.zip .
           cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.version }}
-          name: LumiR ${{ inputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: LumiR ${{ steps.version.outputs.tag }}
           generate_release_notes: true
-          files: lumir-${{ inputs.version }}.zip
+          files: lumir-${{ steps.version.outputs.tag }}.zip
+          prerelease: ${{ inputs.version == '' }}
