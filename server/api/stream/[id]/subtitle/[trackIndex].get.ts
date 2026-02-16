@@ -1,8 +1,7 @@
 import { db } from '../../../../db'
 import { media, subtitleTracks } from '../../../../db/schema'
 import { eq, and } from 'drizzle-orm'
-import { existsSync, mkdirSync } from 'fs'
-import { promises as fs } from 'fs'
+import { existsSync, mkdirSync, promises as fs  } from 'fs'
 import { join } from 'path'
 import { extractAllSubtitles, convertFileToVtt, getSubtitleExtension, TEXT_SUBTITLE_CODECS } from '../../../../utils/ffmpeg'
 

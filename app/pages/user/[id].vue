@@ -81,7 +81,7 @@ onMounted(() => {
             :src="profile.favoriteActorImage || profile.avatarUrl"
             :alt="profile.displayName"
             class="w-full h-full object-cover"
-          />
+          >
           <div v-else class="w-full h-full flex items-center justify-center bg-primary/10">
             <span class="text-3xl md:text-4xl font-bold text-primary">
               {{ profile.displayName?.charAt(0).toUpperCase() }}
@@ -146,7 +146,7 @@ onMounted(() => {
                 :alt="film.title"
                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
-              />
+              >
               <div v-else class="w-full h-full flex items-center justify-center">
                 <span class="text-text-muted text-sm">{{ t('common.noPoster') }}</span>
               </div>
@@ -176,7 +176,7 @@ onMounted(() => {
                 :alt="film.title"
                 class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 loading="lazy"
-              />
+              >
               <div v-else class="w-full h-full flex items-center justify-center">
                 <span class="text-text-muted text-sm">{{ t('common.noPoster') }}</span>
               </div>

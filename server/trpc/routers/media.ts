@@ -681,7 +681,7 @@ export const mediaRouter = router({
       const first = episodes[0]
 
       // Fetch episode details (thumbnails + names) from TMDB if tmdbId is available
-      let episodeInfoMap = new Map<string, { name: string; overview: string; stillPath: string | null }>()
+      const episodeInfoMap = new Map<string, { name: string; overview: string; stillPath: string | null }>()
       if (first.tmdbId) {
         try {
           const info = await getTmdbInfo(first.tmdbId, 'tv')

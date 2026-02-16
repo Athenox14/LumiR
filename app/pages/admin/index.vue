@@ -192,7 +192,7 @@ const adminSections = computed(() => [
           type="text"
           :placeholder="t('adminDash.searchPlaceholder')"
           class="w-full pl-10 pr-4 py-2 bg-background border border-border rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
-        />
+        >
       </div>
       <!-- Results -->
       <div v-if="searching" class="mt-3 text-sm text-text-muted">{{ t('common.loading') }}</div>
@@ -207,8 +207,8 @@ const adminSections = computed(() => [
               v-if="item.posterPath"
               :src="item.posterPath"
               class="w-8 h-12 rounded object-cover flex-shrink-0"
-            />
-            <div class="w-8 h-12 rounded bg-surface-secondary flex-shrink-0 flex items-center justify-center" v-else>
+            >
+            <div v-else class="w-8 h-12 rounded bg-surface-secondary flex-shrink-0 flex items-center justify-center">
               <svg class="w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4" />
               </svg>

@@ -181,7 +181,7 @@ function formatDate(date: Date | null | undefined): string {
                 :src="user.favoriteActorImage"
                 :alt="user.displayName"
                 class="w-10 h-10 rounded-full object-cover ring-2 ring-primary/30 hover:ring-primary transition-all"
-              />
+              >
               <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center ring-2 ring-primary/30 hover:ring-primary transition-all">
                 <span class="text-sm font-medium text-primary">
                   {{ user.displayName?.charAt(0).toUpperCase() || 'U' }}
@@ -194,7 +194,7 @@ function formatDate(date: Date | null | undefined): string {
                 :src="user.favoriteActorImage"
                 :alt="user.displayName"
                 class="w-10 h-10 rounded-full object-cover"
-              />
+              >
               <div v-else class="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
                 <span class="text-sm font-medium text-primary">
                   {{ user.displayName?.charAt(0).toUpperCase() || 'U' }}

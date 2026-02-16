@@ -113,7 +113,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
           :src="data.show.backdropPath || placeholderBackdrop"
           :alt="data.show.title"
           class="w-full h-[50vh] object-cover"
-        />
+        >
 
         <!-- Content overlay -->
         <div class="absolute bottom-0 left-0 right-0 z-20 p-6 md:p-12">
@@ -124,7 +124,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
               :src="data.show.posterPath"
               :alt="data.show.title"
               class="hidden md:block w-40 rounded-xl shadow-2xl"
-            />
+            >
 
             <div>
               <!-- Title -->
@@ -191,7 +191,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                   :alt="actor.name"
                   class="w-full h-full object-cover"
                   loading="lazy"
-                />
+                >
                 <div v-else class="w-full h-full flex items-center justify-center">
                   <svg class="w-10 h-10 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -241,7 +241,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
                     :alt="`${t('tv.episode', { number: ep.episode })}`"
                     class="w-full h-full object-cover"
                     loading="lazy"
-                  />
+                  >
                   <div v-else class="w-full h-full flex items-center justify-center">
                     <span class="text-2xl font-bold text-text-muted">{{ ep.episode }}</span>
                   </div>
