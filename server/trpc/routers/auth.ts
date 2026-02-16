@@ -97,11 +97,21 @@ export const authRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Find user by email or username
       const id = input.identifier.toLowerCase()
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(or(eq(users.email, id), eq(users.username, id)))
-        .limit(1)
+      let user
+      try {
+        ;[user] = await db
+          .select()
+          .from(users)
+          .where(or(eq(users.email, id), eq(users.username, id)))
+          .limit(1)
+      } catch {
+        // Fallback: username column might not exist yet (migration pending)
+        ;[user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.email, id))
+          .limit(1)
+      }
 
       if (!user) {
         throw new TRPCError({
@@ -162,27 +172,52 @@ export const authRouter = router({
       return null
     }
 
-    const [user] = await db
-      .select({
-        id: users.id,
-        email: users.email,
-        username: users.username,
-        displayName: users.displayName,
-        role: users.role,
-        permissions: users.permissions,
-        avatarUrl: users.avatarUrl,
-        bio: users.bio,
-        isProfilePublic: users.isProfilePublic,
-        showWatchedFilms: users.showWatchedFilms,
-        showLikedFilms: users.showLikedFilms,
-        favoriteActorId: users.favoriteActorId,
-        favoriteActorName: users.favoriteActorName,
-        favoriteActorImage: users.favoriteActorImage,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .where(eq(users.id, ctx.user.id))
-      .limit(1)
+    let user
+    try {
+      ;[user] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          username: users.username,
+          displayName: users.displayName,
+          role: users.role,
+          permissions: users.permissions,
+          avatarUrl: users.avatarUrl,
+          bio: users.bio,
+          isProfilePublic: users.isProfilePublic,
+          showWatchedFilms: users.showWatchedFilms,
+          showLikedFilms: users.showLikedFilms,
+          favoriteActorId: users.favoriteActorId,
+          favoriteActorName: users.favoriteActorName,
+          favoriteActorImage: users.favoriteActorImage,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1)
+    } catch {
+      // Fallback: username column might not exist yet
+      ;[user] = await db
+        .select({
+          id: users.id,
+          email: users.email,
+          displayName: users.displayName,
+          role: users.role,
+          permissions: users.permissions,
+          avatarUrl: users.avatarUrl,
+          bio: users.bio,
+          isProfilePublic: users.isProfilePublic,
+          showWatchedFilms: users.showWatchedFilms,
+          showLikedFilms: users.showLikedFilms,
+          favoriteActorId: users.favoriteActorId,
+          favoriteActorName: users.favoriteActorName,
+          favoriteActorImage: users.favoriteActorImage,
+          createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, ctx.user.id))
+        .limit(1)
+    }
 
     return user || null
   }),

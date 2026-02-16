@@ -17,10 +17,18 @@ const sqlite = new Database(dbPath)
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('foreign_keys = ON')
 
-// Register Levenshtein distance function for fuzzy search
+// Strip accents + lowercase (handles French: é→e, â→a, ç→c, etc.)
+function normalize(str: string): string {
+  return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+}
+
+// Register normalize() as SQLite function — accent-insensitive lowercase
+sqlite.function('normalize', (a: unknown) => normalize(String(a || '')))
+
+// Register Levenshtein distance function for fuzzy search (uses normalized strings)
 sqlite.function('levenshtein', (a: unknown, b: unknown) => {
-  const s = String(a || '').toLowerCase()
-  const t = String(b || '').toLowerCase()
+  const s = normalize(String(a || ''))
+  const t = normalize(String(b || ''))
   if (s === t) return 0
   if (!s.length) return t.length
   if (!t.length) return s.length
