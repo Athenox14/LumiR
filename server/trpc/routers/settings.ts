@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { router, adminProcedure, protectedProcedure } from '../trpc'
+import { router, publicProcedure, adminProcedure, protectedProcedure } from '../trpc'
 import { db } from '../../db'
 import { settings } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 // Settings keys
 export const SETTINGS_KEYS = {
@@ -15,6 +15,9 @@ export const SETTINGS_KEYS = {
   TRANSCODING_PRESET: 'transcodingPreset',
   MAX_BITRATE: 'maxBitrate',
   HLS_SEGMENT_DURATION: 'hlsSegmentDuration',
+  CATALOG_ENABLED: 'catalogEnabled',
+  DOWNLOADS_ENABLED: 'downloadsEnabled',
+  REGISTRATION_ENABLED: 'registrationEnabled',
 } as const
 
 export const settingsRouter = router({
@@ -132,19 +135,22 @@ export const settingsRouter = router({
       return { success: true }
     }),
 
-  // Get public settings (for non-authenticated users)
-  getPublic: protectedProcedure.query(async () => {
-    // Only return non-sensitive settings
-    const publicKeys = ['appName', 'logoUrl']
-    const results = await db.select().from(settings)
+  // Get public settings (accessible without login)
+  getPublic: publicProcedure.query(async () => {
+    const publicKeys = ['appName', 'logoUrl', 'catalogEnabled', 'downloadsEnabled', 'registrationEnabled']
+    const results = await db.select().from(settings).where(inArray(settings.key, publicKeys))
 
-    const filtered = results.filter(s => publicKeys.includes(s.key))
     const settingsMap: Record<string, unknown> = {}
-
-    filtered.forEach(s => {
+    results.forEach(s => {
       settingsMap[s.key] = s.value
     })
 
-    return settingsMap
+    return {
+      appName: settingsMap.appName ?? null,
+      logoUrl: settingsMap.logoUrl ?? null,
+      catalogEnabled: settingsMap.catalogEnabled !== false,
+      downloadsEnabled: settingsMap.downloadsEnabled !== false,
+      registrationEnabled: settingsMap.registrationEnabled !== false,
+    }
   }),
 })

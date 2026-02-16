@@ -2,19 +2,25 @@
 const { user, isAdmin, logout } = useAuth()
 const { t } = useI18n()
 const { appName } = useAppName()
+const { catalogEnabled, downloadsEnabled } = useFeatureFlags()
 const route = useRoute()
 
 const collapsed = useState('sidebar-collapsed', () => false)
 
 const navItems = computed(() => {
-  const items = [
+  const items: { icon: string, labelKey: string, to: string, beta?: boolean }[] = [
     { icon: 'home', labelKey: 'nav.home', to: '/' },
     { icon: 'film', labelKey: 'nav.movies', to: '/movies' },
     { icon: 'tv', labelKey: 'nav.tvShows', to: '/tv' },
     { icon: 'clock', labelKey: 'nav.continueWatching', to: '/continue' },
-    { icon: 'globe', labelKey: 'nav.catalog', to: '/catalog', beta: true },
-    { icon: 'download', labelKey: 'nav.downloads', to: '/downloads', beta: true },
   ]
+
+  if (catalogEnabled.value) {
+    items.push({ icon: 'globe', labelKey: 'nav.catalog', to: '/catalog', beta: true })
+  }
+  if (downloadsEnabled.value) {
+    items.push({ icon: 'download', labelKey: 'nav.downloads', to: '/downloads', beta: true })
+  }
 
   if (isAdmin.value) {
     items.push({ icon: 'cog', labelKey: 'nav.admin', to: '/admin' })

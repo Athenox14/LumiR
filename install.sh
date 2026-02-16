@@ -187,14 +187,18 @@ if echo "$RELEASE_JSON" | grep -q '"message"'; then
   fail "Erreur GitHub API: $MSG"
 fi
 
-# Extraire les infos
-TAG_NAME=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
-RELEASE_NAME=$(echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-# Trouver l'URL de l'asset (API URL pour repos privés)
-# On cherche l'url API de l'asset .zip, pas browser_download_url
-ASSET_API_URL=$(echo "$RELEASE_JSON" | grep -B5 '"browser_download_url"' | grep -B5 '\.zip"' | grep -o '"url":"https://api.github.com/repos/[^"]*"' | head -1 | cut -d'"' -f4)
-DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url":"[^"]*\.zip"' | head -1 | cut -d'"' -f4)
+# Extraire les infos avec python3 (fiable pour parser le JSON)
+eval "$(echo "$RELEASE_JSON" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+print(f'TAG_NAME=\"{data.get(\"tag_name\", \"\")}\"')
+print(f'RELEASE_NAME=\"{data.get(\"name\", \"\")}\"')
+for asset in data.get('assets', []):
+    if asset['name'].endswith('.zip'):
+        print(f'DOWNLOAD_URL=\"{asset.get(\"browser_download_url\", \"\")}\"')
+        print(f'ASSET_API_URL=\"{asset.get(\"url\", \"\")}\"')
+        break
+")"
 
 if [ -z "$DOWNLOAD_URL" ]; then
   fail "Aucun fichier .zip trouvé dans la release"
@@ -205,7 +209,6 @@ if [ -z "$TAG_NAME" ]; then
 fi
 
 ok "Version trouvée: $RELEASE_NAME ($TAG_NAME)"
-log "URL: $DOWNLOAD_URL"
 
 # ============================================
 #  Téléchargement
@@ -215,20 +218,23 @@ ZIP_PATH="$TMP_DIR/lumir.zip"
 
 log "Téléchargement en cours..."
 
-DOWNLOAD_HEADERS=(-H "Accept: application/octet-stream" -H "User-Agent: LumiR-Installer")
-if [ -n "$TOKEN" ]; then
-  DOWNLOAD_HEADERS+=(-H "Authorization: Bearer $TOKEN")
-fi
-
-# Pour les repos privés, utiliser l'URL API de l'asset (pas browser_download_url)
+# Pour les repos privés, utiliser l'URL API de l'asset avec Accept: octet-stream
+# Pour les repos publics, browser_download_url suffit
 if [ -n "$TOKEN" ] && [ -n "$ASSET_API_URL" ]; then
   ACTUAL_URL="$ASSET_API_URL"
+  log "Téléchargement via API (repo privé): $ASSET_API_URL"
+  curl -L -sS \
+    -H "Accept: application/octet-stream" \
+    -H "User-Agent: LumiR-Installer" \
+    -H "Authorization: Bearer $TOKEN" \
+    -o "$ZIP_PATH" "$ACTUAL_URL"
 else
   ACTUAL_URL="$DOWNLOAD_URL"
+  log "Téléchargement direct: $DOWNLOAD_URL"
+  curl -L -sS \
+    -H "User-Agent: LumiR-Installer" \
+    -o "$ZIP_PATH" "$ACTUAL_URL"
 fi
-
-log "Téléchargement depuis: $ACTUAL_URL"
-curl -L -sS "${DOWNLOAD_HEADERS[@]}" -o "$ZIP_PATH" "$ACTUAL_URL"
 
 if [ ! -f "$ZIP_PATH" ]; then
   fail "Échec du téléchargement"
@@ -276,12 +282,12 @@ ok "Extraction terminée"
 # Créer le fichier .env s'il n'existe pas
 if [ ! -f "$ENV_FILE" ]; then
   log "Création du fichier .env..."
-  cat > "$ENV_FILE" <<EOF
-# LumiR - Configuration
-# Modifiez ce fichier selon vos besoins
+  cat > "$ENV_FILE" <<ENVEOF
 PORT=$PORT
 NODE_ENV=production
-EOF
+HOST=0.0.0.0
+NUXT_HOST=0.0.0.0
+ENVEOF
   ok "Fichier .env créé ($ENV_FILE)"
 else
   ok "Fichier .env existant conservé"
@@ -322,8 +328,6 @@ WorkingDirectory=$INSTALL_DIR
 ExecStart=$NODE_PATH $INSTALL_DIR/.output/server/index.mjs
 Restart=always
 RestartSec=5
-Environment=NODE_ENV=production
-Environment=PORT=$PORT
 EnvironmentFile=$ENV_FILE
 
 [Install]
@@ -338,6 +342,17 @@ systemctl daemon-reload
 # Activer le service au démarrage
 systemctl enable "$SERVICE_NAME" > /dev/null 2>&1
 ok "Service activé au démarrage"
+
+# ============================================
+#  Pare-feu (ouvrir le port)
+# ============================================
+if command -v ufw &> /dev/null; then
+  if ufw status | grep -q "active"; then
+    log "Ouverture du port $PORT dans le pare-feu..."
+    ufw allow "$PORT/tcp" > /dev/null 2>&1
+    ok "Port $PORT ouvert (ufw)"
+  fi
+fi
 
 # ============================================
 #  Démarrage
@@ -377,5 +392,7 @@ echo -e "    Logs:       sudo journalctl -u $SERVICE_NAME -f"
 echo -e "    Redémarrer: sudo systemctl restart $SERVICE_NAME"
 echo -e "    Arrêter:    sudo systemctl stop $SERVICE_NAME"
 echo ""
-echo -e "  Ouvrez ${CYAN}http://localhost:$PORT${NC} dans votre navigateur"
+SERVER_IP=$(hostname -I | awk '{print $1}')
+echo -e "  Ouvrez ${CYAN}http://$SERVER_IP:$PORT${NC} dans votre navigateur"
+echo -e "  (ou ${CYAN}http://localhost:$PORT${NC} en local)"
 echo ""

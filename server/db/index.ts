@@ -193,7 +193,6 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_online_wp_user ON online_watch_progress(user_id);
     CREATE INDEX IF NOT EXISTS idx_online_wp_tmdb ON online_watch_progress(tmdb_id);
     CREATE INDEX IF NOT EXISTS idx_downloads_user ON downloads(user_id);
-    CREATE INDEX IF NOT EXISTS idx_media_collection ON media(collection_id);
 
     CREATE TABLE IF NOT EXISTS media_ratings (
       id TEXT PRIMARY KEY,
@@ -227,6 +226,9 @@ export function initializeDatabase() {
   for (const migration of migrations) {
     try { sqlite.exec(migration) } catch { /* column already exists */ }
   }
+
+  // Create indexes that depend on migrated columns
+  try { sqlite.exec('CREATE INDEX IF NOT EXISTS idx_media_collection ON media(collection_id)') } catch { }
 
   // Migrate old TMDB image URLs to local proxy URLs
   try {

@@ -369,6 +369,13 @@ export default {
     githubToken: 'GitHub Token',
     githubTokenPlaceholder: 'ghp_...',
     githubTokenDesc: 'GitHub personal access token. Required for private repositories and to download updates.',
+    features: 'Features',
+    catalogEnabled: 'Online Catalog',
+    catalogEnabledDesc: 'Browse and stream movies and TV shows online',
+    downloadsEnabled: 'Downloads',
+    downloadsEnabledDesc: 'Download content from the online catalog',
+    registrationEnabled: 'Registration',
+    registrationEnabledDesc: 'Allow new users to create an account',
   },
 
   // Admin update

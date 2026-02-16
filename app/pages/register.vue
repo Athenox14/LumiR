@@ -6,6 +6,11 @@ definePageMeta({
 
 const { register } = useAuth()
 const { t } = useI18n()
+const { registrationEnabled } = useFeatureFlags()
+
+watch(registrationEnabled, (val) => {
+  if (!val) navigateTo('/login')
+}, { immediate: true })
 
 const displayName = ref('')
 const email = ref('')
