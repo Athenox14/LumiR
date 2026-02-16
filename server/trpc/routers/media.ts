@@ -946,6 +946,7 @@ export const mediaRouter = router({
           mediaType: media.mediaType,
           season: media.season,
           episode: media.episode,
+          fileSize: media.fileSize,
         })
         .from(media)
         .where(and(...conditions))
@@ -959,7 +960,8 @@ export const mediaRouter = router({
     const rows = sqlite.prepare(`
       SELECT title, tmdb_id, media_type, COUNT(*) as count,
         GROUP_CONCAT(id, '||') as ids,
-        GROUP_CONCAT(file_name, '||') as fileNames
+        GROUP_CONCAT(file_name, '||') as fileNames,
+        GROUP_CONCAT(COALESCE(file_size, 0), '||') as fileSizes
       FROM media
       WHERE media_type = 'movie'
       GROUP BY COALESCE(tmdb_id, ''), title
@@ -972,6 +974,7 @@ export const mediaRouter = router({
       count: number
       ids: string
       fileNames: string
+      fileSizes: string
     }>
 
     return rows.map(r => ({
@@ -982,6 +985,7 @@ export const mediaRouter = router({
       items: r.ids.split('||').map((id, i) => ({
         id,
         fileName: r.fileNames.split('||')[i],
+        fileSize: parseInt(r.fileSizes.split('||')[i]) || null,
       })),
     }))
   }),
