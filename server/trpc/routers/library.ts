@@ -597,6 +597,23 @@ async function scanLibrary(scanId: string, mediaPath: string) {
       currentScan!.processedFiles++
     }
 
+    // Remove media entries whose files no longer exist on disk
+    let removedFiles = 0
+    const allMedia = await db.select({ id: media.id, filePath: media.filePath }).from(media)
+    for (const item of allMedia) {
+      try {
+        await fs.access(item.filePath)
+      } catch {
+        // File no longer exists — remove from DB (cascade deletes tracks, progress, ratings)
+        await db.delete(media).where(eq(media.id, item.id))
+        removedFiles++
+        console.log(`[Scan] Removed missing file: ${item.filePath}`)
+      }
+    }
+    if (removedFiles > 0) {
+      console.log(`[Scan] Cleaned up ${removedFiles} missing file(s) from database`)
+    }
+
     // Mark scan as complete
     currentScan!.status = 'completed'
     await db.update(scanHistory).set({
