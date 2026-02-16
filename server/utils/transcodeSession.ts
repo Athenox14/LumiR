@@ -101,7 +101,7 @@ function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: 
     // Transcode to H.264 for maximum compatibility
     args.push(
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
+      '-preset', 'medium',
       '-crf', '23',
       '-profile:v', 'high',
       '-level', '4.0',
