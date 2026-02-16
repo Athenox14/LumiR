@@ -55,7 +55,7 @@ async function performUpdate() {
   try {
     await $fetch('/api/admin/update', {
       method: 'POST',
-      body: { downloadUrl: updateInfo.value.downloadUrl },
+      body: { downloadUrl: updateInfo.value.downloadUrl, version: updateInfo.value.latestVersion },
     })
     alert(t('adminUpdate.updateSuccess'))
     setTimeout(() => window.location.reload(), 5000)
