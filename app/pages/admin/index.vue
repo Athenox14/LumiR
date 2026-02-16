@@ -66,6 +66,23 @@ async function performUpdate() {
   }
 }
 
+function simpleMarkdown(text: string): string {
+  return text
+    // Headers
+    .replace(/^### (.+)$/gm, '<h4 class="font-semibold text-text-primary mt-2 mb-1">$1</h4>')
+    .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-text-primary mt-2 mb-1">$1</h3>')
+    // Bold
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-text-primary">$1</strong>')
+    // Links
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" class="text-primary hover:underline">$1</a>')
+    // Bare URLs
+    .replace(/(?<!\()(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" class="text-primary hover:underline">$1</a>')
+    // List items
+    .replace(/^[*-] (.+)$/gm, '<li class="ml-3">$1</li>')
+    // Newlines
+    .replace(/\n/g, '<br>')
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
@@ -296,9 +313,7 @@ const adminSections = computed(() => [
               {{ t('adminUpdate.installUpdate') }}
             </UiButton>
           </div>
-          <div v-if="updateInfo.releaseNotes" class="mt-3 p-3 bg-surface-secondary rounded-lg">
-            <p class="text-xs text-text-muted whitespace-pre-wrap">{{ updateInfo.releaseNotes }}</p>
-          </div>
+          <div v-if="updateInfo.releaseNotes" class="mt-3 p-3 bg-surface-secondary rounded-lg text-xs text-text-muted leading-relaxed" v-html="simpleMarkdown(updateInfo.releaseNotes)" />
           <a
             :href="updateInfo.releaseUrl"
             target="_blank"
