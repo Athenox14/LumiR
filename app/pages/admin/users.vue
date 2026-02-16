@@ -5,7 +5,7 @@ definePageMeta({
 
 const trpc = useTrpc()
 const { t } = useI18n()
-const { user: currentUser, isSuperAdmin } = useAuth()
+const { user: currentUser } = useAuth()
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
@@ -129,11 +129,6 @@ function getRoleBadgeClass(role: string) {
     default:
       return 'bg-gray-500/10 text-gray-400'
   }
-}
-
-function formatDate(date: Date | null | undefined): string {
-  if (!date) return t('adminLibrary.never')
-  return new Date(date).toLocaleDateString()
 }
 </script>
 

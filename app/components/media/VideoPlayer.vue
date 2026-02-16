@@ -53,7 +53,6 @@ const emit = defineEmits<{
   changeBurnInSubtitle: [trackIndex: number | undefined]
 }>()
 
-const trpc = useTrpc()
 const videoRef = ref<HTMLVideoElement | null>(null)
 const containerRef = ref<HTMLElement | null>(null)
 
@@ -66,7 +65,6 @@ const showControls = ref(true)
 const isFullscreen = ref(false)
 const buffered = ref(0)
 const loading = ref(true)
-const showSettings = ref(false)
 const activeSubtitleIndex = ref(-1)
 const showSubtitleMenu = ref(false)
 const hlsAudioTracks = ref<Array<{id: number, name: string, lang: string}>>([])
@@ -623,7 +621,7 @@ async function setSubtitle(index: number) {
     for (const cue of cues) {
       try {
         activeTextTrack.addCue(new VTTCue(cue.start, cue.end, cue.text))
-      } catch (e) {
+      } catch {
         // Skip invalid cues silently
       }
     }

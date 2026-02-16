@@ -9,7 +9,7 @@ import { mkdirSync } from 'fs'
 const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'pipouflix.db')
 try {
   mkdirSync(dirname(dbPath), { recursive: true })
-} catch (e) {
+} catch {
   // Directory already exists
 }
 
@@ -225,7 +225,7 @@ export function initializeDatabase() {
     'ALTER TABLE subtitle_tracks ADD COLUMN content TEXT',
   ]
   for (const migration of migrations) {
-    try { sqlite.exec(migration) } catch (_) { /* column already exists */ }
+    try { sqlite.exec(migration) } catch { /* column already exists */ }
   }
 
   // Migrate old TMDB image URLs to local proxy URLs
@@ -240,7 +240,7 @@ export function initializeDatabase() {
       UPDATE downloads SET poster_path = REPLACE(poster_path, '${tmdbPrefix}', '${localPrefix}') WHERE poster_path LIKE '${tmdbPrefix}%';
       UPDATE users SET favorite_actor_image = REPLACE(favorite_actor_image, '${tmdbPrefix}', '${localPrefix}') WHERE favorite_actor_image LIKE '${tmdbPrefix}%';
     `)
-  } catch (_) { /* tables might not exist yet */ }
+  } catch { /* tables might not exist yet */ }
 
   console.log('Database initialized successfully')
 }

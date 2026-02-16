@@ -23,7 +23,7 @@ export async function createContext(event: H3Event): Promise<Context> {
     if (session?.user) {
       user = session.user as User
     }
-  } catch (error) {
+  } catch {
     // No session, user remains null
   }
 

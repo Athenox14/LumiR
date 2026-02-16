@@ -21,7 +21,7 @@ const { data: scanHistory, refresh: refreshHistory } = useAsyncData(
   () => trpc.library.scanHistory.query({ limit: 10 })
 )
 
-const { data: settings, refresh: refreshSettings } = useAsyncData(
+const { data: settings } = useAsyncData(
   'library-settings',
   () => trpc.settings.getMany.query(['mediaPath', 'tmdbApiKey', 'autoScanEnabled', 'scanInterval'])
 )
