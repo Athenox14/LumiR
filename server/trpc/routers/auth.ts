@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { router, publicProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
-import { users } from '../../db/schema'
+import { users, settings } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
@@ -19,6 +19,14 @@ export const authRouter = router({
       // Check if any users exist (first user becomes super_admin)
       const existingUsers = await db.select().from(users).limit(1)
       const isFirstUser = existingUsers.length === 0
+
+      // Check if registration is enabled (skip for first user / setup)
+      if (!isFirstUser) {
+        const [regSetting] = await db.select().from(settings).where(eq(settings.key, 'registrationEnabled')).limit(1)
+        if (regSetting?.value === false) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Registration is disabled' })
+        }
+      }
 
       // Check if email already exists
       const existing = await db

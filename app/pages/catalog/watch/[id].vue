@@ -7,6 +7,11 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
+const { catalogEnabled } = useFeatureFlags()
+
+watch(catalogEnabled, (val) => {
+  if (!val) navigateTo('/')
+}, { immediate: true })
 
 const tmdbId = computed(() => Number(route.params.id))
 const episodeId = computed(() => (route.query.episodeId as string) || undefined)

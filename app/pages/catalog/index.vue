@@ -5,6 +5,11 @@ definePageMeta({
 
 const { t } = useI18n()
 const trpc = useTrpc()
+const { catalogEnabled } = useFeatureFlags()
+
+watch(catalogEnabled, (val) => {
+  if (!val) navigateTo('/')
+}, { immediate: true })
 
 const searchQuery = ref('')
 const activeTab = ref<'movie' | 'tv'>('movie')

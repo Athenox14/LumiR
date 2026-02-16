@@ -19,6 +19,9 @@ const githubRepo = ref('')
 const githubToken = ref('')
 const autoScanEnabled = ref(false)
 const scanInterval = ref(24)
+const catalogEnabled = ref(true)
+const downloadsEnabled = ref(true)
+const registrationEnabled = ref(true)
 
 // Load settings
 const { data: settings, pending } = useAsyncData('settings', async () => {
@@ -37,6 +40,9 @@ watch(settings, (data) => {
     githubToken.value = (data.githubToken as string) || ''
     autoScanEnabled.value = (data.autoScanEnabled as boolean) || false
     scanInterval.value = (data.scanInterval as number) || 24
+    catalogEnabled.value = data.catalogEnabled !== false
+    downloadsEnabled.value = data.downloadsEnabled !== false
+    registrationEnabled.value = data.registrationEnabled !== false
   }
 }, { immediate: true })
 
@@ -55,6 +61,9 @@ async function saveSettings() {
       githubToken: githubToken.value || undefined,
       autoScanEnabled: autoScanEnabled.value,
       scanInterval: scanInterval.value,
+      catalogEnabled: catalogEnabled.value,
+      downloadsEnabled: downloadsEnabled.value,
+      registrationEnabled: registrationEnabled.value,
     })
     success.value = true
     setTimeout(() => {
@@ -146,6 +155,58 @@ async function saveSettings() {
             :min="1"
             :max="168"
           />
+        </div>
+      </div>
+
+      <!-- Features toggles -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.features') }}</h3>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.catalogEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.catalogEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="catalogEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.downloadsEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.downloadsEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="downloadsEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.registrationEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.registrationEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="registrationEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
         </div>
       </div>
 

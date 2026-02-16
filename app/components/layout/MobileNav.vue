@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { isAdmin } = useAuth()
+const { catalogEnabled, downloadsEnabled } = useFeatureFlags()
 const route = useRoute()
 
 const navItems = computed(() => {
@@ -8,9 +9,14 @@ const navItems = computed(() => {
     { icon: 'film', labelKey: 'nav.movies', to: '/movies' },
     { icon: 'tv', labelKey: 'nav.tvShows', to: '/tv' },
     { icon: 'clock', labelKey: 'nav.continue', to: '/continue' },
-    { icon: 'globe', labelKey: 'nav.catalog', to: '/catalog' },
-    { icon: 'download', labelKey: 'nav.downloads', to: '/downloads' },
   ]
+
+  if (catalogEnabled.value) {
+    items.push({ icon: 'globe', labelKey: 'nav.catalog', to: '/catalog' })
+  }
+  if (downloadsEnabled.value) {
+    items.push({ icon: 'download', labelKey: 'nav.downloads', to: '/downloads' })
+  }
 
   if (isAdmin.value) {
     items.push({ icon: 'cog', labelKey: 'nav.admin', to: '/admin' })

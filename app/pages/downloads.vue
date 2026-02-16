@@ -5,6 +5,11 @@ definePageMeta({
 
 const { t } = useI18n()
 const trpc = useTrpc()
+const { downloadsEnabled } = useFeatureFlags()
+
+watch(downloadsEnabled, (val) => {
+  if (!val) navigateTo('/')
+}, { immediate: true })
 
 const { data: downloads, pending, refresh } = useAsyncData(
   'downloads',

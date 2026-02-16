@@ -7,6 +7,7 @@ definePageMeta({
 const { login } = useAuth()
 const { t } = useI18n()
 const trpc = useTrpc()
+const { registrationEnabled } = useFeatureFlags()
 
 const email = ref('')
 const password = ref('')
@@ -81,7 +82,7 @@ async function handleSubmit() {
       </UiButton>
     </form>
 
-    <p class="mt-6 text-center text-sm text-text-muted">
+    <p v-if="registrationEnabled" class="mt-6 text-center text-sm text-text-muted">
       {{ t('auth.dontHaveAccount') }}
       <NuxtLink to="/register" class="text-primary hover:underline">
         {{ t('auth.signUp') }}

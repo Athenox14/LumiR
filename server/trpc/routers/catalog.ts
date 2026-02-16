@@ -15,6 +15,21 @@ async function getTmdbApiKey(): Promise<string | null> {
   return (row?.value as string) || null
 }
 
+// Feature flag helpers
+async function assertCatalogEnabled() {
+  const [row] = await db.select().from(settings).where(eq(settings.key, 'catalogEnabled')).limit(1)
+  if (row?.value === false) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Catalog is disabled' })
+  }
+}
+
+async function assertDownloadsEnabled() {
+  const [row] = await db.select().from(settings).where(eq(settings.key, 'downloadsEnabled')).limit(1)
+  if (row?.value === false) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Downloads are disabled' })
+  }
+}
+
 // Stream format returned to frontend
 interface ResolvedStream {
   provider: string
@@ -183,6 +198,7 @@ export const catalogRouter = router({
       type: z.enum(['movie', 'tv']).default('movie'),
     }))
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       const results = await searchTmdb(input.query, input.type)
       return results
     }),
@@ -193,6 +209,7 @@ export const catalogRouter = router({
       type: z.enum(['movie', 'tv']).default('movie'),
     }).optional())
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       const type = input?.type || 'movie'
       const results = await getTmdbTrending(type)
       return results
@@ -205,6 +222,7 @@ export const catalogRouter = router({
       type: z.enum(['movie', 'tv']),
     }))
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       const info = await getTmdbInfo(input.tmdbId, input.type)
       if (!info) {
         throw new TRPCError({
@@ -232,6 +250,7 @@ export const catalogRouter = router({
       personId: z.number(),
     }))
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       const person = await getPersonInfo(input.personId)
       if (!person) {
         throw new TRPCError({
@@ -252,6 +271,7 @@ export const catalogRouter = router({
       episode: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
+      await assertCatalogEnabled()
       const key = sourcesCacheKey(input.tmdbId, input.type, input.season, input.episode)
       const cached = sourcesCache.get(key)
       if (cached && (cached.promise || Date.now() - cached.timestamp < SOURCES_CACHE_TTL)) {
@@ -283,6 +303,7 @@ export const catalogRouter = router({
       episode: z.number().optional(),
     }))
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       const streams = await fetchStreamingSources({
         tmdbId: input.tmdbId,
         title: input.title,
@@ -315,6 +336,7 @@ export const catalogRouter = router({
       duration: z.number().min(0).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await assertCatalogEnabled()
       // Build unique condition: user + tmdbId + episodeId (for TV) or user + tmdbId (for movie)
       const conditions = [
         eq(onlineWatchProgress.userId, ctx.user.id),
@@ -373,6 +395,7 @@ export const catalogRouter = router({
       limit: z.number().min(1).max(20).default(10),
     }).optional())
     .query(async ({ input, ctx }) => {
+      await assertCatalogEnabled()
       const params = input || { limit: 10 }
 
       return db
@@ -404,6 +427,8 @@ export const catalogRouter = router({
       sourceHeaders: z.record(z.string(), z.string()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await assertCatalogEnabled()
+      await assertDownloadsEnabled()
       const downloadId = uuidv4()
 
       await db.insert(downloads).values({
@@ -442,6 +467,7 @@ export const catalogRouter = router({
       limit: z.number().min(1).max(50).default(20),
     }).optional())
     .query(async ({ input, ctx }) => {
+      await assertDownloadsEnabled()
       const params = input || { limit: 20 }
 
       return db
@@ -456,6 +482,7 @@ export const catalogRouter = router({
   cancelDownload: adminProcedure
     .input(z.string())
     .mutation(async ({ input }) => {
+      await assertDownloadsEnabled()
       const [download] = await db
         .select()
         .from(downloads)
@@ -488,6 +515,7 @@ export const catalogRouter = router({
   searchPerson: protectedProcedure
     .input(z.object({ query: z.string().min(2) }))
     .query(async ({ input }) => {
+      await assertCatalogEnabled()
       return await searchTmdbPerson(input.query)
     }),
 

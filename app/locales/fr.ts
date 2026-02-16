@@ -369,6 +369,13 @@ export default {
     githubToken: 'Token GitHub',
     githubTokenPlaceholder: 'ghp_...',
     githubTokenDesc: 'Token d\'accès personnel GitHub. Nécessaire pour les dépôts privés et pour télécharger les mises à jour.',
+    features: 'Fonctionnalités',
+    catalogEnabled: 'Catalogue en ligne',
+    catalogEnabledDesc: 'Permet de parcourir et streamer des films et séries en ligne',
+    downloadsEnabled: 'Téléchargements',
+    downloadsEnabledDesc: 'Permet de télécharger du contenu depuis le catalogue en ligne',
+    registrationEnabled: 'Inscription',
+    registrationEnabledDesc: 'Permet aux nouveaux utilisateurs de créer un compte',
   },
 
   // Admin update
