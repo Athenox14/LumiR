@@ -1,6 +1,7 @@
 interface User {
   id: string
   email: string
+  username?: string | null
   displayName: string
   role: 'super_admin' | 'admin' | 'user'
   permissions?: string[] | null
@@ -25,10 +26,10 @@ export function useAuth() {
     return sessionUser.value as User
   })
 
-  async function login(email: string, password: string) {
+  async function login(identifier: string, password: string) {
     loading.value = true
     try {
-      const result = await trpc.auth.login.mutate({ email, password })
+      const result = await trpc.auth.login.mutate({ identifier, password })
       await fetchSession() // Refresh session after login
       return result
     } finally {
@@ -55,6 +56,7 @@ export function useAuth() {
 
   async function updateProfile(data: {
     displayName?: string
+    username?: string | null
     currentPassword?: string
     newPassword?: string
     bio?: string

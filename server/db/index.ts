@@ -17,6 +17,31 @@ const sqlite = new Database(dbPath)
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('foreign_keys = ON')
 
+// Register Levenshtein distance function for fuzzy search
+sqlite.function('levenshtein', (a: unknown, b: unknown) => {
+  const s = String(a || '').toLowerCase()
+  const t = String(b || '').toLowerCase()
+  if (s === t) return 0
+  if (!s.length) return t.length
+  if (!t.length) return s.length
+  const m = s.length
+  const n = t.length
+  // Single-row DP
+  let prev = new Array(n + 1)
+  let curr = new Array(n + 1)
+  for (let j = 0; j <= n; j++) prev[j] = j
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i
+    for (let j = 1; j <= n; j++) {
+      curr[j] = s[i - 1] === t[j - 1]
+        ? prev[j - 1]
+        : 1 + Math.min(prev[j - 1], prev[j], curr[j - 1])
+    }
+    ;[prev, curr] = [curr, prev]
+  }
+  return prev[n]
+})
+
 export const db = drizzle(sqlite, { schema })
 export { sqlite }
 
@@ -184,6 +209,8 @@ export function initializeDatabase() {
     'ALTER TABLE users ADD COLUMN show_liked_films INTEGER DEFAULT 0',
     // Pre-extracted subtitle content
     'ALTER TABLE subtitle_tracks ADD COLUMN content TEXT',
+    // Username for login
+    'ALTER TABLE users ADD COLUMN username TEXT UNIQUE',
   ]
   for (const migration of migrations) {
     try { sqlite.exec(migration) } catch { /* column already exists */ }
