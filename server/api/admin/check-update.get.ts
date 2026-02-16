@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     published_at: string
     html_url: string
     body: string
-    assets: Array<{ name: string; browser_download_url: string; size: number }>
+    assets: Array<{ name: string; url: string; browser_download_url: string; size: number }>
   }
 
   // Current version
@@ -57,6 +57,11 @@ export default defineEventHandler(async (event) => {
 
   const asset = release.assets.find(a => a.name.endsWith('.zip'))
 
+  // For private repos: use the asset API URL (not browser_download_url which returns 404 with token auth)
+  const downloadUrl = token && asset?.url
+    ? asset.url
+    : asset?.browser_download_url || null
+
   return {
     currentVersion,
     latestVersion: release.tag_name,
@@ -65,7 +70,7 @@ export default defineEventHandler(async (event) => {
     releaseUrl: release.html_url,
     releaseNotes: release.body,
     hasUpdate: currentVersion !== release.tag_name && currentVersion !== 'dev',
-    downloadUrl: asset?.browser_download_url || null,
+    downloadUrl,
     downloadSize: asset?.size || 0,
   }
 })
