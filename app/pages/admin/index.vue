@@ -30,6 +30,8 @@ onMounted(async () => {
   } catch {
     // ignore
   }
+  // Auto-check for updates
+  checkForUpdate()
 })
 
 async function checkForUpdate() {

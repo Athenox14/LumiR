@@ -622,3 +622,58 @@ async function scanLibrary(scanId: string, mediaPath: string) {
   }
 }
 
+// Exported for auto-scan scheduler plugin
+export async function triggerAutoScan(): Promise<boolean> {
+  if (currentScan?.status === 'running') {
+    console.log('[AutoScan] Scan already in progress, skipping')
+    return false
+  }
+
+  currentScan = null
+
+  const [mediaPathSetting] = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, 'mediaPath'))
+    .limit(1)
+
+  if (!mediaPathSetting?.value) {
+    console.log('[AutoScan] Media path not configured, skipping')
+    return false
+  }
+
+  const mediaPath = mediaPathSetting.value as string
+
+  try {
+    const stat = await fs.stat(mediaPath)
+    if (!stat.isDirectory()) {
+      console.log('[AutoScan] Media path is not a directory, skipping')
+      return false
+    }
+  } catch {
+    console.log(`[AutoScan] Media path not accessible: ${mediaPath}`)
+    return false
+  }
+
+  const scanId = uuidv4()
+  currentScan = {
+    id: scanId,
+    status: 'running',
+    totalFiles: 0,
+    processedFiles: 0,
+    newFiles: 0,
+    updatedFiles: 0,
+    errors: [],
+  }
+
+  await db.insert(scanHistory).values({
+    id: scanId,
+    startedAt: new Date(),
+    status: 'running',
+  })
+
+  console.log(`[AutoScan] Starting scheduled scan (${scanId})`)
+  scanLibrary(scanId, mediaPath).catch(console.error)
+  return true
+}
+
