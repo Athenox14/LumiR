@@ -12,16 +12,20 @@ export default defineEventHandler(async (event) => {
   let commitSha = 'dev'
   let version = 'dev'
 
-  try {
-    commitSha = readFileSync(join(process.cwd(), 'BUILD_SHA'), 'utf-8').trim()
-  } catch {
-    // dev mode - no BUILD_SHA file
-  }
+  const cwd = process.cwd()
 
-  try {
-    version = readFileSync(join(process.cwd(), 'BUILD_VERSION'), 'utf-8').trim()
-  } catch {
-    // dev mode - no BUILD_VERSION file
+  // Try root first, then .output/ (zip extracts build info inside .output/)
+  for (const base of [cwd, join(cwd, '.output')]) {
+    if (commitSha === 'dev') {
+      try {
+        commitSha = readFileSync(join(base, 'BUILD_SHA'), 'utf-8').trim()
+      } catch {}
+    }
+    if (version === 'dev') {
+      try {
+        version = readFileSync(join(base, 'BUILD_VERSION'), 'utf-8').trim()
+      } catch {}
+    }
   }
 
   return { commitSha, version }
