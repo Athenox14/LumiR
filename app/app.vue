@@ -1,3 +1,11 @@
+<script setup lang="ts">
+const { appName } = useAppName()
+
+useHead({
+  titleTemplate: (title) => title ? `${title} - ${appName.value}` : appName.value,
+})
+</script>
+
 <template>
   <div class="dark">
     <NuxtRouteAnnouncer />

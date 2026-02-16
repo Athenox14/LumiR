@@ -38,7 +38,8 @@ export default defineNuxtConfig({
       title: 'LumiR',
       meta: [
         { name: 'description', content: 'Self-hosted media library' },
-        { name: 'theme-color', content: '#0a0a0a' }
+        { name: 'theme-color', content: '#0a0a0a' },
+        { name: 'robots', content: 'noindex, nofollow' }
       ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }
