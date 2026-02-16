@@ -33,10 +33,12 @@ export const mediaRouter = router({
         if (pathMatch) {
           conditions.push(like(media.filePath, `%${pathMatch[1]}%`))
         } else {
+          // Case-insensitive search (LOWER handles accented chars in SQLite)
+          const term = params.search.toLowerCase()
           conditions.push(
             or(
-              like(media.title, `%${params.search}%`),
-              like(media.originalTitle, `%${params.search}%`)
+              sql`LOWER(${media.title}) LIKE ${`%${term}%`}`,
+              sql`LOWER(${media.originalTitle}) LIKE ${`%${term}%`}`
             )
           )
         }
@@ -570,8 +572,9 @@ export const mediaRouter = router({
       const queryParams: any[] = []
 
       if (params.search) {
-        conditions.push(`(title LIKE ? OR original_title LIKE ?)`)
-        queryParams.push(`%${params.search}%`, `%${params.search}%`)
+        const term = params.search.toLowerCase()
+        conditions.push(`(LOWER(title) LIKE ? OR LOWER(original_title) LIKE ?)`)
+        queryParams.push(`%${term}%`, `%${term}%`)
       }
       if (params.genre) {
         conditions.push(`genres LIKE ?`)
