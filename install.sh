@@ -131,9 +131,9 @@ password=$SMB_PASS
 CREDEOF
     chmod 600 "$SMB_CRED_FILE"
     ok "Fichier de credentials créé ($SMB_CRED_FILE)"
-    MOUNT_OPTS="credentials=$SMB_CRED_FILE,uid=www-data,gid=www-data,iocharset=utf8,_netdev,nofail"
+    MOUNT_OPTS="credentials=$SMB_CRED_FILE,uid=www-data,gid=www-data,iocharset=utf8,vers=3.0,_netdev,nofail"
   else
-    MOUNT_OPTS="guest,uid=www-data,gid=www-data,iocharset=utf8,_netdev,nofail"
+    MOUNT_OPTS="guest,uid=www-data,gid=www-data,iocharset=utf8,vers=3.0,_netdev,nofail"
   fi
 
   # Ajouter à fstab si pas déjà présent
@@ -191,7 +191,9 @@ fi
 TAG_NAME=$(echo "$RELEASE_JSON" | grep -o '"tag_name":"[^"]*"' | head -1 | cut -d'"' -f4)
 RELEASE_NAME=$(echo "$RELEASE_JSON" | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-# Trouver l'URL du zip
+# Trouver l'URL de l'asset (API URL pour repos privés)
+# On cherche l'url API de l'asset .zip, pas browser_download_url
+ASSET_API_URL=$(echo "$RELEASE_JSON" | grep -B5 '"browser_download_url"' | grep -B5 '\.zip"' | grep -o '"url":"https://api.github.com/repos/[^"]*"' | head -1 | cut -d'"' -f4)
 DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o '"browser_download_url":"[^"]*\.zip"' | head -1 | cut -d'"' -f4)
 
 if [ -z "$DOWNLOAD_URL" ]; then
@@ -218,13 +220,30 @@ if [ -n "$TOKEN" ]; then
   DOWNLOAD_HEADERS+=(-H "Authorization: Bearer $TOKEN")
 fi
 
-curl -L -sS "${DOWNLOAD_HEADERS[@]}" -o "$ZIP_PATH" "$DOWNLOAD_URL"
+# Pour les repos privés, utiliser l'URL API de l'asset (pas browser_download_url)
+if [ -n "$TOKEN" ] && [ -n "$ASSET_API_URL" ]; then
+  ACTUAL_URL="$ASSET_API_URL"
+else
+  ACTUAL_URL="$DOWNLOAD_URL"
+fi
+
+log "Téléchargement depuis: $ACTUAL_URL"
+curl -L -sS "${DOWNLOAD_HEADERS[@]}" -o "$ZIP_PATH" "$ACTUAL_URL"
 
 if [ ! -f "$ZIP_PATH" ]; then
   fail "Échec du téléchargement"
 fi
 
 ZIP_SIZE=$(du -h "$ZIP_PATH" | cut -f1)
+
+# Vérifier que c'est bien un zip (pas une page HTML d'erreur)
+if ! file "$ZIP_PATH" | grep -qi "zip"; then
+  log "Le fichier téléchargé n'est pas un zip valide. Contenu:"
+  head -c 200 "$ZIP_PATH"
+  echo ""
+  fail "Le téléchargement a échoué (fichier invalide, ${ZIP_SIZE})"
+fi
+
 ok "Téléchargé ($ZIP_SIZE)"
 
 # ============================================
