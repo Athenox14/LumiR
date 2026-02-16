@@ -212,6 +212,29 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
           </div>
         </div>
 
+        <!-- Recommendations -->
+        <div v-if="info.recommendations?.length" class="mb-8">
+          <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('catalog.recommendations') }}</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            <NuxtLink
+              v-for="rec in info.recommendations.slice(0, 10)"
+              :key="rec.id"
+              :to="`/catalog/tv/${rec.id}`"
+              class="group block"
+            >
+              <div class="aspect-[2/3] rounded-xl overflow-hidden bg-surface">
+                <img
+                  :src="rec.image"
+                  :alt="rec.title"
+                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  loading="lazy"
+                />
+              </div>
+              <p class="mt-2 text-sm text-text-primary truncate group-hover:text-primary transition-colors">{{ rec.title }}</p>
+            </NuxtLink>
+          </div>
+        </div>
+
         <!-- Seasons & Episodes -->
         <div v-if="seasons.length">
           <div v-for="season in seasons" :key="season.number" class="mb-8">
