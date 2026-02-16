@@ -1,8 +1,9 @@
 import fr from '~/locales/fr'
 import en from '~/locales/en'
+import de from '~/locales/de'
 
-type Locale = 'fr' | 'en'
-const messages: Record<Locale, any> = { fr, en }
+type Locale = 'fr' | 'en' | 'de'
+const messages: Record<Locale, any> = { fr, en, de }
 
 export function useI18n() {
   const locale = useState<Locale>('app-locale', () => {
