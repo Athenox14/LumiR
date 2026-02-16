@@ -6,6 +6,8 @@ definePageMeta({
 const trpc = useTrpc()
 const { t } = useI18n()
 
+useHead({ title: computed(() => t('admin.settings')) })
+
 const loading = ref(false)
 const success = ref(false)
 const error = ref('')

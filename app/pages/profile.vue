@@ -5,6 +5,8 @@ definePageMeta({
 
 const { t } = useI18n()
 const { user, updateProfile, fetchUser } = useAuth()
+
+useHead({ title: computed(() => t('common.profile')) })
 const trpc = useTrpc()
 
 // Form state

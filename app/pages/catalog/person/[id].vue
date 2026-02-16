@@ -14,6 +14,8 @@ const { data: person, pending, error } = useAsyncData(
   () => trpc.catalog.personInfo.query({ personId: personId.value })
 )
 
+useHead({ title: computed(() => person.value?.name || t('common.loading')) })
+
 function formatDate(date: string | null): string {
   if (!date) return ''
   try {

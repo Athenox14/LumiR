@@ -2,8 +2,9 @@
 const { appName } = useAppName()
 
 useHead({
-  titleTemplate: computed(() => `%s - ${appName.value}`),
-  title: computed(() => appName.value),
+  titleTemplate: computed(() => {
+    return (title?: string) => title ? `${title} - ${appName.value}` : appName.value
+  }),
 })
 </script>
 

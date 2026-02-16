@@ -7,6 +7,8 @@ const { t } = useI18n()
 const trpc = useTrpc()
 const { catalogEnabled } = useFeatureFlags()
 
+useHead({ title: computed(() => t('nav.catalog')) })
+
 watch(catalogEnabled, (val) => {
   if (!val) navigateTo('/')
 }, { immediate: true })

@@ -7,6 +7,8 @@ const trpc = useTrpc()
 const { t } = useI18n()
 const { appName } = useAppName()
 
+useHead({ title: computed(() => t('nav.admin')) })
+
 // Version info
 const versionInfo = ref<{ commitSha: string; version: string } | null>(null)
 const updateInfo = ref<{

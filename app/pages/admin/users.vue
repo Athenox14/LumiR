@@ -7,6 +7,8 @@ const trpc = useTrpc()
 const { t } = useI18n()
 const { user: currentUser } = useAuth()
 
+useHead({ title: computed(() => t('admin.users')) })
+
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const editingUser = ref<any>(null)

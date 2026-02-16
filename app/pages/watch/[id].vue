@@ -15,6 +15,8 @@ const { data: media, pending, error } = useAsyncData(
   () => trpc.media.getById.query(mediaId.value)
 )
 
+useHead({ title: computed(() => media.value?.title || t('common.loading')) })
+
 // Detect stream type: native (direct) or HLS (transcode)
 const { data: streamInfo, pending: streamPending } = useAsyncData(
   `stream-info-${mediaId.value}`,

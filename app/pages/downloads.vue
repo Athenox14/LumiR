@@ -7,6 +7,8 @@ const { t } = useI18n()
 const trpc = useTrpc()
 const { downloadsEnabled } = useFeatureFlags()
 
+useHead({ title: computed(() => t('nav.downloads')) })
+
 watch(downloadsEnabled, (val) => {
   if (!val) navigateTo('/')
 }, { immediate: true })

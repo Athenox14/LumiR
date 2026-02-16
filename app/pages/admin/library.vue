@@ -6,6 +6,8 @@ definePageMeta({
 const trpc = useTrpc()
 const { t } = useI18n()
 
+useHead({ title: computed(() => t('admin.library')) })
+
 const scanning = ref(false)
 const scanError = ref('')
 

@@ -19,6 +19,8 @@ const { data: info, pending, error } = useAsyncData(
   () => trpc.catalog.info.query({ tmdbId: tmdbId.value, type: 'tv' })
 )
 
+useHead({ title: computed(() => info.value?.title || t('common.loading')) })
+
 // Preheat streaming sources for first episode as soon as we have info
 watch(() => info.value?.title, (title) => {
   if (!title || !info.value?.episodes?.length) return

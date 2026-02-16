@@ -6,6 +6,8 @@ definePageMeta({
 const trpc = useTrpc()
 const { t } = useI18n()
 
+useHead({ title: computed(() => t('nav.continueWatching')) })
+
 const { data: continueWatching, pending, refresh } = useAsyncData(
   'continue-watching-page',
   () => trpc.media.continueWatching.query({ limit: 20 })

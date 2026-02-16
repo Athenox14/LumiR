@@ -14,6 +14,8 @@ const { data, pending, error } = useAsyncData(
   () => trpc.media.getShowEpisodes.query({ tmdbId: tmdbId.value })
 )
 
+useHead({ title: computed(() => data.value?.title || t('nav.tvShows')) })
+
 const seasonScrollRefs = ref<Record<number, HTMLElement | null>>({})
 
 function episodeProgress(ep: any): number {

@@ -7,6 +7,8 @@ const route = useRoute()
 const trpc = useTrpc()
 const { t } = useI18n()
 
+useHead({ title: computed(() => t('common.search')) })
+
 const searchQuery = computed(() => (route.query.q as string) || '')
 
 const { data: results, pending } = useAsyncData(

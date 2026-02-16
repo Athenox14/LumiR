@@ -29,6 +29,8 @@ const { data: info } = useLazyAsyncData(
   })
 )
 
+useHead({ title: computed(() => info.value?.title || titleParam.value || t('common.loading')) })
+
 // All available streams from pipeline
 const allStreams = ref<Array<{
   provider: string
