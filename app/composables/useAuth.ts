@@ -1,7 +1,6 @@
 interface User {
   id: string
   email: string
-  username?: string | null
   displayName: string
   role: 'super_admin' | 'admin' | 'user'
   permissions?: string[] | null
@@ -56,7 +55,6 @@ export function useAuth() {
 
   async function updateProfile(data: {
     displayName?: string
-    username?: string | null
     currentPassword?: string
     newPassword?: string
     bio?: string

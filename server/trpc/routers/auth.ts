@@ -3,7 +3,7 @@ import { router, publicProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
 import { users, settings } from '../../db/schema'
-import { eq, or } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -64,7 +64,6 @@ export const authRouter = router({
         user: {
           id: userId,
           email: input.email.toLowerCase(),
-          username: null,
           displayName: input.displayName,
           role,
           permissions: null,
@@ -88,30 +87,22 @@ export const authRouter = router({
       }
     }),
 
-  // Login (accepts email or username)
+  // Login (accepts email or display name)
   login: publicProcedure
     .input(z.object({
       identifier: z.string().min(1),
       password: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // Find user by email or username
+      // Find user by email (exact, lowered) or display name (accent-insensitive)
       const id = input.identifier.toLowerCase()
-      let user
-      try {
-        ;[user] = await db
-          .select()
-          .from(users)
-          .where(or(eq(users.email, id), eq(users.username, id)))
-          .limit(1)
-      } catch {
-        // Fallback: username column might not exist yet (migration pending)
-        ;[user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.email, id))
-          .limit(1)
-      }
+      const normalized = input.identifier.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(sql`${users.email} = ${id} OR normalize(${users.displayName}) = ${normalized}`)
+        .limit(1)
 
       if (!user) {
         throw new TRPCError({
@@ -134,7 +125,6 @@ export const authRouter = router({
         user: {
           id: user.id,
           email: user.email,
-          username: user.username,
           displayName: user.displayName,
           role: user.role,
           permissions: user.permissions,
@@ -152,7 +142,6 @@ export const authRouter = router({
         user: {
           id: user.id,
           email: user.email,
-          username: user.username,
           displayName: user.displayName,
           role: user.role,
         },
@@ -172,52 +161,26 @@ export const authRouter = router({
       return null
     }
 
-    let user
-    try {
-      ;[user] = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          username: users.username,
-          displayName: users.displayName,
-          role: users.role,
-          permissions: users.permissions,
-          avatarUrl: users.avatarUrl,
-          bio: users.bio,
-          isProfilePublic: users.isProfilePublic,
-          showWatchedFilms: users.showWatchedFilms,
-          showLikedFilms: users.showLikedFilms,
-          favoriteActorId: users.favoriteActorId,
-          favoriteActorName: users.favoriteActorName,
-          favoriteActorImage: users.favoriteActorImage,
-          createdAt: users.createdAt,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1)
-    } catch {
-      // Fallback: username column might not exist yet
-      ;[user] = await db
-        .select({
-          id: users.id,
-          email: users.email,
-          displayName: users.displayName,
-          role: users.role,
-          permissions: users.permissions,
-          avatarUrl: users.avatarUrl,
-          bio: users.bio,
-          isProfilePublic: users.isProfilePublic,
-          showWatchedFilms: users.showWatchedFilms,
-          showLikedFilms: users.showLikedFilms,
-          favoriteActorId: users.favoriteActorId,
-          favoriteActorName: users.favoriteActorName,
-          favoriteActorImage: users.favoriteActorImage,
-          createdAt: users.createdAt,
-        })
-        .from(users)
-        .where(eq(users.id, ctx.user.id))
-        .limit(1)
-    }
+    const [user] = await db
+      .select({
+        id: users.id,
+        email: users.email,
+        displayName: users.displayName,
+        role: users.role,
+        permissions: users.permissions,
+        avatarUrl: users.avatarUrl,
+        bio: users.bio,
+        isProfilePublic: users.isProfilePublic,
+        showWatchedFilms: users.showWatchedFilms,
+        showLikedFilms: users.showLikedFilms,
+        favoriteActorId: users.favoriteActorId,
+        favoriteActorName: users.favoriteActorName,
+        favoriteActorImage: users.favoriteActorImage,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.user.id))
+      .limit(1)
 
     return user || null
   }),
@@ -226,7 +189,6 @@ export const authRouter = router({
   updateProfile: protectedProcedure
     .input(z.object({
       displayName: z.string().min(2).max(50).optional(),
-      username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_-]+$/).nullish(),
       currentPassword: z.string().optional(),
       newPassword: z.string().min(8).optional(),
       bio: z.string().max(500).optional(),
@@ -244,19 +206,6 @@ export const authRouter = router({
 
       if (input.displayName) {
         updates.displayName = input.displayName
-      }
-
-      if (input.username !== undefined) {
-        const uname = input.username ? input.username.toLowerCase() : null
-        // Check uniqueness
-        if (uname) {
-          const [existing] = await db.select({ id: users.id }).from(users)
-            .where(eq(users.username, uname)).limit(1)
-          if (existing && existing.id !== ctx.user.id) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'Username already taken' })
-          }
-        }
-        updates.username = uname
       }
 
       if (input.bio !== undefined) updates.bio = input.bio || null
@@ -310,7 +259,6 @@ export const authRouter = router({
           user: {
             id: updatedUser.id,
             email: updatedUser.email,
-            username: updatedUser.username,
             displayName: updatedUser.displayName,
             role: updatedUser.role,
             permissions: updatedUser.permissions,
