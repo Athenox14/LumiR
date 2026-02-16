@@ -3,7 +3,7 @@ import { router, publicProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
 import { users, settings } from '../../db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, or } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -64,6 +64,7 @@ export const authRouter = router({
         user: {
           id: userId,
           email: input.email.toLowerCase(),
+          username: null,
           displayName: input.displayName,
           role,
           permissions: null,
@@ -87,24 +88,25 @@ export const authRouter = router({
       }
     }),
 
-  // Login
+  // Login (accepts email or username)
   login: publicProcedure
     .input(z.object({
-      email: z.string().email(),
+      identifier: z.string().min(1),
       password: z.string(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // Find user
+      // Find user by email or username
+      const id = input.identifier.toLowerCase()
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.email, input.email.toLowerCase()))
+        .where(or(eq(users.email, id), eq(users.username, id)))
         .limit(1)
 
       if (!user) {
         throw new TRPCError({
           code: 'UNAUTHORIZED',
-          message: 'Invalid email or password',
+          message: 'Invalid credentials',
         })
       }
 
@@ -113,7 +115,7 @@ export const authRouter = router({
       if (!validPassword) {
         throw new TRPCError({
           code: 'UNAUTHORIZED',
-          message: 'Invalid email or password',
+          message: 'Invalid credentials',
         })
       }
 
@@ -122,6 +124,7 @@ export const authRouter = router({
         user: {
           id: user.id,
           email: user.email,
+          username: user.username,
           displayName: user.displayName,
           role: user.role,
           permissions: user.permissions,
@@ -139,6 +142,7 @@ export const authRouter = router({
         user: {
           id: user.id,
           email: user.email,
+          username: user.username,
           displayName: user.displayName,
           role: user.role,
         },
@@ -162,6 +166,7 @@ export const authRouter = router({
       .select({
         id: users.id,
         email: users.email,
+        username: users.username,
         displayName: users.displayName,
         role: users.role,
         permissions: users.permissions,
@@ -186,6 +191,7 @@ export const authRouter = router({
   updateProfile: protectedProcedure
     .input(z.object({
       displayName: z.string().min(2).max(50).optional(),
+      username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_-]+$/).nullish(),
       currentPassword: z.string().optional(),
       newPassword: z.string().min(8).optional(),
       bio: z.string().max(500).optional(),
@@ -203,6 +209,19 @@ export const authRouter = router({
 
       if (input.displayName) {
         updates.displayName = input.displayName
+      }
+
+      if (input.username !== undefined) {
+        const uname = input.username ? input.username.toLowerCase() : null
+        // Check uniqueness
+        if (uname) {
+          const [existing] = await db.select({ id: users.id }).from(users)
+            .where(eq(users.username, uname)).limit(1)
+          if (existing && existing.id !== ctx.user.id) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Username already taken' })
+          }
+        }
+        updates.username = uname
       }
 
       if (input.bio !== undefined) updates.bio = input.bio || null
@@ -256,6 +275,7 @@ export const authRouter = router({
           user: {
             id: updatedUser.id,
             email: updatedUser.email,
+            username: updatedUser.username,
             displayName: updatedUser.displayName,
             role: updatedUser.role,
             permissions: updatedUser.permissions,

@@ -33,12 +33,15 @@ export const mediaRouter = router({
         if (pathMatch) {
           conditions.push(like(media.filePath, `%${pathMatch[1]}%`))
         } else {
-          // Case-insensitive search (LOWER handles accented chars in SQLite)
+          // Fuzzy search: LIKE for substring matches + Levenshtein for close matches
           const term = params.search.toLowerCase()
+          const maxDist = Math.max(2, Math.floor(term.length * 0.35))
           conditions.push(
             or(
               sql`LOWER(${media.title}) LIKE ${`%${term}%`}`,
-              sql`LOWER(${media.originalTitle}) LIKE ${`%${term}%`}`
+              sql`LOWER(${media.originalTitle}) LIKE ${`%${term}%`}`,
+              sql`levenshtein(LOWER(${media.title}), ${term}) <= ${maxDist}`,
+              sql`levenshtein(LOWER(${media.originalTitle}), ${term}) <= ${maxDist}`
             )
           )
         }
@@ -573,8 +576,9 @@ export const mediaRouter = router({
 
       if (params.search) {
         const term = params.search.toLowerCase()
-        conditions.push(`(LOWER(title) LIKE ? OR LOWER(original_title) LIKE ?)`)
-        queryParams.push(`%${term}%`, `%${term}%`)
+        const maxDist = Math.max(2, Math.floor(term.length * 0.35))
+        conditions.push(`(LOWER(title) LIKE ? OR LOWER(original_title) LIKE ? OR levenshtein(LOWER(title), ?) <= ? OR levenshtein(LOWER(original_title), ?) <= ?)`)
+        queryParams.push(`%${term}%`, `%${term}%`, term, maxDist, term, maxDist)
       }
       if (params.genre) {
         conditions.push(`genres LIKE ?`)

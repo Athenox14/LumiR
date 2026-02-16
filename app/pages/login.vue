@@ -9,7 +9,7 @@ const { t } = useI18n()
 const trpc = useTrpc()
 const { registrationEnabled } = useFeatureFlags()
 
-const email = ref('')
+const identifier = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -29,7 +29,7 @@ onMounted(async () => {
 })
 
 async function handleSubmit() {
-  if (!email.value || !password.value) {
+  if (!identifier.value || !password.value) {
     error.value = t('auth.fillAllFields')
     return
   }
@@ -38,10 +38,10 @@ async function handleSubmit() {
   error.value = ''
 
   try {
-    await login(email.value, password.value)
+    await login(identifier.value, password.value)
     navigateTo('/')
   } catch (e: any) {
-    error.value = e.message || t('auth.invalidEmailPassword')
+    error.value = e.message || t('auth.invalidCredentials')
   } finally {
     loading.value = false
   }
@@ -54,10 +54,10 @@ async function handleSubmit() {
 
     <form class="space-y-4" @submit.prevent="handleSubmit">
       <UiInput
-        v-model="email"
-        type="email"
-        :label="t('auth.email')"
-        :placeholder="t('auth.emailPlaceholder')"
+        v-model="identifier"
+        type="text"
+        :label="t('auth.emailOrUsername')"
+        :placeholder="t('auth.emailOrUsernamePlaceholder')"
         required
       />
 

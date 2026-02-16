@@ -255,6 +255,7 @@ export const usersRouter = router({
         .select({
           id: users.id,
           displayName: users.displayName,
+          username: users.username,
           avatarUrl: users.avatarUrl,
           bio: users.bio,
           isProfilePublic: users.isProfilePublic,
