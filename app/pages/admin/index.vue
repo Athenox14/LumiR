@@ -86,7 +86,8 @@ function simpleMarkdown(text: string): string {
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / 1048576).toFixed(1) + ' MB'
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB'
+  return (bytes / 1073741824).toFixed(2) + ' GB'
 }
 
 // Fetch stats
@@ -424,7 +425,10 @@ const adminSections = computed(() => [
                 S{{ String(item.season).padStart(2,'0') }}E{{ String(item.episode).padStart(2,'0') }}
               </span>
             </p>
-            <p class="text-xs text-text-muted truncate">{{ item.fileName }}</p>
+            <p class="text-xs text-text-muted truncate">
+              {{ item.fileName }}
+              <span v-if="item.fileSize" class="ml-1 text-text-muted/60">({{ formatBytes(item.fileSize) }})</span>
+            </p>
           </div>
           <div class="flex items-center gap-2 flex-shrink-0">
             <NuxtLink
@@ -475,7 +479,10 @@ const adminSections = computed(() => [
               :key="item.id"
               class="flex items-center justify-between px-3 py-2"
             >
-              <p class="text-xs text-text-muted truncate min-w-0 flex-1">{{ item.fileName }}</p>
+              <p class="text-xs text-text-muted truncate min-w-0 flex-1">
+                {{ item.fileName }}
+                <span v-if="item.fileSize" class="ml-1 text-text-muted/60">({{ formatBytes(item.fileSize) }})</span>
+              </p>
               <div class="flex items-center gap-2 flex-shrink-0 ml-2">
                 <NuxtLink
                   :to="`/media/${item.id}`"

@@ -250,7 +250,7 @@ export const catalogRouter = router({
       personId: z.number(),
     }))
     .query(async ({ input }) => {
-      await assertCatalogEnabled()
+      // Person info is always accessible (even when catalog is disabled)
       const person = await getPersonInfo(input.personId)
       if (!person) {
         throw new TRPCError({
@@ -511,11 +511,10 @@ export const catalogRouter = router({
       return { success: true }
     }),
 
-  // Search TMDB person (for avatar selection)
+  // Search TMDB person (for avatar selection — always accessible)
   searchPerson: protectedProcedure
     .input(z.object({ query: z.string().min(2) }))
     .query(async ({ input }) => {
-      await assertCatalogEnabled()
       return await searchTmdbPerson(input.query)
     }),
 
