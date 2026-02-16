@@ -30,9 +30,9 @@ function createProviders(): { name: string; instance: MovieParser }[] {
 
 function bestMatches(query: string, results: IMovieResult[], type: TvType): IMovieResult[] {
   const normalizedQuery = query.toLowerCase().trim()
-  // Lower threshold for short titles (< 8 chars) since Dice coefficient
-  // penalizes short strings that appear as substrings in longer results
-  const threshold = normalizedQuery.length < 8 ? 0.15 : 0.3
+  // Dice coefficient threshold — reject anything too dissimilar
+  // Short titles (< 8 chars) get a lower bar since Dice penalizes short strings
+  const threshold = normalizedQuery.length < 8 ? 0.3 : 0.5
 
   function scoreResults(candidates: IMovieResult[]) {
     return candidates
@@ -284,6 +284,11 @@ export async function moviePipeline(
   const seenSubUrls = new Set<string>()
 
   for (const p of providerResults) {
+    // Skip providers with garbage matches (similarity too low)
+    if (p.id && p.similarity < 0.4) {
+      console.log(`[Pipeline] Dropping ${p.provider} — "${p.title}" sim=${p.similarity.toFixed(2)} too low`)
+      continue
+    }
     if (p.streams) {
       for (const stream of p.streams) {
         allStreams.push(stream)
