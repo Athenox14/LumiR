@@ -6,11 +6,6 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
-const { catalogEnabled } = useFeatureFlags()
-
-watch(catalogEnabled, (val) => {
-  if (!val) navigateTo('/')
-}, { immediate: true })
 
 const personId = computed(() => Number(route.params.id))
 
