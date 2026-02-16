@@ -35,7 +35,6 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'LumiR',
       meta: [
         { name: 'description', content: 'Self-hosted media library' },
         { name: 'theme-color', content: '#0a0a0a' },

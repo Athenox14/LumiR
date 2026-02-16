@@ -158,7 +158,7 @@ async function saveSettings() {
         </div>
       </div>
 
-      <!-- Features toggles -->
+      <!-- Features toggles + GitHub -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
           <h3 class="font-semibold text-text-primary">{{ t('adminSettings.features') }}</h3>
@@ -208,6 +208,36 @@ async function saveSettings() {
             </label>
           </div>
         </div>
+
+        <!-- GitHub -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.github') }}</h3>
+
+          <UiInput
+            v-model="githubRepo"
+            :label="t('adminSettings.githubRepo')"
+            :placeholder="t('adminSettings.githubRepoPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.githubRepoDesc') }}
+              </p>
+            </template>
+          </UiInput>
+
+          <UiInput
+            v-model="githubToken"
+            type="password"
+            :label="t('adminSettings.githubToken')"
+            :placeholder="t('adminSettings.githubTokenPlaceholder')"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.githubTokenDesc') }}
+              </p>
+            </template>
+          </UiInput>
+        </div>
       </div>
 
       <!-- Bottom row: API keys side by side -->
@@ -245,38 +275,6 @@ async function saveSettings() {
               <p class="text-xs text-text-muted mt-1">
                 {{ t('adminSettings.groqApiKeyDesc') }}
                 <a href="https://console.groq.com" target="_blank" class="text-primary hover:underline">console.groq.com</a>
-              </p>
-            </template>
-          </UiInput>
-        </div>
-      </div>
-
-      <!-- Third row: GitHub -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.github') }}</h3>
-
-          <UiInput
-            v-model="githubRepo"
-            :label="t('adminSettings.githubRepo')"
-            :placeholder="t('adminSettings.githubRepoPlaceholder')"
-          >
-            <template #description>
-              <p class="text-xs text-text-muted mt-1">
-                {{ t('adminSettings.githubRepoDesc') }}
-              </p>
-            </template>
-          </UiInput>
-
-          <UiInput
-            v-model="githubToken"
-            type="password"
-            :label="t('adminSettings.githubToken')"
-            :placeholder="t('adminSettings.githubTokenPlaceholder')"
-          >
-            <template #description>
-              <p class="text-xs text-text-muted mt-1">
-                {{ t('adminSettings.githubTokenDesc') }}
               </p>
             </template>
           </UiInput>
