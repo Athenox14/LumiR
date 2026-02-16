@@ -22,7 +22,7 @@ onMounted(async () => {
     if (needsSetup.value) {
       navigateTo('/setup')
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
 })

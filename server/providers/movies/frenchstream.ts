@@ -11,7 +11,6 @@ import type {
   ISearch} from '../types';
 import {
   TvType,
-  IMovieEpisode,
 } from '../types'
 import { MixDrop, Voe, StreamSB, Uqload } from '../extractors'
 
@@ -254,7 +253,7 @@ class FrenchStream extends MovieParser {
     }
   }
 
-  override fetchEpisodeServers = async (episodeId: string, mediaId?: string): Promise<IEpisodeServer[]> => {
+  override fetchEpisodeServers = async (episodeId: string, _mediaId?: string): Promise<IEpisodeServer[]> => {
     await this.ensureDomain()
     try {
       const epData = JSON.parse(episodeId)

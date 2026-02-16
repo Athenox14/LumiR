@@ -3,7 +3,7 @@ import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
 import { media, audioTracks, subtitleTracks, settings, scanHistory } from '../../db/schema'
-import { eq, desc, sql } from 'drizzle-orm'
+import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { promises as fs } from 'fs'
 import { join, basename, extname, parse } from 'path'
@@ -70,7 +70,7 @@ const RELEASE_TAGS = /\b(DVDRIP|BDRIP|BRRIP|WEBRIP|HDTV|HDRIP|TVRIP|PPVRIP|DVDSC
 function cleanReleaseTags(title: string): string {
   return title
     .replace(RELEASE_TAGS, ' ')
-    .replace(/\s*[\[\(][^\]\)]*[\]\)]\s*/g, ' ')  // Remove [tags] and (tags) that are now empty or contain only tags
+    .replace(/\s*[[({][^\]})]*[\])}]\s*/g, ' ')  // Remove [tags] and (tags) that are now empty or contain only tags
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -245,7 +245,7 @@ export const libraryRouter = router({
           message: 'Media path is not a directory',
         })
       }
-    } catch (error) {
+    } catch {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: `Media path does not exist or is not accessible: ${mediaPath}`,

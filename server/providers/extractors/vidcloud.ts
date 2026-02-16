@@ -78,7 +78,7 @@ class VidCloud extends VideoExtractor {
 
       return result
     } catch (err) {
-      throw err
+      throw new Error((err as Error).message)
     }
   }
 }

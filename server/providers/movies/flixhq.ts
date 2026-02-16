@@ -34,7 +34,7 @@ class FlixHQ extends MovieParser {
         const $el = $(el)
         const releaseDate = $el.find('div.film-detail > div.fd-infor > span:nth-child(1)').text()
         searchResult.results.push({
-          id: $el.find('div.film-poster > a').attr('href')?.slice(1)!,
+          id: $el.find('div.film-poster > a').attr('href')?.slice(1) ?? '',
           title: $el.find('div.film-detail > h2 > a').attr('title')!,
           url: `${this.baseUrl}${$el.find('div.film-poster > a').attr('href')}`,
           image: $el.find('div.film-poster > img').attr('data-src'),

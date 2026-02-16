@@ -15,7 +15,7 @@ interface User {
 }
 
 export function useAuth() {
-  const { loggedIn, user: sessionUser, session, fetch: fetchSession, clear } = useUserSession()
+  const { loggedIn, user: sessionUser, fetch: fetchSession, clear } = useUserSession()
   const trpc = useTrpc()
   const loading = useState<boolean>('auth-loading', () => false)
 

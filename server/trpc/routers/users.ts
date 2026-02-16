@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import { router, adminProcedure, superAdminProcedure, protectedProcedure } from '../trpc'
+import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
-import { users, watchProgress, media } from '../../db/schema'
-import { eq, ne, and, desc, sql } from 'drizzle-orm'
+import { users } from '../../db/schema'
+import { eq, ne, and, desc } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { v4 as uuidv4 } from 'uuid'
 

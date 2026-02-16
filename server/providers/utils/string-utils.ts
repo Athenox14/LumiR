@@ -84,7 +84,7 @@ export function cleanTitle(title: string | undefined | null): string {
       title
         .replace(/[^A-Za-z0-9!@#$%^&*() ]/gim, ' ')
         .replace(/(th|rd|nd|st) (Season|season)/gim, '')
-        .replace(/\([^\(]*\)$/gim, '')
+        .replace(/\([^(]*\)$/gim, '')
         .replace(/season/g, '')
         .replace(/\b(IX|IV|V?I{0,3})\b/gi, (match: any) => romanToArabic(match).toString())
         .replace(/ {2}/g, ' ')
@@ -101,7 +101,7 @@ export function findSimilarTitles(inputTitle: string, titles: any[]): any[] {
     const title = cleanTitle(
       titleObj?.title
         ?.toLowerCase()
-        ?.replace(/\([^\)]*\)/g, '')
+        ?.replace(/\([^)]*\)/g, '')
         .trim() || ''
     )
     const similarity = compareTwoStrings(cleanTitle(inputTitle?.toLowerCase() || ''), title)
@@ -116,7 +116,7 @@ export function findSimilarTitles(inputTitle: string, titles: any[]): any[] {
 export const isJson = (str: string) => {
   try {
     JSON.parse(str)
-  } catch (e) {
+  } catch {
     return false
   }
   return true

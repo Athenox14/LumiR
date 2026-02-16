@@ -8,7 +8,6 @@ const { t } = useI18n()
 const { appName } = useAppName()
 const trpc = useTrpc()
 
-const step = ref(1)
 const displayName = ref('')
 const email = ref('')
 const password = ref('')
@@ -23,7 +22,7 @@ onMounted(async () => {
     if (!needsSetup) {
       navigateTo('/login')
     }
-  } catch (e) {
+  } catch {
     // Ignore
   }
 })

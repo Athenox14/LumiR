@@ -1,6 +1,5 @@
 <script setup lang="ts">
 const { isAdmin } = useAuth()
-const { t } = useI18n()
 const route = useRoute()
 
 const navItems = computed(() => {

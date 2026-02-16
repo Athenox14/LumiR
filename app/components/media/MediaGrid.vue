@@ -19,7 +19,7 @@ interface Props {
   showProgress?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
+withDefaults(defineProps<Props>(), {
   loading: false,
   emptyMessage: '',
   showProgress: true,

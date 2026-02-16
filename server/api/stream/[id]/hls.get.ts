@@ -2,7 +2,6 @@ import { db } from '../../../db'
 import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
-import { extname } from 'path'
 import {
   getOrCreateSession,
   generatePlaylist,

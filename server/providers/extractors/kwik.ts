@@ -34,7 +34,7 @@ class Kwik extends VideoExtractor {
         headers: { Referer: this.baseUrl },
       })
       const data = await response.text()
-      const destination = data.match(`a\\\.redirect\\\"\\\)\\\.attr\\\(\\\"href","(https://[^"]+)`)
+      const destination = data.match('a\\.redirect"\\)\\.attr\\("href","(https://[^"]+)')
       return destination![1]
     } catch (err) {
       throw new Error((err as Error).message)
@@ -55,7 +55,7 @@ class Kwik extends VideoExtractor {
       const data = await response.text()
 
       const obfuscatedParams = data.match(
-        `\\\}\\\("([^"]+)".*?"([^"]+)"\\\s*,\\\s*([^,]+)\\\s*,\\\s*([^,]+)`
+        '\\}\\("([^"]+)".*?"([^"]+)"\\s*,\\s*([^,]+)\\s*,\\s*([^,]+)'
       )
 
       const formScript = this.deobfuscate(

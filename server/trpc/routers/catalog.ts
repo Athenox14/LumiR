@@ -732,7 +732,7 @@ async function processDownload(downloadId: string) {
     const body = response.body
     if (!body) throw new Error('No response body')
 
-    // @ts-ignore - Node.js stream compatibility
+    // @ts-expect-error - Node.js stream compatibility
     await pipeline(Readable.fromWeb(body), progressTracker, fileStream)
 
     // Download complete - create or update media entry
