@@ -25,6 +25,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/images/
+data/subtitles/
 
 # Local env files
 .env
