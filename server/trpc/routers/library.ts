@@ -5,6 +5,7 @@ import { db } from '../../db'
 import { media, audioTracks, subtitleTracks, settings, scanHistory } from '../../db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
+import { promises as fs } from 'fs'
 import { basename } from 'path'
 import fg from 'fast-glob'
 import ptt from 'parse-torrent-title'
@@ -156,18 +157,20 @@ export const libraryRouter = router({
     const mediaPath = mediaPathSetting.value as string
 
     // Verify path exists
+    let stat
     try {
-      const stat = await fs.stat(mediaPath)
-      if (!stat.isDirectory()) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Media path is not a directory',
-        })
-      }
-    } catch {
+      stat = await fs.stat(mediaPath)
+    } catch (err: any) {
+      console.error(`[Scan] fs.stat failed for "${mediaPath}":`, err.code, err.message)
       throw new TRPCError({
         code: 'BAD_REQUEST',
-        message: `Media path does not exist or is not accessible: ${mediaPath}`,
+        message: `Media path does not exist or is not accessible: ${mediaPath} (${err.code || err.message})`,
+      })
+    }
+    if (!stat.isDirectory()) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Media path is not a directory: ${mediaPath}`,
       })
     }
 
