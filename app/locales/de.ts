@@ -253,6 +253,11 @@ export default {
     usersDesc: 'Benutzerkonten und Berechtigungen verwalten',
     settings: 'Einstellungen',
     settingsDesc: 'Anwendungseinstellungen konfigurieren',
+    system: 'System',
+    cpuUsage: 'CPU',
+    processMemory: 'Prozessspeicher',
+    systemMemory: 'Systemspeicher',
+    uptime: 'Laufzeit',
   },
 
   // Admin users
