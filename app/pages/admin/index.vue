@@ -202,7 +202,7 @@ const adminSections = computed(() => [
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20 transition-colors cursor-default"
           >
             <span class="w-1.5 h-1.5 rounded-full bg-green-500" />
-            v{{ versionInfo.version }}
+            {{ versionInfo.version }}
           </button>
           <template v-else-if="updateInfo?.hasUpdate">
             <button
@@ -212,7 +212,7 @@ const adminSections = computed(() => [
               @click="performUpdate"
             >
               <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              v{{ versionInfo.version }} &rarr; {{ updateInfo.latestVersion }}
+              {{ versionInfo.version }} &rarr; {{ updateInfo.latestVersion }}
               <span class="ml-1 px-1.5 py-0.5 bg-primary text-white rounded text-[10px] leading-none">
                 {{ updating ? '...' : t('adminUpdate.installUpdate') }}
               </span>
@@ -224,7 +224,7 @@ const adminSections = computed(() => [
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-secondary text-text-muted border border-border cursor-default"
           >
             <span class="w-1.5 h-1.5 rounded-full bg-text-muted animate-pulse" />
-            v{{ versionInfo.version }}
+            {{ versionInfo.version }}
           </button>
           <button
             v-else
@@ -232,7 +232,7 @@ const adminSections = computed(() => [
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface-secondary text-text-muted border border-border hover:bg-surface-secondary/80 hover:border-primary/30 transition-colors"
             @click="checkForUpdate"
           >
-            v{{ versionInfo.version }}
+            {{ versionInfo.version }}
           </button>
         </template>
       </div>
