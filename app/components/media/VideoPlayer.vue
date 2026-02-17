@@ -17,12 +17,6 @@ interface Props {
     title?: string | null
     trackIndex: number
   }>
-  subtitleTracks?: Array<{
-    id: string
-    language?: string | null
-    title?: string | null
-    trackIndex: number
-  }>
   subtitles?: Array<{
     url: string
     lang: string
@@ -86,6 +80,18 @@ const playerSrc = computed(() => {
   return url
 })
 
+// Build Vidstack text tracks from subtitles prop
+const vidstackTextTracks = computed(() => {
+  if (!props.subtitles?.length) return []
+  return props.subtitles.map((sub) => ({
+    src: sub.url,
+    kind: 'subtitles' as const,
+    language: sub.lang,
+    label: sub.label || sub.lang,
+    type: sub.url.endsWith('.srt') ? 'srt' : 'vtt',
+  }))
+})
+
 // HLS.js config passed via provider
 function onProviderChange(event: MediaProviderChangeEvent) {
   const provider = event.detail
@@ -104,7 +110,6 @@ function onProviderChange(event: MediaProviderChangeEvent) {
 function onCanPlay() {
   const player = playerRef.value
   if (!player) return
-  // Seek to initial position
   if (props.initialPosition > 0 && player.currentTime < props.initialPosition - 1) {
     player.currentTime = props.initialPosition
   }
@@ -114,28 +119,8 @@ function onError() {
   if (props.fallbackSrc && !usedFallback.value) {
     console.log('[VideoPlayer] Primary failed, switching to fallback:', props.fallbackSrc)
     usedFallback.value = true
-    // playerSrc computed will react
   } else {
     emit('error')
-  }
-}
-
-function onEnded() {
-  emit('ended')
-}
-
-// Add text tracks (subtitles) to the player dynamically
-function setupTextTracks() {
-  const player = playerRef.value
-  if (!player || !props.subtitles?.length) return
-  for (const sub of props.subtitles) {
-    player.textTracks.add({
-      src: sub.url,
-      kind: 'subtitles',
-      language: sub.lang,
-      label: sub.label || sub.lang,
-      type: sub.url.endsWith('.srt') ? 'srt' : 'vtt',
-    })
   }
 }
 
@@ -151,15 +136,6 @@ function setLocalAudioTrack(trackIndex: number) {
 }
 
 onMounted(() => {
-  // Wait for the custom element to be defined
-  const check = setInterval(() => {
-    if (playerRef.value) {
-      clearInterval(check)
-      setupTextTracks()
-    }
-  }, 100)
-
-  // Save progress every 10s
   progressInterval = setInterval(() => {
     const player = playerRef.value
     if (player && !player.paused && player.currentTime > 0) {
@@ -170,7 +146,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (progressInterval) clearInterval(progressInterval)
-  // Save final progress
   const player = playerRef.value
   if (player && player.currentTime > 0) {
     emit('progress', player.currentTime, effectiveDuration.value)
@@ -186,6 +161,7 @@ onUnmounted(() => {
         :src="playerSrc"
         :poster="poster"
         :title="title"
+        :text-tracks="vidstackTextTracks"
         :current-time="initialPosition"
         :autoplay="autoplay"
         playsinline
@@ -196,7 +172,7 @@ onUnmounted(() => {
         @provider-change="onProviderChange"
         @can-play="onCanPlay"
         @error="onError"
-        @ended="onEnded"
+        @ended="$emit('ended')"
       >
         <media-provider />
         <media-video-layout
@@ -214,7 +190,7 @@ onUnmounted(() => {
       </media-player>
     </ClientOnly>
 
-    <!-- Top bar (back + title) — overlays the Vidstack player -->
+    <!-- Top bar (back + title) -->
     <div
       v-if="title || backUrl"
       class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent z-30 pointer-events-none"
@@ -233,11 +209,8 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Burn-in subtitles button (bitmap subs rendered into video) -->
-    <div
-      v-if="burnInSubtitles?.length"
-      class="absolute bottom-20 right-4 z-40"
-    >
+    <!-- Burn-in subtitles (bitmap subs rendered into video by ffmpeg) -->
+    <div v-if="burnInSubtitles?.length" class="absolute bottom-20 right-4 z-40">
       <button
         type="button"
         class="p-2 rounded-lg bg-black/60 hover:bg-black/80 transition-colors"
@@ -312,7 +285,6 @@ onUnmounted(() => {
 </template>
 
 <style>
-/* Override Vidstack to fill container */
 media-player {
   --media-brand: var(--color-primary, #6366f1);
   width: 100% !important;
