@@ -4,15 +4,15 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
 
-export const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
+export const SEGMENT_DURATION = 6 // seconds per segment (6s = faster seek response, good HLS compromise)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
 // Buffer limits: copy mode is near-instant (just I/O), so allow a huge buffer to avoid
 // the constant kill/restart cycle that causes A/V desync (video copies from keyframe,
 // audio re-encodes from exact seek point → timestamp mismatch on each restart)
-const BUFFER_AHEAD_COPY = 180 // 30 minutes — copy is cheap, minimize restarts
-const BUFFER_AHEAD_TRANSCODE = 18 // 3 minutes — transcode is CPU-heavy, limit buffer
-const BUFFER_RESTART_THRESHOLD = 4 // restart ffmpeg when less than 40s of buffer remaining
-const FAST_START_SEGMENTS = 5 // produce 5 ultrafast segments (~50s) before switching to quality preset
+const BUFFER_AHEAD_COPY = 300 // 30 minutes — copy is cheap, minimize restarts
+const BUFFER_AHEAD_TRANSCODE = 30 // 3 minutes — transcode is CPU-heavy, limit buffer
+const BUFFER_RESTART_THRESHOLD = 6 // restart ffmpeg when less than ~36s of buffer remaining
+const FAST_START_SEGMENTS = 5 // produce 5 ultrafast segments (~30s) before switching to quality preset
 
 // Video codecs that can be copied into MPEGTS with h264_mp4toannexb and played by browsers
 // mpeg4 (DivX/Xvid) is NOT h264 — it cannot use h264_mp4toannexb and browsers can't play it in MPEGTS
@@ -119,7 +119,10 @@ function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: 
     args.push(
       '-c:v', 'libx264',
       '-preset', preset,
+      '-tune', 'zerolatency', // Disable B-frames + lookahead → first segment produced instantly
       '-crf', '23',
+      '-maxrate', '5M', // Cap bitrate spikes on complex scenes → stable CPU load
+      '-bufsize', '10M', // Rate control buffer (2x maxrate)
       '-profile:v', 'high',
       '-level', '4.0',
       '-pix_fmt', 'yuv420p',
@@ -163,8 +166,8 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number, fastStart: 
 
   args.push(
     // Faster startup: reduce probe/analyze time (default is 5M/5M which is slow for large MKV)
-    '-probesize', '3000000',
-    '-analyzeduration', '3000000',
+    '-probesize', '1000000',
+    '-analyzeduration', '1000000',
     '-fflags', '+genpts+discardcorrupt',
     '-threads', '0',
     '-i', session.filePath,
