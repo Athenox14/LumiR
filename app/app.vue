@@ -15,6 +15,7 @@ useHead({
       <NuxtPage />
     </NuxtLayout>
     <UpdateNotification />
+    <ConfirmDialog />
   </div>
 </template>
 

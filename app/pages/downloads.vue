@@ -39,7 +39,7 @@ async function cancelDownload(id: string) {
     await trpc.catalog.cancelDownload.mutate(id)
     refresh()
   } catch (e: any) {
-    alert(t('downloads.cancelFailed') + ': ' + (e.message || 'Unknown error'))
+    useToast().error(t('downloads.cancelFailed') + ': ' + (e.message || 'Unknown error'))
   }
 }
 

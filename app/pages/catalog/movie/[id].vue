@@ -50,9 +50,9 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
       sourceHeaders: source.headers,
     })
     showDownloadModal.value = false
-    alert(t('downloads.downloadStarted'))
+    useToast().success(t('downloads.downloadStarted'))
   } catch (e: any) {
-    alert(t('downloads.startFailed') + ': ' + (e.message || 'Unknown error'))
+    useToast().error(t('downloads.startFailed') + ': ' + (e.message || 'Unknown error'))
   } finally {
     downloading.value = false
   }
