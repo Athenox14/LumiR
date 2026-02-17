@@ -80,18 +80,6 @@ const playerSrc = computed(() => {
   return url
 })
 
-// Build Vidstack text tracks from subtitles prop
-const vidstackTextTracks = computed(() => {
-  if (!props.subtitles?.length) return []
-  return props.subtitles.map((sub) => ({
-    src: sub.url,
-    kind: 'subtitles' as const,
-    language: sub.lang,
-    label: sub.label || sub.lang,
-    type: sub.url.endsWith('.srt') ? 'srt' : 'vtt',
-  }))
-})
-
 // HLS.js config passed via provider
 function onProviderChange(event: MediaProviderChangeEvent) {
   const provider = event.detail
@@ -161,7 +149,6 @@ onUnmounted(() => {
         :src="playerSrc"
         :poster="poster"
         :title="title"
-        :text-tracks="vidstackTextTracks"
         :current-time="initialPosition"
         :autoplay="autoplay"
         playsinline
@@ -174,7 +161,17 @@ onUnmounted(() => {
         @error="onError"
         @ended="$emit('ended')"
       >
-        <media-provider />
+        <media-provider>
+          <track
+            v-for="(sub, i) in subtitles"
+            :key="i"
+            :src="sub.url"
+            kind="subtitles"
+            :label="sub.label || sub.lang"
+            :srclang="sub.lang"
+            :data-type="sub.url.endsWith('.srt') ? 'srt' : 'vtt'"
+          />
+        </media-provider>
         <media-video-layout
           color-scheme="dark"
           :no-gestures="false"
