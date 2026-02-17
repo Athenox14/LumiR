@@ -63,12 +63,7 @@ async function resolveCurrentDomain(): Promise<string> {
 }
 
 class FrenchStream extends MovieParser {
-  override readonly name = 'FrenchStream'
-  protected override baseUrl = 'https://french-stream.pink'
-  protected override logo = ''
-  protected override classPath = 'MOVIES.FrenchStream'
-  protected override languages = 'fr'
-  override supportedTypes = new Set([TvType.MOVIE, TvType.TVSERIES])
+  protected baseUrl = 'https://french-stream.pink'
   private domainResolved = false
 
   constructor() {

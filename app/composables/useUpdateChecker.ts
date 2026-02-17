@@ -24,7 +24,7 @@ const updateData = ref<UpdateData | null>(null)
 const checking = ref(false)
 const installing = ref(false)
 const installError = ref('')
-let checkTimer: ReturnType<typeof setInterval> | null = null
+let _checkTimer: ReturnType<typeof setInterval> | null = null
 let initialized = false
 
 function getDismissInfo(): DismissInfo | null {
@@ -133,7 +133,7 @@ export function useUpdateChecker() {
     setTimeout(() => checkForUpdate(), 5000)
 
     // Periodic check
-    checkTimer = setInterval(() => checkForUpdate(), CHECK_INTERVAL_MS)
+    _checkTimer = setInterval(() => checkForUpdate(), CHECK_INTERVAL_MS)
   }
 
   // Recheck visibility (e.g. after dismiss timer expired)

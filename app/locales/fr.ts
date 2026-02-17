@@ -253,6 +253,11 @@ export default {
     usersDesc: 'Gérer les comptes et permissions utilisateurs',
     settings: 'Paramètres',
     settingsDesc: "Configurer les paramètres de l'application",
+    system: 'Système',
+    cpuUsage: 'CPU',
+    processMemory: 'Mémoire processus',
+    systemMemory: 'Mémoire système',
+    uptime: 'Uptime',
   },
 
   // Admin users

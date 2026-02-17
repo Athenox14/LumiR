@@ -170,7 +170,7 @@ onUnmounted(() => {
             :label="sub.label || sub.lang"
             :srclang="sub.lang"
             :data-type="sub.url.endsWith('.srt') ? 'srt' : 'vtt'"
-          />
+          >
         </media-provider>
         <media-video-layout
           color-scheme="dark"

@@ -1,15 +1,3 @@
-// Types ported from FilmsAPI/consumet.ts - movie-relevant only
-
-export interface IProviderStats {
-  name: string
-  baseUrl: string
-  lang: string[] | string
-  isNSFW: boolean
-  logo: string
-  classPath: string
-  isWorking: boolean
-}
-
 export interface ITitle {
   romaji?: string
   english?: string
@@ -162,50 +150,6 @@ export interface IMovieInfo extends IMovieResult {
   episodes?: IMovieEpisode[]
 }
 
-export interface IPeopleResult {
-  id: string
-  name: string
-  rating?: string
-  image?: string
-  movies: IMovieResult[]
-  [x: string]: unknown
-}
-
-// Anime types needed for MovieParser compatibility
-export interface IAnimeResult {
-  id: string
-  title: string | ITitle
-  url?: string
-  image?: string
-  cover?: string
-  status?: MediaStatus
-  rating?: number
-  type?: MediaFormat
-  releaseDate?: string
-  [x: string]: any
-}
-
-export interface IAnimeEpisode {
-  id: string
-  number: number
-  title?: string
-  description?: string
-  url?: string
-  image?: string
-  releaseDate?: string
-  [x: string]: unknown
-}
-
-export interface IAnimeInfo extends IAnimeResult {
-  malId?: number | string
-  genres?: string[]
-  description?: string
-  totalEpisodes?: number
-  trailer?: Trailer
-  episodes?: IAnimeEpisode[]
-  recommendations?: IAnimeResult[]
-}
-
 export interface ProxyConfig {
   url: string | string[]
   key?: string
@@ -235,7 +179,6 @@ export interface ProviderMatch {
 export interface MoviePipelineResult {
   query: string
   type: 'movie' | 'tv'
-  tmdb: any | null
   providers: ProviderMatch[]
   allStreams: StreamingSource[]
   allSubtitles: (ISubtitle & { source?: string })[]

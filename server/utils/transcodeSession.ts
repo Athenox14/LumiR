@@ -6,7 +6,11 @@ import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
 
 export const SEGMENT_DURATION = 10 // seconds per segment (10s = standard VOD, fewer boundaries = less A/V desync)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
-const BUFFER_AHEAD_SEGMENTS = 18 // max 3 minutes (18 * 10s) ahead — larger buffer = fewer restarts = fewer A/V desync
+// Buffer limits: copy mode is near-instant (just I/O), so allow a huge buffer to avoid
+// the constant kill/restart cycle that causes A/V desync (video copies from keyframe,
+// audio re-encodes from exact seek point → timestamp mismatch on each restart)
+const BUFFER_AHEAD_COPY = 180 // 30 minutes — copy is cheap, minimize restarts
+const BUFFER_AHEAD_TRANSCODE = 18 // 3 minutes — transcode is CPU-heavy, limit buffer
 const BUFFER_RESTART_THRESHOLD = 4 // restart ffmpeg when less than 40s of buffer remaining
 
 // Video codecs that can be copied into MPEGTS with h264_mp4toannexb and played by browsers
@@ -30,6 +34,7 @@ export interface TranscodeSession {
   lastAccess: number
   error: string | null
   codecArgs: string[]
+  isCopyMode: boolean // true when video is copied (not transcoded) — allows larger buffer
   audioTrackIndex: number | undefined // absolute stream index from ffprobe
   subtitleTrackIndex: number | undefined // absolute stream index for burn-in (bitmap subs only)
   lastRequestedSegment: number // highest segment requested by the player (for buffer limiting)
@@ -64,13 +69,19 @@ function cleanDir(dir: string) {
   } catch { /* ignore */ }
 }
 
-/** Remove all segment files (.ts and .tmp) from the output directory without deleting the dir itself */
-function cleanSegmentFiles(session: TranscodeSession) {
+/** Remove segment files >= fromSegment from the output directory.
+ * Segments before fromSegment are preserved — they have correct PTS (thanks to -copyts)
+ * and can be reused without restarting ffmpeg, which avoids A/V desync from restart cycles. */
+function cleanSegmentFilesFrom(session: TranscodeSession, fromSegment: number) {
   try {
     const files = readdirSync(session.outputDir)
     for (const f of files) {
-      if (/^seg_\d+\.ts(\.tmp)?$/.test(f)) {
-        try { unlinkSync(join(session.outputDir, f)) } catch { /* ignore */ }
+      const match = f.match(/^seg_(\d+)\.ts(\.tmp)?$/)
+      if (match) {
+        const idx = parseInt(match[1], 10)
+        if (idx >= fromSegment) {
+          try { unlinkSync(join(session.outputDir, f)) } catch { /* ignore */ }
+        }
       }
     }
   } catch { /* ignore */ }
@@ -87,14 +98,16 @@ function destroySession(sessionId: string) {
   console.log(`[HLS] Session destroyed: ${sessionId}`)
 }
 
-function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: boolean): string[] {
+function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: boolean): { args: string[], isCopyMode: boolean } {
   const videoOk = BROWSER_VIDEO_CODECS.has(videoCodec.toLowerCase())
   const audioOk = MPEGTS_SAFE_AUDIO_CODECS.has(audioCodec.toLowerCase())
+  // Copy mode = video is copied (not transcoded). This is near-instant so buffer can be huge.
+  const isCopyMode = videoOk && !burnInSubtitle
 
   const args: string[] = []
 
   // Burn-in subtitles FORCE video transcoding (can't overlay on -c:v copy)
-  if (videoOk && !burnInSubtitle) {
+  if (isCopyMode) {
     // Copy video but add bitstream filter for MPEGTS compatibility
     args.push('-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb')
   } else {
@@ -121,7 +134,7 @@ function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: 
     args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-af', 'aresample=async=1')
   }
 
-  return args
+  return { args, isCopyMode }
 }
 
 function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProcess | null {
@@ -245,16 +258,19 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number): ChildProce
     }
   })
 
-  // Buffer limiter: kill ffmpeg when it's BUFFER_AHEAD_SEGMENTS ahead of the player
-  // waitForSegment() will restart it when the player needs more segments
+  // Buffer limiter: kill ffmpeg when it's far enough ahead of the player
+  // Use dynamic buffer size: copy mode allows huge buffer (cheap), transcode mode limits it
+  const bufferLimit = session.isCopyMode ? BUFFER_AHEAD_COPY : BUFFER_AHEAD_TRANSCODE
   const bufferCheck = setInterval(() => {
     if (session.ffmpegProcess !== proc || !session.ffmpegProcess || session.ffmpegProcess.killed) {
       clearInterval(bufferCheck)
       return
     }
-    const highest = getHighestReadySegment(session)
-    if (highest >= session.lastRequestedSegment + BUFFER_AHEAD_SEGMENTS) {
-      console.log(`[HLS] Buffer limit reached: highest=${highest}, lastRequested=${session.lastRequestedSegment}, pausing ffmpeg`)
+    // Only count segments from the current run (>= startSegment) to avoid
+    // old segments from previous runs triggering premature kills
+    const highest = getHighestSegmentFrom(session, session.startSegment)
+    if (highest >= session.lastRequestedSegment + bufferLimit) {
+      console.log(`[HLS] Buffer limit reached: highest=${highest}, lastRequested=${session.lastRequestedSegment}, limit=${bufferLimit}, pausing ffmpeg`)
       session.ffmpegProcess.kill('SIGTERM')
       session.ffmpegDone = true
       session.error = null // not an error, just buffer limit
@@ -303,7 +319,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     }
   }
 
-  const codecArgs = buildCodecArgs(videoCodec, audioCodec, subtitleTrackIndex !== undefined)
+  const { args: codecArgs, isCopyMode } = buildCodecArgs(videoCodec, audioCodec, subtitleTrackIndex !== undefined)
 
   const totalSegments = Math.ceil(duration / SEGMENT_DURATION)
 
@@ -324,6 +340,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     lastAccess: Date.now(),
     error: null,
     codecArgs,
+    isCopyMode,
     audioTrackIndex,
     subtitleTrackIndex,
     lastRequestedSegment: 0,
@@ -338,7 +355,7 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
   // ffmpeg is started lazily on first segment request (waitForSegment)
   // This avoids starting from segment 0 when the player needs segment 748 (resume position)
 
-  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec}${subtitleTrackIndex !== undefined ? `, burn-in sub: ${subtitleTrackIndex}` : ''} → ${codecArgs.join(' ')}`)
+  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec}, mode: ${isCopyMode ? 'copy' : 'transcode'}${subtitleTrackIndex !== undefined ? `, burn-in sub: ${subtitleTrackIndex}` : ''} → ${codecArgs.join(' ')}`)
 
   return session
 }
@@ -384,15 +401,20 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
   // Track the highest segment the player has requested (for buffer limiting)
   session.lastRequestedSegment = Math.max(session.lastRequestedSegment, segmentIndex)
 
+  // If segment already exists on disk (from current or previous run), serve it directly.
+  // With -copyts, segments have correct PTS regardless of which ffmpeg run produced them.
+  if (isSegmentReady(session, segmentIndex)) return true
+
   // Proactive restart: if ffmpeg was paused (buffer limit) and buffer is running low, restart early
-  // This avoids waiting until buffer hits 0 — keeps playback smooth
   // Start 1 segment earlier for "warm-up": the overlapping segment ensures the video decoder
   // has proper reference frames, avoiding the "video rollback + audio continues" desync
   if (session.ffmpegDone && !session.error) {
-    const highestReady = getHighestReadySegment(session)
+    const highestReady = getHighestSegmentFrom(session, session.startSegment)
     if (highestReady >= 0 && highestReady < session.totalSegments - 1 && highestReady - segmentIndex < BUFFER_RESTART_THRESHOLD) {
       const restartFrom = Math.max(0, highestReady)
-      console.log(`[HLS] Buffer running low (${highestReady - segmentIndex} segments ahead), restarting ffmpeg from segment ${restartFrom} (warm-up: ${restartFrom !== highestReady + 1})`)
+      console.log(`[HLS] Buffer running low (${highestReady - segmentIndex} segments ahead), restarting ffmpeg from segment ${restartFrom}`)
+      // Only clean segments that will be re-produced (>= restartFrom), preserve earlier ones
+      cleanSegmentFilesFrom(session, restartFrom)
       startFfmpeg(session, restartFrom)
     }
   }
@@ -405,13 +427,12 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
     startFfmpeg(session, segmentIndex)
   }
 
-  const highestReady = getHighestReadySegment(session)
+  const highestReady = getHighestSegmentFrom(session, session.startSegment)
   const hasNewSegments = highestReady >= session.startSegment
 
+  // Only seek when the segment truly cannot be served from disk AND ffmpeg won't produce it
   const needsSeek =
-    // Backward: segment is before where ffmpeg started
-    segmentIndex < session.startSegment ||
-    // ffmpeg done but segment doesn't exist (includes buffer-limit pause)
+    // ffmpeg done but segment doesn't exist on disk (buffer-limit pause or different range)
     (session.ffmpegDone && !segmentFileExists(session, segmentIndex)) ||
     // Far ahead of production, but ONLY if ffmpeg has started producing new segments
     // (prevents thundering herd: concurrent requests after a seek/start won't re-seek)
@@ -419,9 +440,8 @@ export async function waitForSegment(session: TranscodeSession, segmentIndex: nu
 
   if (needsSeek) {
     console.log(`[HLS] Seeking: requested seg ${segmentIndex}, highest ready ${highestReady}, startSegment ${session.startSegment}, ffmpegDone=${session.ffmpegDone}`)
-    // Clean old segment files so buffer limiter doesn't see stale segments from previous runs
-    // (e.g., seeking from seg 272 back to seg 64 — old seg_284.ts would confuse the limiter)
-    cleanSegmentFiles(session)
+    // Only clean segments >= target to preserve earlier segments (reusable with -copyts)
+    cleanSegmentFilesFrom(session, segmentIndex)
     // Reset lastRequestedSegment to the new position (Math.max above kept the old high value)
     session.lastRequestedSegment = segmentIndex
     startFfmpeg(session, segmentIndex)
@@ -469,6 +489,24 @@ function getHighestReadySegment(session: TranscodeSession): number {
     }
   } catch { /* ignore */ }
   // With temp_file flag, any .ts file that exists is complete
+  return highest
+}
+
+/** Get highest ready segment that is >= minIndex.
+ * Used by buffer limiter to only count segments from the current ffmpeg run,
+ * ignoring stale segments from previous runs that would cause premature kills. */
+function getHighestSegmentFrom(session: TranscodeSession, minIndex: number): number {
+  let highest = -1
+  try {
+    const files = readdirSync(session.outputDir)
+    for (const f of files) {
+      const match = f.match(/^seg_(\d+)\.ts$/)
+      if (match) {
+        const idx = parseInt(match[1], 10)
+        if (idx >= minIndex && idx > highest) highest = idx
+      }
+    }
+  } catch { /* ignore */ }
   return highest
 }
 

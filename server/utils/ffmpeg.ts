@@ -80,9 +80,9 @@ export interface FileMetadata {
 
 // ===== ffprobe wrappers =====
 
-function ffprobe(filePath: string): Promise<Ffmpeg.FfprobeData | null> {
-  return new Promise(async (resolve) => {
-    await ensurePaths()
+async function ffprobe(filePath: string): Promise<Ffmpeg.FfprobeData | null> {
+  await ensurePaths()
+  return new Promise((resolve) => {
     Ffmpeg.ffprobe(filePath, (err, data) => {
       if (err) { console.error(`[FFprobe] Error probing "${filePath}":`, err.message); resolve(null) }
       else resolve(data)

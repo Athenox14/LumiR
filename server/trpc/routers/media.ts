@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import os from 'os'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
@@ -9,6 +10,23 @@ import { calculateUserPreferences, calculateMatchScore } from '../../utils/prefe
 import { promises as fs } from 'fs'
 import { join } from 'path'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
+
+// CPU usage tracking (delta-based)
+let prevCpuUsage = process.cpuUsage()
+let prevTime = process.hrtime.bigint()
+
+function getCpuPercent(): number {
+  const now = process.hrtime.bigint()
+  const currentCpu = process.cpuUsage()
+  const elapsedMs = Number(now - prevTime) / 1e6 // ns → ms
+  if (elapsedMs < 1) return 0
+  const userDelta = (currentCpu.user - prevCpuUsage.user) / 1000 // μs → ms
+  const sysDelta = (currentCpu.system - prevCpuUsage.system) / 1000
+  prevCpuUsage = currentCpu
+  prevTime = now
+  const cpuCount = os.cpus().length || 1
+  return Math.min(100, Math.round(((userDelta + sysDelta) / elapsedMs / cpuCount) * 100))
+}
 
 export const mediaRouter = router({
   // List all media with filtering and sorting
@@ -703,7 +721,7 @@ export const mediaRouter = router({
             }
           }
         } catch (error) {
-          console.error('[getShowEpisodes] Failed to fetch Consumet episode details:', error)
+          console.error('[getShowEpisodes] Failed to fetch TMDB episode details:', error)
         }
       }
 
@@ -995,6 +1013,23 @@ export const mediaRouter = router({
         fileSize: parseInt(r.fileSizes.split('||')[i]) || null,
       })),
     }))
+  }),
+
+  // System stats (CPU + RAM) for admin dashboard
+  systemStats: adminProcedure.query(() => {
+    const mem = process.memoryUsage()
+    const cpuPercent = getCpuPercent()
+    return {
+      cpu: { percent: cpuPercent, cores: os.cpus().length },
+      memory: {
+        rss: mem.rss,
+        heapUsed: mem.heapUsed,
+        heapTotal: mem.heapTotal,
+        totalSystem: os.totalmem(),
+        freeSystem: os.freemem(),
+      },
+      uptime: process.uptime(),
+    }
   }),
 
   // Get stats

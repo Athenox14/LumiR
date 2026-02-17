@@ -14,11 +14,7 @@ import {
 import { MixDrop, VidCloud } from '../extractors'
 
 class FlixHQ extends MovieParser {
-  override readonly name = 'FlixHQ'
-  protected override baseUrl = 'https://flixhq.to'
-  protected override logo = ''
-  protected override classPath = 'MOVIES.FlixHQ'
-  override supportedTypes = new Set([TvType.MOVIE, TvType.TVSERIES])
+  protected baseUrl = 'https://flixhq.to'
 
   private static readonly NAV_SELECTOR = 'div.pre-pagination:nth-child(3) > nav:nth-child(1) > ul:nth-child(1)'
 

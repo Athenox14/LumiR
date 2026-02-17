@@ -5,8 +5,9 @@ import { db } from '../../db'
 import { media, audioTracks, subtitleTracks, settings, scanHistory } from '../../db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
-import { promises as fs } from 'fs'
-import { join, basename, extname, parse } from 'path'
+import { basename } from 'path'
+import fg from 'fast-glob'
+import ptt from 'parse-torrent-title'
 import { searchTmdb, getTmdbInfo, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { extractFileMetadata, extractStreams, type FileMetadata } from '../../utils/ffmpeg'
 import { askGroqForTitle } from '../../utils/groq'
@@ -63,104 +64,22 @@ async function storeStreamTracks(mediaId: string, filePath: string) {
   }
 }
 
-// Release tags to strip from filenames before TMDB search
-const RELEASE_TAGS = /\b(DVDRIP|BDRIP|BRRIP|WEBRIP|HDTV|HDRIP|TVRIP|PPVRIP|DVDSCR|SCREENER|CAM|TS|TC|R5|BluRay|Blu-?Ray|REMUX|PROPER|REPACK|EXTENDED|UNRATED|DIRECTORS\s*CUT|IMAX|720p|1080p|2160p|4K|UHD|x264|x265|h264|h265|HEVC|XviD|DivX|AVC|DTS|AC3|AAC|MP3|FLAC|TrueHD|Atmos|MULTI|FRENCH|VOSTFR|TRUEFRENCH|VFF|VFQ|VF|SUBFRENCH|MULTi)\b/gi
-
-// Clean release tags from a title string
-function cleanReleaseTags(title: string): string {
-  return title
-    .replace(RELEASE_TAGS, ' ')
-    .replace(/\s*[[({][^\]})]*[\])}]\s*/g, ' ')  // Remove [tags] and (tags) that are now empty or contain only tags
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-// Parse filename to extract title, year, season, and episode
+// Parse filename using parse-torrent-title
 function parseFilename(filename: string): { title: string; year: number | null; season: number | null; episode: number | null } {
-  const nameWithoutExt = parse(filename).name
-
-  // Normalize separators to spaces BEFORE pattern matching
-  const normalized = nameWithoutExt
-    .replace(/\./g, ' ')
-    .replace(/_/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  console.log(`[Parser] "${nameWithoutExt}" → normalized: "${normalized}"`)
-
-  // TV show patterns (check these first)
-  const tvPatterns = [
-    /^(.+?)\s+s(\d+)\s*e(\d+)/i,       // "bref s1 e76", "show s01 e02", "show s1e2"
-    /^(.+?)\s*S(\d+)E(\d+)/,            // "Show S01E02"
-    /^(.+?)\s+(\d+)x(\d+)/i,            // "Show 1x02"
-  ]
-
-  for (const pattern of tvPatterns) {
-    const match = normalized.match(pattern)
-    if (match) {
-      const title = cleanReleaseTags(match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
-      console.log(`[Parser] TV match: title="${title}", s=${match[2]}, e=${match[3]}`)
-      return {
-        title,
-        year: null,
-        season: parseInt(match[2]),
-        episode: parseInt(match[3]),
-      }
-    }
+  const parsed = ptt.parse(filename)
+  return {
+    title: parsed.title || basename(filename, basename(filename).replace(/^.*\./, '.')),
+    year: parsed.year || null,
+    season: parsed.season ?? null,
+    episode: parsed.episode ?? null,
   }
-
-  // Movie patterns (year extraction)
-  const yearPatterns = [
-    /^(.+?)\s*\((\d{4})\)/,      // Movie Name (2020)
-    /^(.+?)\s+(\d{4})$/,          // Movie Name 2020
-    /^(.+?)\s+(\d{4})\s/,         // Movie Name 2020 720p
-  ]
-
-  for (const pattern of yearPatterns) {
-    const match = normalized.match(pattern)
-    if (match) {
-      const year = parseInt(match[2])
-      if (year >= 1900 && year <= new Date().getFullYear() + 2) {
-        const title = cleanReleaseTags(match[1].replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
-        return { title, year, season: null, episode: null }
-      }
-    }
-  }
-
-  // No pattern found — clean release tags then use as title
-  const title = cleanReleaseTags(normalized.replace(/-/g, ' ').replace(/\s+/g, ' ').trim())
-
-  return { title, year: null, season: null, episode: null }
 }
 
 // Scan directory recursively for video files
 async function scanDirectory(dirPath: string): Promise<string[]> {
-  const files: string[] = []
-
-  try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true })
-
-    for (const entry of entries) {
-      const fullPath = join(dirPath, entry.name)
-
-      if (entry.isDirectory()) {
-        // Skip hidden directories
-        if (!entry.name.startsWith('.')) {
-          const subFiles = await scanDirectory(fullPath)
-          files.push(...subFiles)
-        }
-      } else if (entry.isFile()) {
-        const ext = extname(entry.name).toLowerCase()
-        if (VIDEO_EXTENSIONS.includes(ext)) {
-          files.push(fullPath)
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`Error scanning directory ${dirPath}:`, error)
-  }
-
-  return files
+  const exts = VIDEO_EXTENSIONS.map(e => e.slice(1)).join(',')
+  const pattern = `**/*.{${exts}}`
+  return fg(pattern, { cwd: dirPath, absolute: true, dot: false })
 }
 
 // Scan status tracking
@@ -337,7 +256,7 @@ export const libraryRouter = router({
       return { success: false, message: 'Could not fetch metadata' }
     }),
 
-  // Search for metadata via Consumet
+  // Search for metadata via TMDB
   searchTMDB: adminProcedure
     .input(z.object({
       query: z.string(),
@@ -401,7 +320,7 @@ export const libraryRouter = router({
  * 2. Try parsed filename title
  * 3. Ask Groq AI as last resort
  *
- * Returns { title, metadata } where metadata is the Consumet result if found.
+ * Returns { title, results } where results are TMDB search matches.
  */
 async function resolveTitle(
   filePath: string,

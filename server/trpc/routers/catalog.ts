@@ -47,12 +47,9 @@ async function resolveAllStreams(opts: {
   episode?: number
   releaseYear?: number
 }): Promise<ResolvedStream[]> {
-  const tmdbApiKey = await getTmdbApiKey()
-
   const result = await moviePipeline(opts.title, opts.type, {
     season: opts.season,
     episode: opts.episode,
-    tmdbApiKey: tmdbApiKey || undefined,
     releaseYear: opts.releaseYear,
   })
 
