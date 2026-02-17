@@ -6,6 +6,12 @@ export default defineNuxtConfig({
     https: true
   },
 
+  vue: {
+    compilerOptions: {
+      isCustomElement: (tag: string) => tag.startsWith('media-'),
+    },
+  },
+
   modules: [
     '@nuxt/eslint',
     '@nuxtjs/tailwindcss',
