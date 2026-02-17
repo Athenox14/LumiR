@@ -154,7 +154,6 @@ async function handleEnded() {
       :back-url="backUrl"
       :initial-position="currentPosition > 0 ? currentPosition : (media.watchProgress?.position || 0)"
       :audio-tracks="media.audioTracks"
-      :subtitle-tracks="media.subtitleTracks"
       :subtitles="subtitleUrls"
       :burn-in-subtitles="burnInSubtitles"
       :active-burn-in-subtitle="selectedBurnInSubtitle"
