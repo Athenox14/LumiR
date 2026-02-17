@@ -1,82 +1,58 @@
-import { execSync, execFile, spawn } from 'child_process'
-import { existsSync, promises as fsPromises  } from 'fs'
+import { execSync, spawn } from 'child_process'
+import { existsSync, promises as fsPromises } from 'fs'
 import { dirname, join } from 'path'
+import Ffmpeg from 'fluent-ffmpeg'
 
-/**
- * Find ffmpeg binary: tries ffmpeg-static npm package first, then system PATH.
- */
+// ===== Binary resolution =====
+
 export async function findFfmpeg(): Promise<string | null> {
-  // Try ffmpeg-static package first (bundled static binary)
   try {
     const mod = await import('ffmpeg-static')
-    const staticPath = (mod.default || mod) as string
-    if (staticPath && existsSync(staticPath)) {
-      console.log(`[FFmpeg] Using ffmpeg-static: ${staticPath}`)
-      return staticPath
-    }
-  } catch {
-    // ffmpeg-static not installed
-  }
-
-  // Fallback to system PATH
+    const p = (mod.default || mod) as string
+    if (p && existsSync(p)) { console.log(`[FFmpeg] Using ffmpeg-static: ${p}`); return p }
+  } catch {}
   try {
     const cmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg'
-    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 })
-    const ffmpegPath = result.trim().split(/\r?\n/)[0]
-    if (ffmpegPath) {
-      console.log(`[FFmpeg] Found ffmpeg in PATH: ${ffmpegPath}`)
-      return ffmpegPath
-    }
-    return null
-  } catch {
-    console.log('[FFmpeg] ffmpeg not found')
-    return null
-  }
+    const p = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim().split(/\r?\n/)[0]
+    if (p) { console.log(`[FFmpeg] Found in PATH: ${p}`); return p }
+  } catch {}
+  console.log('[FFmpeg] ffmpeg not found')
+  return null
 }
 
-/**
- * Find ffprobe binary: tries ffprobe-static npm package first, then next to ffmpeg, then system PATH.
- */
 export async function findFfprobe(): Promise<string | null> {
-  // Try ffprobe-static package first (bundled static binary)
   try {
     const mod = await import('ffprobe-static')
-    const staticPath = (mod.default?.path || mod.path) as string
-    if (staticPath && existsSync(staticPath)) {
-      console.log(`[FFprobe] Using ffprobe-static: ${staticPath}`)
-      return staticPath
-    }
-  } catch {
-    // ffprobe-static not installed
-  }
-
-  // Try to derive from ffmpeg-static (ffprobe may exist in same dir)
+    const p = (mod.default?.path || mod.path) as string
+    if (p && existsSync(p)) { console.log(`[FFprobe] Using ffprobe-static: ${p}`); return p }
+  } catch {}
   const ffmpegPath = await findFfmpeg()
   if (ffmpegPath) {
-    const dir = dirname(ffmpegPath)
     const ext = process.platform === 'win32' ? '.exe' : ''
-    const ffprobePath = join(dir, `ffprobe${ext}`)
-    if (existsSync(ffprobePath)) {
-      console.log(`[FFprobe] Found next to ffmpeg: ${ffprobePath}`)
-      return ffprobePath
-    }
+    const p = join(dirname(ffmpegPath), `ffprobe${ext}`)
+    if (existsSync(p)) { console.log(`[FFprobe] Found next to ffmpeg: ${p}`); return p }
   }
-
-  // Try system PATH
   try {
     const cmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe'
-    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 })
-    const ffprobePath = result.trim().split(/\r?\n/)[0]
-    if (ffprobePath) {
-      console.log(`[FFprobe] Found in PATH: ${ffprobePath}`)
-      return ffprobePath
-    }
-    return null
-  } catch {
-    console.log('[FFprobe] ffprobe not found')
-    return null
-  }
+    const p = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim().split(/\r?\n/)[0]
+    if (p) { console.log(`[FFprobe] Found in PATH: ${p}`); return p }
+  } catch {}
+  console.log('[FFprobe] ffprobe not found')
+  return null
 }
+
+// Set paths for fluent-ffmpeg
+let pathsInitialized = false
+async function ensurePaths() {
+  if (pathsInitialized) return
+  const ffmpeg = await findFfmpeg()
+  const ffprobe = await findFfprobe()
+  if (ffmpeg) Ffmpeg.setFfmpegPath(ffmpeg)
+  if (ffprobe) Ffmpeg.setFfprobePath(ffprobe)
+  pathsInitialized = true
+}
+
+// ===== Types =====
 
 export interface StreamInfo {
   index: number
@@ -87,63 +63,6 @@ export interface StreamInfo {
   channels?: number
   isDefault: boolean
   isForced: boolean
-}
-
-/**
- * Extract all audio and subtitle streams from a video file using ffprobe.
- */
-export async function extractStreams(filePath: string): Promise<StreamInfo[]> {
-  const ffprobePath = await findFfprobe()
-  if (!ffprobePath) return []
-
-  return new Promise((resolve) => {
-    execFile(
-      ffprobePath,
-      [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_streams',
-        filePath,
-      ],
-      { timeout: 15000 },
-      (error, stdout) => {
-        if (error) {
-          console.error(`[FFprobe] Error extracting streams from "${filePath}":`, error.message)
-          resolve([])
-          return
-        }
-
-        try {
-          const data = JSON.parse(stdout)
-          const streams: StreamInfo[] = []
-
-          for (const stream of (data.streams || [])) {
-            if (stream.codec_type !== 'audio' && stream.codec_type !== 'subtitle') continue
-
-            const tags = stream.tags || {}
-            const getTag = (key: string) => tags[key] || tags[key.toUpperCase()] || tags[key.toLowerCase()] || undefined
-            const disposition = stream.disposition || {}
-
-            streams.push({
-              index: stream.index,
-              codecType: stream.codec_type,
-              codecName: stream.codec_name || 'unknown',
-              language: getTag('language') || undefined,
-              title: getTag('title') || undefined,
-              channels: stream.codec_type === 'audio' ? (stream.channels || undefined) : undefined,
-              isDefault: disposition.default === 1,
-              isForced: disposition.forced === 1,
-            })
-          }
-
-          resolve(streams)
-        } catch (e) {
-          console.error('[FFprobe] Failed to parse streams output:', e)
-          resolve([])
-        }
-      }
-    )
-  })
 }
 
 export interface FileMetadata {
@@ -159,214 +78,145 @@ export interface FileMetadata {
   height?: number
 }
 
-/**
- * Extract metadata from a video file using ffprobe.
- * Returns title and other metadata tags if available.
- */
-export async function extractFileMetadata(filePath: string): Promise<FileMetadata | null> {
-  const ffprobePath = await findFfprobe()
-  if (!ffprobePath) return null
+// ===== ffprobe wrappers =====
 
-  return new Promise((resolve) => {
-    execFile(
-      ffprobePath,
-      [
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_format',
-        '-show_streams',
-        filePath,
-      ],
-      { timeout: 15000 },
-      (error, stdout) => {
-        if (error) {
-          console.error(`[FFprobe] Error probing "${filePath}":`, error.message)
-          resolve(null)
-          return
-        }
-
-        try {
-          const data = JSON.parse(stdout)
-          const format = data.format || {}
-          const tags = format.tags || {}
-
-          // ffprobe tags can have different casings
-          const getTag = (key: string) => tags[key] || tags[key.toUpperCase()] || tags[key.toLowerCase()] || undefined
-
-          const meta: FileMetadata = {}
-
-          const title = getTag('title')
-          if (title && title.trim()) meta.title = title.trim()
-
-          const artist = getTag('artist') || getTag('album_artist')
-          if (artist) meta.artist = artist
-
-          const date = getTag('date') || getTag('year')
-          if (date) meta.date = date
-
-          if (format.duration) {
-            meta.duration = Math.round(parseFloat(format.duration))
-          }
-
-          // Extract video/audio stream info
-          const streams = data.streams || []
-          for (const stream of streams) {
-            if (stream.codec_type === 'video' && !meta.videoCodec) {
-              meta.videoCodec = stream.codec_name
-              if (stream.width) meta.width = stream.width
-              if (stream.height) meta.height = stream.height
-            }
-            if (stream.codec_type === 'audio' && !meta.audioCodec) {
-              meta.audioCodec = stream.codec_name
-            }
-          }
-
-          resolve(Object.keys(meta).length > 0 ? meta : null)
-        } catch (e) {
-          console.error('[FFprobe] Failed to parse output:', e)
-          resolve(null)
-        }
-      }
-    )
+function ffprobe(filePath: string): Promise<Ffmpeg.FfprobeData | null> {
+  return new Promise(async (resolve) => {
+    await ensurePaths()
+    Ffmpeg.ffprobe(filePath, (err, data) => {
+      if (err) { console.error(`[FFprobe] Error probing "${filePath}":`, err.message); resolve(null) }
+      else resolve(data)
+    })
   })
 }
 
-// Codecs where -c:s copy -f srt works (fast, no transcoding)
+export async function extractStreams(filePath: string): Promise<StreamInfo[]> {
+  const data = await ffprobe(filePath)
+  if (!data?.streams) return []
+  return data.streams
+    .filter((s) => s.codec_type === 'audio' || s.codec_type === 'subtitle')
+    .map((s) => {
+      const tags = (s as any).tags || {}
+      const getTag = (k: string) => tags[k] || tags[k.toUpperCase()] || tags[k.toLowerCase()] || undefined
+      const disp = (s as any).disposition || {}
+      return {
+        index: s.index,
+        codecType: s.codec_type as 'audio' | 'subtitle',
+        codecName: s.codec_name || 'unknown',
+        language: getTag('language'),
+        title: getTag('title'),
+        channels: s.codec_type === 'audio' ? (s.channels || undefined) : undefined,
+        isDefault: disp.default === 1,
+        isForced: disp.forced === 1,
+      }
+    })
+}
+
+export async function extractFileMetadata(filePath: string): Promise<FileMetadata | null> {
+  const data = await ffprobe(filePath)
+  if (!data) return null
+  const format = data.format || {} as any
+  const tags = format.tags || {}
+  const getTag = (k: string) => tags[k] || tags[k.toUpperCase()] || tags[k.toLowerCase()] || undefined
+
+  const meta: FileMetadata = {}
+  const title = getTag('title')
+  if (title?.trim()) meta.title = title.trim()
+  const artist = getTag('artist') || getTag('album_artist')
+  if (artist) meta.artist = artist
+  const date = getTag('date') || getTag('year')
+  if (date) meta.date = date
+  if (format.duration) meta.duration = Math.round(parseFloat(format.duration))
+
+  for (const s of data.streams || []) {
+    if (s.codec_type === 'video' && !meta.videoCodec) {
+      meta.videoCodec = s.codec_name
+      if (s.width) meta.width = s.width
+      if (s.height) meta.height = s.height
+    }
+    if (s.codec_type === 'audio' && !meta.audioCodec) meta.audioCodec = s.codec_name
+  }
+  return Object.keys(meta).length > 0 ? meta : null
+}
+
+// ===== Subtitle utilities =====
+
 const SRT_COPY_CODECS = new Set(['subrip', 'srt'])
 
-// Text-based subtitle codecs that can be converted to WebVTT
 export const TEXT_SUBTITLE_CODECS = new Set([
   'subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text',
   'microdvd', 'mpl2', 'realtext', 'sami', 'stl', 'subviewer',
   'subviewer1', 'ttml', 'vplayer',
 ])
 
-function srtToVtt(srt: string): string {
-  return 'WEBVTT\n\n' + srt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-}
-
-/**
- * Get the file extension for a subtitle codec when extracting to disk.
- */
 export function getSubtitleExtension(codec: string): string {
   if (SRT_COPY_CODECS.has(codec)) return 'srt'
   if (codec === 'webvtt') return 'vtt'
   if (codec === 'ass' || codec === 'ssa') return 'ass'
-  // mov_text and others: ffmpeg transcodes to SRT
   return 'srt'
 }
 
-/**
- * Batch-extract ALL text subtitle tracks from a media file in a single ffmpeg call.
- * Writes one file per track to outputDir: {streamIndex}.{ext}
- * Resolves even on partial failure (some tracks may fail, others succeed).
- */
+function srtToVtt(srt: string): string {
+  return 'WEBVTT\n\n' + srt.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+}
+
 export async function extractAllSubtitles(
   filePath: string,
   subtitleStreams: Array<{ index: number; codecName: string }>,
   outputDir: string,
 ): Promise<void> {
-  const ffmpegPath = await findFfmpeg()
-  if (!ffmpegPath) throw new Error('ffmpeg not found')
   if (subtitleStreams.length === 0) return
-
-  const args: string[] = ['-v', 'error', '-copyts', '-i', filePath]
-
-  for (const stream of subtitleStreams) {
-    const ext = getSubtitleExtension(stream.codecName)
-    const outputPath = join(outputDir, `${stream.index}.${ext}`)
-
-    args.push('-map', `0:${stream.index}`, '-an', '-vn')
-
-    if (SRT_COPY_CODECS.has(stream.codecName)) {
-      args.push('-c:s', 'copy', '-f', 'srt')
-    } else if (stream.codecName === 'webvtt') {
-      args.push('-c:s', 'copy', '-f', 'webvtt')
-    } else if (stream.codecName === 'ass' || stream.codecName === 'ssa') {
-      args.push('-c:s', 'copy')
-    } else {
-      // mov_text, microdvd, etc. — transcode to SRT
-      args.push('-c:s', 'srt', '-f', 'srt')
-    }
-
-    args.push(outputPath)
-  }
+  await ensurePaths()
 
   console.log(`[FFmpeg] Batch extracting ${subtitleStreams.length} subtitle tracks from ${filePath}`)
 
-  return new Promise((resolve) => {
-    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
-
-    let stderr = ''
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf-8')
-    })
-
-    proc.on('close', (code) => {
-      if (code !== 0 && code !== null) {
-        console.warn(`[FFmpeg] Batch subtitle extraction exited with code ${code} (partial success possible):`, stderr.slice(-300))
-      } else {
-        console.log(`[FFmpeg] Batch subtitle extraction completed successfully`)
-      }
-      resolve()
-    })
-
-    proc.on('error', (err) => {
-      console.error(`[FFmpeg] Batch subtitle extraction error:`, err.message)
-      resolve() // Partial success is OK
-    })
-
-    // 5 minute timeout
-    setTimeout(() => {
-      if (!proc.killed) {
-        proc.kill('SIGTERM')
-        console.warn(`[FFmpeg] Batch subtitle extraction timed out after 5 minutes`)
-      }
-      resolve()
-    }, 300000)
-  })
-}
-
-/**
- * Read a cached subtitle file from disk and convert to WebVTT string.
- */
-export async function convertFileToVtt(filePath: string, codec: string): Promise<string> {
-  const content = await fsPromises.readFile(filePath, 'utf-8')
-
-  if (codec === 'webvtt') return content
-  if (SRT_COPY_CODECS.has(codec) || codec === 'mov_text') return srtToVtt(content)
-  if (codec === 'ass' || codec === 'ssa') return await convertAssToVtt(filePath)
-
-  // Default: try SRT→VTT conversion
-  return srtToVtt(content)
-}
-
-/**
- * Convert an ASS/SSA file to WebVTT via ffmpeg (loses styling but keeps timing + text).
- */
-async function convertAssToVtt(assFilePath: string): Promise<string> {
+  // Build manual args since fluent-ffmpeg doesn't handle multi-output subtitle extraction well
   const ffmpegPath = await findFfmpeg()
   if (!ffmpegPath) throw new Error('ffmpeg not found')
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, [
-      '-v', 'error', '-i', assFilePath, '-f', 'webvtt', 'pipe:1',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const args: string[] = ['-v', 'error', '-copyts', '-i', filePath]
+  for (const stream of subtitleStreams) {
+    const ext = getSubtitleExtension(stream.codecName)
+    const outputPath = join(outputDir, `${stream.index}.${ext}`)
+    args.push('-map', `0:${stream.index}`, '-an', '-vn')
+    if (SRT_COPY_CODECS.has(stream.codecName)) args.push('-c:s', 'copy', '-f', 'srt')
+    else if (stream.codecName === 'webvtt') args.push('-c:s', 'copy', '-f', 'webvtt')
+    else if (stream.codecName === 'ass' || stream.codecName === 'ssa') args.push('-c:s', 'copy')
+    else args.push('-c:s', 'srt', '-f', 'srt')
+    args.push(outputPath)
+  }
 
-    let output = ''
+  return new Promise((resolve) => {
+    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
     let stderr = ''
-    proc.stdout.on('data', (chunk: Buffer) => { output += chunk.toString('utf-8') })
-    proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf-8') })
-
+    proc.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf-8') })
     proc.on('close', (code) => {
-      if (output.trim()) resolve(output)
-      else reject(new Error(`ASS→VTT conversion failed (code ${code}): ${stderr.slice(-200)}`))
+      if (code !== 0 && code !== null) console.warn(`[FFmpeg] Subtitle extraction exited ${code}:`, stderr.slice(-300))
+      else console.log(`[FFmpeg] Subtitle extraction completed`)
+      resolve()
     })
-    proc.on('error', reject)
+    proc.on('error', (err) => { console.error(`[FFmpeg] Subtitle extraction error:`, err.message); resolve() })
+    setTimeout(() => { if (!proc.killed) { proc.kill('SIGTERM'); console.warn('[FFmpeg] Subtitle extraction timed out') }; resolve() }, 300000)
+  })
+}
 
-    setTimeout(() => {
-      if (!proc.killed) proc.kill('SIGTERM')
-      reject(new Error('ASS→VTT conversion timed out'))
-    }, 30000)
+export async function convertFileToVtt(filePath: string, codec: string): Promise<string> {
+  const content = await fsPromises.readFile(filePath, 'utf-8')
+  if (codec === 'webvtt') return content
+  if (SRT_COPY_CODECS.has(codec) || codec === 'mov_text') return srtToVtt(content)
+  if (codec === 'ass' || codec === 'ssa') return await convertAssToVtt(filePath)
+  return srtToVtt(content)
+}
+
+async function convertAssToVtt(assFilePath: string): Promise<string> {
+  await ensurePaths()
+  return new Promise((resolve, reject) => {
+    let output = ''
+    Ffmpeg(assFilePath)
+      .outputOptions(['-f', 'webvtt'])
+      .pipe()
+      .on('data', (chunk: Buffer) => { output += chunk.toString('utf-8') })
+      .on('end', () => output.trim() ? resolve(output) : reject(new Error('ASS→VTT produced empty output')))
+      .on('error', reject)
   })
 }
