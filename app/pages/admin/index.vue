@@ -50,7 +50,9 @@ async function checkForUpdate() {
 
 async function performUpdate() {
   if (!updateInfo.value?.downloadUrl) return
-  if (!confirm(t('adminUpdate.confirmUpdate'))) return
+  const { confirm } = useConfirmDialog()
+  const ok = await confirm({ title: t('common.confirm'), message: t('adminUpdate.confirmUpdate') })
+  if (!ok) return
 
   updating.value = true
   updateError.value = ''
@@ -59,7 +61,7 @@ async function performUpdate() {
       method: 'POST',
       body: { downloadUrl: updateInfo.value.downloadUrl, version: updateInfo.value.latestVersion },
     })
-    alert(t('adminUpdate.updateSuccess'))
+    useToast().success(t('adminUpdate.updateSuccess'))
     setTimeout(() => window.location.reload(), 5000)
   } catch (e: any) {
     updateError.value = e.data?.statusMessage || e.message || t('adminUpdate.updateFailed')
@@ -153,14 +155,16 @@ watch(searchQuery, (val) => {
 })
 
 async function deindexMedia(id: string) {
-  if (!confirm(t('adminDash.confirmDeindex'))) return
+  const { confirm } = useConfirmDialog()
+  const ok = await confirm({ title: t('common.confirm'), message: t('adminDash.confirmDeindex') })
+  if (!ok) return
   try {
     await trpc.media.delete.mutate(id)
     searchResults.value = searchResults.value.filter(m => m.id !== id)
     refreshNoTmdb()
     refreshDuplicates()
   } catch (e: any) {
-    alert(e.message)
+    useToast().error(e.message)
   }
 }
 

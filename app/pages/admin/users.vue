@@ -112,13 +112,15 @@ async function updateUser() {
 }
 
 async function deleteUser(userId: string) {
-  if (!confirm(t('adminUsers.confirmDelete'))) return
+  const { confirm } = useConfirmDialog()
+  const ok = await confirm({ title: t('common.confirm'), message: t('adminUsers.confirmDelete') })
+  if (!ok) return
 
   try {
     await trpc.users.delete.mutate(userId)
     await refreshUsers()
   } catch (e: any) {
-    alert(e.message || t('adminUsers.failedToDelete'))
+    useToast().error(e.message || t('adminUsers.failedToDelete'))
   }
 }
 
