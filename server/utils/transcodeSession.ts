@@ -1,8 +1,62 @@
-import { spawn, type ChildProcess } from 'child_process'
+import { execSync, spawn, type ChildProcess } from 'child_process'
 import { mkdirSync, existsSync, readdirSync, unlinkSync, rmdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { findFfmpeg, extractFileMetadata, extractStreams } from './ffmpeg'
+
+// ===== GPU hardware acceleration detection =====
+
+type HwAccel = 'nvenc' | 'vaapi' | 'videotoolbox' | null
+let detectedHwAccel: HwAccel | undefined // undefined = not yet detected
+
+async function detectHwAccel(): Promise<HwAccel> {
+  if (detectedHwAccel !== undefined) return detectedHwAccel
+
+  const ffmpegPath = await findFfmpeg()
+  if (!ffmpegPath) { detectedHwAccel = null; return null }
+
+  // NVENC (NVIDIA GPU)
+  try {
+    const out = execSync(`${ffmpegPath} -hide_banner -encoders 2>/dev/null`, { encoding: 'utf-8', timeout: 5000 })
+    if (out.includes('h264_nvenc')) {
+      // Verify the GPU is actually usable by running a tiny encode
+      try {
+        execSync(`${ffmpegPath} -hide_banner -f lavfi -i nullsrc=s=16x16:d=0.1 -c:v h264_nvenc -f null - 2>/dev/null`, { timeout: 10000 })
+        console.log('[HLS] GPU detected: NVIDIA NVENC')
+        detectedHwAccel = 'nvenc'
+        return 'nvenc'
+      } catch { /* NVENC listed but GPU not usable */ }
+    }
+  } catch { /* ignore */ }
+
+  // VAAPI (Linux — Intel/AMD integrated GPU)
+  if (process.platform === 'linux') {
+    try {
+      const out = execSync(`${ffmpegPath} -hide_banner -encoders 2>/dev/null`, { encoding: 'utf-8', timeout: 5000 })
+      if (out.includes('h264_vaapi') && existsSync('/dev/dri/renderD128')) {
+        console.log('[HLS] GPU detected: VAAPI (/dev/dri/renderD128)')
+        detectedHwAccel = 'vaapi'
+        return 'vaapi'
+      }
+    } catch { /* ignore */ }
+  }
+
+  // VideoToolbox (macOS)
+  if (process.platform === 'darwin') {
+    try {
+      const out = execSync(`${ffmpegPath} -hide_banner -encoders 2>/dev/null`, { encoding: 'utf-8', timeout: 5000 })
+      if (out.includes('h264_videotoolbox')) {
+        console.log('[HLS] GPU detected: VideoToolbox (macOS)')
+        detectedHwAccel = 'videotoolbox'
+        return 'videotoolbox'
+      }
+    } catch { /* ignore */ }
+  }
+
+  console.log('[HLS] No GPU encoder detected, using CPU (libx264)')
+  detectedHwAccel = null
+  return null
+}
 
 export const SEGMENT_DURATION = 6 // seconds per segment (6s = faster seek response, good HLS compromise)
 const CLEANUP_AFTER_MS = 5 * 60 * 1000 // 5 minutes of inactivity
@@ -35,6 +89,8 @@ export interface TranscodeSession {
   lastAccess: number
   error: string | null
   codecArgs: string[]
+  hwInputArgs: string[] // hardware accel args that go before -i (e.g. -hwaccel cuda)
+  hwAccel: HwAccel // detected GPU encoder or null for CPU
   isCopyMode: boolean // true when video is copied (not transcoded) — allows larger buffer
   audioTrackIndex: number | undefined // absolute stream index from ffprobe
   subtitleTrackIndex: number | undefined // absolute stream index for burn-in (bitmap subs only)
@@ -100,34 +156,76 @@ function destroySession(sessionId: string) {
   console.log(`[HLS] Session destroyed: ${sessionId}`)
 }
 
-function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: boolean, fastStart: boolean = false): { args: string[], isCopyMode: boolean } {
+function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: boolean, fastStart: boolean = false, hwAccel: HwAccel = null): { args: string[], isCopyMode: boolean, hwInputArgs: string[] } {
   const videoOk = BROWSER_VIDEO_CODECS.has(videoCodec.toLowerCase())
   const audioOk = MPEGTS_SAFE_AUDIO_CODECS.has(audioCodec.toLowerCase())
   // Copy mode = video is copied (not transcoded). This is near-instant so buffer can be huge.
   const isCopyMode = videoOk && !burnInSubtitle
 
   const args: string[] = []
+  // Hardware input args must go BEFORE -i in the ffmpeg command
+  const hwInputArgs: string[] = []
 
   // Burn-in subtitles FORCE video transcoding (can't overlay on -c:v copy)
   if (isCopyMode) {
     // Copy video but add bitstream filter for MPEGTS compatibility
     args.push('-c:v', 'copy', '-bsf:v', 'h264_mp4toannexb')
-  } else {
-    // Fast-start: ultrafast for instant playback, then upgrade to veryfast for quality
-    const preset = fastStart ? 'ultrafast' : 'veryfast'
-    // Transcode to H.264 for maximum compatibility
+  } else if (hwAccel === 'nvenc') {
+    // NVIDIA NVENC GPU encoding
+    hwInputArgs.push('-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda')
+    const preset = fastStart ? 'p1' : 'p4' // p1=fastest, p4=good quality/speed balance
     args.push(
-      '-c:v', 'libx264',
+      '-c:v', 'h264_nvenc',
       '-preset', preset,
-      '-tune', 'zerolatency', // Disable B-frames + lookahead → first segment produced instantly
-      '-crf', '23',
-      '-maxrate', '5M', // Cap bitrate spikes on complex scenes → stable CPU load
-      '-bufsize', '10M', // Rate control buffer (2x maxrate)
+      '-rc', 'vbr',
+      '-cq', '23',
+      '-maxrate', '5M',
+      '-bufsize', '10M',
       '-profile:v', 'high',
       '-level', '4.0',
       '-pix_fmt', 'yuv420p',
-      // Force keyframes every SEGMENT_DURATION seconds (relative to previous keyframe)
-      // Uses prev_forced_t to work correctly with -copyts (large timestamp offsets)
+      '-force_key_frames', `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${SEGMENT_DURATION}))`,
+      '-sc_threshold', '0',
+    )
+  } else if (hwAccel === 'vaapi') {
+    // VAAPI (Intel/AMD on Linux)
+    hwInputArgs.push('-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128', '-hwaccel_output_format', 'vaapi')
+    args.push(
+      '-c:v', 'h264_vaapi',
+      '-qp', '23',
+      '-maxrate', '5M',
+      '-bufsize', '10M',
+      '-profile:v', '100', // high profile
+      '-level', '40',
+      '-force_key_frames', `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${SEGMENT_DURATION}))`,
+      '-sc_threshold', '0',
+    )
+  } else if (hwAccel === 'videotoolbox') {
+    // macOS VideoToolbox
+    args.push(
+      '-c:v', 'h264_videotoolbox',
+      '-q:v', '65', // quality 0-100, 65 ≈ CRF 23
+      '-maxrate', '5M',
+      '-bufsize', '10M',
+      '-profile:v', 'high',
+      '-level', '4.0',
+      '-pix_fmt', 'yuv420p',
+      '-force_key_frames', `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${SEGMENT_DURATION}))`,
+      '-sc_threshold', '0',
+    )
+  } else {
+    // CPU fallback: libx264
+    const preset = fastStart ? 'ultrafast' : 'veryfast'
+    args.push(
+      '-c:v', 'libx264',
+      '-preset', preset,
+      '-tune', 'zerolatency',
+      '-crf', '23',
+      '-maxrate', '5M',
+      '-bufsize', '10M',
+      '-profile:v', 'high',
+      '-level', '4.0',
+      '-pix_fmt', 'yuv420p',
       '-force_key_frames', `expr:if(isnan(prev_forced_t),1,gte(t,prev_forced_t+${SEGMENT_DURATION}))`,
       '-sc_threshold', '0',
     )
@@ -136,12 +234,10 @@ function buildCodecArgs(videoCodec: string, audioCodec: string, burnInSubtitle: 
   if (audioOk) {
     args.push('-c:a', 'copy')
   } else {
-    // Always transcode audio to AAC (only codec safe in MPEGTS for all browsers)
-    // -af aresample=async=1 keeps audio in sync with video when transcoding audio but copying video
     args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2', '-af', 'aresample=async=1')
   }
 
-  return { args, isCopyMode }
+  return { args, isCopyMode, hwInputArgs }
 }
 
 function startFfmpeg(session: TranscodeSession, fromSegment: number, fastStart: boolean = false): ChildProcess | null {
@@ -164,11 +260,15 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number, fastStart: 
     args.push('-ss', startTime.toString())
   }
 
+  // Hardware acceleration input args (must go before -i)
+  if (session.hwInputArgs.length > 0) {
+    args.push(...session.hwInputArgs)
+  }
+
   args.push(
-    // Faster startup: reduce probe/analyze time (default is 5M/5M which is slow for large MKV)
-    '-probesize', '1000000',
-    '-analyzeduration', '1000000',
-    '-fflags', '+genpts+discardcorrupt',
+    '-probesize', '5000000',
+    '-analyzeduration', '5000000',
+    '-fflags', '+genpts',
     '-threads', '0',
     '-i', session.filePath,
     // Preserve original timestamps so that segments after seeking have PTS matching
@@ -198,7 +298,7 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number, fastStart: 
   const effectiveFastStart = fastStart && !session.isCopyMode
   session.fastStartActive = effectiveFastStart
   const codecArgs = effectiveFastStart
-    ? buildCodecArgs((session as any)._videoCodec, (session as any)._audioCodec, session.subtitleTrackIndex !== undefined, true).args
+    ? buildCodecArgs((session as any)._videoCodec, (session as any)._audioCodec, session.subtitleTrackIndex !== undefined, true, session.hwAccel).args
     : session.codecArgs
 
   args.push(
@@ -293,8 +393,8 @@ function startFfmpeg(session: TranscodeSession, fromSegment: number, fastStart: 
       session.error = null
       session.fastStartActive = false
       clearInterval(bufferCheck)
-      // Restart in normal quality from next segment after highest
-      startFfmpeg(session, highest + 1, false)
+      // Restart from highest (not highest+1) so the decoder gets a reference frame overlap
+      startFfmpeg(session, highest, false)
       return
     }
 
@@ -351,7 +451,10 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     }
   }
 
-  const { args: codecArgs, isCopyMode } = buildCodecArgs(videoCodec, audioCodec, subtitleTrackIndex !== undefined)
+  // Detect GPU hardware acceleration (cached after first call)
+  const hwAccel = await detectHwAccel()
+
+  const { args: codecArgs, isCopyMode, hwInputArgs } = buildCodecArgs(videoCodec, audioCodec, subtitleTrackIndex !== undefined, false, hwAccel)
 
   const totalSegments = Math.ceil(duration / SEGMENT_DURATION)
 
@@ -372,6 +475,8 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
     lastAccess: Date.now(),
     error: null,
     codecArgs,
+    hwInputArgs,
+    hwAccel,
     isCopyMode,
     audioTrackIndex,
     subtitleTrackIndex,
@@ -390,7 +495,8 @@ export async function getOrCreateSession(mediaId: string, filePath: string, audi
   // ffmpeg is started lazily on first segment request (waitForSegment)
   // This avoids starting from segment 0 when the player needs segment 748 (resume position)
 
-  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec}, mode: ${isCopyMode ? 'copy' : 'transcode'}${subtitleTrackIndex !== undefined ? `, burn-in sub: ${subtitleTrackIndex}` : ''} → ${codecArgs.join(' ')}`)
+  const accelLabel = hwAccel ? `GPU:${hwAccel}` : 'CPU'
+  console.log(`[HLS] Session created for ${mediaId}: ${totalSegments} segments, ${duration}s, codecs: ${videoCodec}/${audioCodec}, mode: ${isCopyMode ? 'copy' : 'transcode'} (${accelLabel})${subtitleTrackIndex !== undefined ? `, burn-in sub: ${subtitleTrackIndex}` : ''} → ${codecArgs.join(' ')}`)
 
   return session
 }
