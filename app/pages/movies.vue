@@ -8,12 +8,37 @@ const { t, locale } = useI18n()
 
 useHead({ title: computed(() => t('nav.movies')) })
 
-// Filters
-const sortBy = ref<'title' | 'year' | 'rating' | 'addedAt'>('addedAt')
-const sortOrder = ref<'asc' | 'desc'>('desc')
-const selectedGenre = ref('')
-const selectedYear = ref<number | ''>('')
-const pageSize = ref(50)
+// Filters — persisted in localStorage
+const STORAGE_KEY = 'lumirMoviesFilters'
+
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return null
+}
+
+const saved = import.meta.client ? loadFilters() : null
+const sortBy = ref<'title' | 'year' | 'rating' | 'addedAt'>(saved?.sortBy ?? 'addedAt')
+const sortOrder = ref<'asc' | 'desc'>(saved?.sortOrder ?? 'desc')
+const selectedGenre = ref(saved?.selectedGenre ?? '')
+const selectedYear = ref<number | ''>(saved?.selectedYear ?? '')
+const pageSize = ref(saved?.pageSize ?? 50)
+
+function saveFilters() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      sortBy: sortBy.value,
+      sortOrder: sortOrder.value,
+      selectedGenre: selectedGenre.value,
+      selectedYear: selectedYear.value,
+      pageSize: pageSize.value,
+    }))
+  } catch {}
+}
+
+watch([sortBy, sortOrder, selectedGenre, selectedYear, pageSize], saveFilters)
 
 // Fetch genres and years for filters
 const { data: genres } = useAsyncData('genres', () => trpc.media.genres.query())
