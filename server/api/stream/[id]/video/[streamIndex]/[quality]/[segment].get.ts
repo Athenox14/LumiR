@@ -37,8 +37,10 @@ export default defineEventHandler(async (event) => {
   const clientId = id
 
   // Retry logic: transcoder may need time to seek and produce the segment
-  const MAX_RETRIES = 12
-  const RETRY_DELAY_MS = 5000
+  // For ORIGINAL quality (DIRECT_STREAM/remux), segments are near-instant
+  // For transcoded qualities, segments may take longer but we cap retries to avoid hanging
+  const MAX_RETRIES = 6
+  const RETRY_DELAY_MS = 3000
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
