@@ -7,7 +7,7 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare",
+    "postinstall": "patch-package && nuxt prepare",
     "db:studio": "drizzle-kit studio",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
@@ -49,6 +49,7 @@
     "@types/string-similarity": "^4.0.2",
     "@types/uuid": "^10.0.0",
     "drizzle-kit": "^0.31.8",
-    "eslint": "^10.0.0"
+    "eslint": "^10.0.0",
+    "patch-package": "^8.0.1"
   }
 }
