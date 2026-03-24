@@ -1,5 +1,3 @@
-import { destroyMediaSession } from '../../../utils/transcodeSession'
-
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
 
@@ -7,8 +5,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Media ID is required' })
   }
 
-  destroyMediaSession(id)
-  console.log(`[HLS] Preheat cancelled for ${id}`)
+  // With @eleven-am/transcoder, stream disposal is handled automatically
+  // via the disposeTimeout config. This endpoint is kept for client compatibility.
+  console.log(`[HLS] Preheat cancel requested for ${id} (auto-managed by transcoder)`)
 
   return { cancelled: true }
 })
