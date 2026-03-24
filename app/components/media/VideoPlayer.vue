@@ -108,6 +108,10 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       startFragPrefetch: true,
       backBufferLength: 30,
       lowLatencyMode: false,
+      // Default to highest quality (original = remux, no CPU transcoding)
+      // Local/home network can handle original bitrate easily
+      abrEwmaDefaultEstimate: 100_000_000, // 100 Mbps initial estimate
+      startLevel: -1, // auto, but with high bandwidth estimate picks original
       // Robust fragment loading: transcoded segments may take time
       fragLoadPolicy: {
         default: {
