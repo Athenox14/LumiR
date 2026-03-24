@@ -45,9 +45,25 @@ export async function getHLSController(): Promise<HLSController> {
     })
 
     // Log stream metrics
+    let lastSegmentsCompleted = 0
+    let stuckCount = 0
     hlsController.onStreamMetrics((event) => {
+      const hwLabel = event.isUsingHardwareAcceleration && event.currentAccelerationMethod
+        ? event.currentAccelerationMethod
+        : 'CPU'
+
+      // Detect stuck transcoding
+      if (event.segmentsCompleted === lastSegmentsCompleted && event.segmentsCompleted > 0) {
+        stuckCount++
+        if (stuckCount === 3) {
+          console.warn(`[HLS] Transcoding appears stuck at ${event.segmentsCompleted}/${event.totalSegments} segments (${hwLabel}). Consider using ORIGINAL quality.`)
+        }
+      } else {
+        stuckCount = 0
+        lastSegmentsCompleted = event.segmentsCompleted
+      }
+
       if (event.segmentsCompleted % 10 === 0 && event.segmentsCompleted > 0) {
-        const hwLabel = event.isUsingHardwareAcceleration ? event.currentAccelerationMethod : 'CPU'
         console.log(`[HLS] Progress: ${event.segmentsCompleted}/${event.totalSegments} segments (${hwLabel}), avg=${Math.round(event.averageSegmentDuration)}ms/seg`)
       }
     })
