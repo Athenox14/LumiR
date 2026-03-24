@@ -108,10 +108,8 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       startFragPrefetch: true,
       backBufferLength: 30,
       lowLatencyMode: false,
-      // Default to highest quality (original = remux, no CPU transcoding)
-      // Local/home network can handle original bitrate easily
-      abrEwmaDefaultEstimate: 100_000_000, // 100 Mbps initial estimate
-      startLevel: -1, // auto, but with high bandwidth estimate picks original
+      // High bandwidth estimate so ABR doesn't pick low quality initially
+      abrEwmaDefaultEstimate: 100_000_000,
       // Robust fragment loading: transcoded segments may take time
       fragLoadPolicy: {
         default: {
@@ -151,6 +149,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
     // Keep a reference to hls.js instance for error recovery
     provider.onInstance((hls) => {
       hlsInstance = hls
+
+      // Force original quality (last level = ORIGINAL = DIRECT_STREAM, no CPU transcoding)
+      // This is critical: CPU transcoding is too slow and gets stuck,
+      // while ORIGINAL just remuxes (copies codec to HLS segments) = instant
+      hls.on(hls.constructor.Events.MANIFEST_PARSED, () => {
+        if (hls.levels.length > 0) {
+          hls.currentLevel = hls.levels.length - 1
+          console.log(`[HLS] Forced original quality (level ${hls.levels.length - 1} of ${hls.levels.length})`)
+        }
+      })
 
       // Recover from fatal errors by trying to restart
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
