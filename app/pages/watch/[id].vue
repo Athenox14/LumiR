@@ -146,7 +146,6 @@ async function handleEnded() {
     <!-- Player -->
     <MediaVideoPlayer
       v-else-if="media && streamUrl"
-      :key="streamUrl"
       :src="streamUrl"
       :poster="media.backdropPath || media.posterPath || undefined"
       :media-id="mediaId"
