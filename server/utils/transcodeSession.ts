@@ -29,7 +29,7 @@ function createController(): HLSController {
       enableHardwareAccelFallback: true,
       retryFailedSegments: true,
       maxRetries: 3,
-      segmentTimeout: 60,
+      segmentTimeout: 120,
       metricsInterval: 30000,
     },
   })
