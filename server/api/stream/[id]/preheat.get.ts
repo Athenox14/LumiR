@@ -3,7 +3,7 @@ import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
 import { extname } from 'path'
-import { getOrCreateSession, preheatSession, SEGMENT_DURATION } from '../../../utils/transcodeSession'
+import { preCreateMetadata } from '../../../utils/transcodeSession'
 
 const BROWSER_NATIVE = new Set(['.mp4', '.webm', '.m4v'])
 
@@ -35,18 +35,13 @@ export default defineEventHandler(async (event) => {
     return { preheated: false, reason: 'file_not_found' }
   }
 
-  const query = getQuery(event)
-  const position = parseInt(query.position as string, 10) || 0
-
-  const session = await getOrCreateSession(id, mediaItem.filePath)
-  if (!session) {
-    return { preheated: false, reason: 'session_failed' }
+  try {
+    // Pre-generate metadata so first playback is faster
+    await preCreateMetadata(mediaItem.filePath)
+    console.log(`[HLS] Preheat (metadata pre-created) for ${id}`)
+    return { preheated: true }
+  } catch (err: any) {
+    console.error(`[HLS] Preheat failed for ${id}:`, err.message)
+    return { preheated: false, reason: 'preheat_failed' }
   }
-
-  const segment = Math.floor(position / SEGMENT_DURATION)
-  preheatSession(session, segment)
-
-  console.log(`[HLS] Preheat requested for ${id} at position ${position}s (segment ${segment})`)
-
-  return { preheated: true, segment }
 })
