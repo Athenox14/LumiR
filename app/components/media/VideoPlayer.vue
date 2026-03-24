@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isHLSProvider, type MediaPlayerElement, type MediaProviderChangeEvent } from 'vidstack'
+import type HlsJS from 'hls.js'
 
 const { t } = useI18n()
 
@@ -50,6 +51,10 @@ const emit = defineEmits<{
 const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
+let hlsInstance: HlsJS | null = null
+
+// Position to restore after source change (e.g. audio track switch)
+const pendingSeekPosition = ref<number | null>(null)
 
 // Burn-in subtitle menu state
 const showBurnInMenu = ref(false)
@@ -80,27 +85,93 @@ const playerSrc = computed(() => {
   return url
 })
 
+// Save position before source change and load new source
+watch(() => props.src, (newSrc, oldSrc) => {
+  if (!oldSrc || newSrc === oldSrc) return
+  const player = playerRef.value
+  if (player && player.currentTime > 0) {
+    pendingSeekPosition.value = player.currentTime
+  }
+})
+
 // HLS.js config passed via provider
 function onProviderChange(event: MediaProviderChangeEvent) {
   const provider = event.detail
   if (isHLSProvider(provider)) {
+    const startPos = pendingSeekPosition.value ?? props.initialPosition
     provider.config = {
-      startPosition: props.initialPosition,
-      maxBufferLength: 10,
-      maxMaxBufferLength: 30,
-      maxBufferSize: 30 * 1000 * 1000,
-      maxBufferHole: 0.5,
+      startPosition: startPos,
+      maxBufferLength: 30,
+      maxMaxBufferLength: 60,
+      maxBufferSize: 60 * 1000 * 1000,
+      maxBufferHole: 1.5,
       startFragPrefetch: true,
+      backBufferLength: 30,
+      lowLatencyMode: false,
+      // Robust fragment loading: transcoded segments may take time
+      fragLoadPolicy: {
+        default: {
+          maxTimeToFirstByteMs: 30000,
+          maxLoadTimeMs: 120000,
+          timeoutRetry: {
+            maxNumRetry: 4,
+            retryDelayMs: 1000,
+            maxRetryDelayMs: 8000,
+          },
+          errorRetry: {
+            maxNumRetry: 6,
+            retryDelayMs: 1000,
+            maxRetryDelayMs: 8000,
+          },
+        },
+      },
+      // Robust playlist loading
+      playlistLoadPolicy: {
+        default: {
+          maxTimeToFirstByteMs: 15000,
+          maxLoadTimeMs: 30000,
+          timeoutRetry: {
+            maxNumRetry: 4,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 4000,
+          },
+          errorRetry: {
+            maxNumRetry: 4,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 4000,
+          },
+        },
+      },
     }
+
+    // Keep a reference to hls.js instance for error recovery
+    provider.onInstance((hls) => {
+      hlsInstance = hls
+
+      // Recover from fatal errors by trying to restart
+      hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
+        if (data.fatal) {
+          console.warn('[HLS] Fatal error, attempting recovery:', data.type, data.details)
+          if (data.type === 'networkError') {
+            hls.startLoad()
+          } else if (data.type === 'mediaError') {
+            hls.recoverMediaError()
+          }
+        }
+      })
+    })
   }
 }
 
 function onCanPlay() {
   const player = playerRef.value
   if (!player) return
-  if (props.initialPosition > 0 && player.currentTime < props.initialPosition - 1) {
-    player.currentTime = props.initialPosition
+  // Restore position after source switch or initial load
+  const targetPos = pendingSeekPosition.value ?? props.initialPosition
+  if (targetPos > 0 && player.currentTime < targetPos - 2) {
+    player.currentTime = targetPos
   }
+  pendingSeekPosition.value = null
 }
 
 function onError() {

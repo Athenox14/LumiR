@@ -36,23 +36,34 @@ export default defineEventHandler(async (event) => {
 
   const clientId = id
 
-  try {
-    const segmentData = await getSegmentStream(
-      mediaItem.filePath,
-      clientId,
-      StreamType.AUDIO,
-      quality,
-      streamIndex,
-      segmentNumber,
-    )
+  // Retry logic: transcoder may need time to seek and produce the segment
+  const MAX_RETRIES = 3
+  const RETRY_DELAY_MS = 2000
 
-    setHeader(event, 'Content-Type', 'video/mp2t')
-    setHeader(event, 'Content-Length', segmentData.size)
-    setHeader(event, 'Cache-Control', 'public, max-age=31536000')
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const segmentData = await getSegmentStream(
+        mediaItem.filePath,
+        clientId,
+        StreamType.AUDIO,
+        quality,
+        streamIndex,
+        segmentNumber,
+      )
 
-    return sendStream(event, segmentData.stream)
-  } catch (err: any) {
-    console.error(`[HLS] Failed to get audio segment ${segmentNumber}:`, err.message)
-    throw createError({ statusCode: 504, message: 'Segment not ready' })
+      setHeader(event, 'Content-Type', 'video/mp2t')
+      setHeader(event, 'Content-Length', segmentData.size)
+      setHeader(event, 'Cache-Control', 'public, max-age=31536000')
+
+      return sendStream(event, segmentData.stream)
+    } catch (err: any) {
+      if (attempt < MAX_RETRIES) {
+        console.warn(`[HLS] Audio segment ${segmentNumber} not ready (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying...`)
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS))
+      } else {
+        console.error(`[HLS] Failed to get audio segment ${segmentNumber} after ${MAX_RETRIES + 1} attempts:`, err.message)
+        throw createError({ statusCode: 504, message: 'Segment not ready' })
+      }
+    }
   }
 })
