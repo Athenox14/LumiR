@@ -37,8 +37,8 @@ export default defineEventHandler(async (event) => {
   const clientId = id
 
   // Retry logic: transcoder may need time to seek and produce the segment
-  const MAX_RETRIES = 3
-  const RETRY_DELAY_MS = 2000
+  const MAX_RETRIES = 12
+  const RETRY_DELAY_MS = 5000
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
