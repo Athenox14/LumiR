@@ -7,7 +7,7 @@ import { eq, and, desc, sql } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { moviePipeline } from '../../providers'
 import { searchTmdb, getTmdbInfo, getTmdbTrending, tmdbInfoToMediaFields, getPersonInfo, searchTmdbPerson } from '../../utils/tmdb'
-import { findFfmpeg } from '../../utils/ffmpeg'
+import { findFfmpeg } from '../../utils/mediaEngine'
 
 // Helper: get TMDB API key from settings
 async function getTmdbApiKey(): Promise<string | null> {

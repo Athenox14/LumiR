@@ -2,7 +2,7 @@ import { db } from '../../../db'
 import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
-import { getMasterPlaylist } from '../../../utils/transcodeSession'
+import { MediaEngine } from '../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -27,20 +27,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Media file not found' })
   }
 
-  // Use the media ID as client ID (sufficient for personal use)
-  const clientId = id
-
-  console.log(`[HLS] Master playlist requested for ${id}`)
-
   try {
-    const playlist = await getMasterPlaylist(mediaItem.filePath, clientId)
+    const session = await MediaEngine.createSession(mediaItem.filePath, id)
+    const playlist = await session.masterPlaylist()
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
     setHeader(event, 'Cache-Control', 'no-cache')
 
     return send(event, playlist, 'application/vnd.apple.mpegurl')
   } catch (err: any) {
-    console.error(`[HLS] Failed to generate master playlist for ${id}:`, err.message)
+    console.error(`[MediaEngine] Master playlist failed for ${id}:`, err.message)
     throw createError({
       statusCode: 500,
       message: 'Failed to generate master playlist. FFmpeg may not be installed.',

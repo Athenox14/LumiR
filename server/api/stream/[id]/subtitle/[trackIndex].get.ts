@@ -2,7 +2,7 @@ import { db } from '../../../../db'
 import { media, subtitleTracks } from '../../../../db/schema'
 import { eq, and } from 'drizzle-orm'
 import { promises as fs } from 'fs'
-import { getVTTSubtitle } from '../../../../utils/transcodeSession'
+import { MediaEngine } from '../../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -28,7 +28,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Subtitle track not found' })
   }
 
-  // Get the media file path
   const [mediaItem] = await db
     .select({ filePath: media.filePath })
     .from(media)
@@ -46,14 +45,14 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Use @eleven-am/transcoder to extract and convert subtitle to VTT
-    const vttContent = await getVTTSubtitle(mediaItem.filePath, trackIndex)
+    const session = await MediaEngine.createSession(mediaItem.filePath, id)
+    const vttContent = await session.subtitle(trackIndex)
 
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
     setHeader(event, 'Cache-Control', 'public, max-age=86400')
     return vttContent
   } catch (err: any) {
-    console.error(`[Subtitle] VTT extraction failed for track ${trackIndex}:`, err.message)
+    console.error(`[MediaEngine] Subtitle extraction failed for track ${trackIndex}:`, err.message)
     throw createError({ statusCode: 500, message: `Subtitle extraction failed: ${err.message}` })
   }
 })

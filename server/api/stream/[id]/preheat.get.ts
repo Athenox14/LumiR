@@ -2,10 +2,7 @@ import { db } from '../../../db'
 import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
-import { extname } from 'path'
-import { preCreateMetadata } from '../../../utils/transcodeSession'
-
-const BROWSER_NATIVE = new Set(['.mp4', '.webm', '.m4v'])
+import { MediaEngine } from '../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -24,24 +21,26 @@ export default defineEventHandler(async (event) => {
     return { preheated: false, reason: 'not_found' }
   }
 
-  const ext = extname(mediaItem.filePath).toLowerCase()
-  if (BROWSER_NATIVE.has(ext)) {
-    return { preheated: false, reason: 'native' }
-  }
-
   try {
     await fs.access(mediaItem.filePath)
   } catch {
     return { preheated: false, reason: 'file_not_found' }
   }
 
+  // Use probe + decide to check if preheat is needed
   try {
-    // Pre-generate metadata so first playback is faster
-    await preCreateMetadata(mediaItem.filePath)
-    console.log(`[HLS] Preheat (metadata pre-created) for ${id}`)
-    return { preheated: true }
+    const probe = await MediaEngine.probe(mediaItem.filePath)
+    const decision = MediaEngine.decide(probe)
+
+    if (decision.mode === 'direct') {
+      return { preheated: false, reason: 'native' }
+    }
+
+    await MediaEngine.preheat(mediaItem.filePath)
+    console.log(`[MediaEngine] Preheat done for ${id} (${decision.mode}: ${decision.reason})`)
+    return { preheated: true, mode: decision.mode, reason: decision.reason }
   } catch (err: any) {
-    console.error(`[HLS] Preheat failed for ${id}:`, err.message)
+    console.error(`[MediaEngine] Preheat failed for ${id}:`, err.message)
     return { preheated: false, reason: 'preheat_failed' }
   }
 })
