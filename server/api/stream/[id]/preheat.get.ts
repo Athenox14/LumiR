@@ -35,9 +35,15 @@ export default defineEventHandler(async (event) => {
       return { preheated: false, reason: 'native' }
     }
 
-    // Start ffmpeg so segments are ready when the user clicks play
-    await MediaEngine.preheat(mediaItem.filePath, id)
-    console.log(`[MediaEngine] Preheat started: ${id} (${decision.mode}: ${decision.reason})`)
+    // Start ffmpeg at the resume position (if any) so segments are ready
+    const positionParam = getQuery(event).position
+    const startPosition = positionParam ? parseFloat(String(positionParam)) : 0
+    if (startPosition > 0) {
+      await MediaEngine.preheatSeek(mediaItem.filePath, id, startPosition)
+    } else {
+      await MediaEngine.preheat(mediaItem.filePath, id)
+    }
+    console.log(`[MediaEngine] Preheat started: ${id} at ${startPosition}s (${decision.mode}: ${decision.reason})`)
     return { preheated: true, mode: decision.mode, reason: decision.reason }
   } catch (err: any) {
     console.error(`[MediaEngine] Preheat failed for ${id}:`, err.message)
