@@ -46,13 +46,16 @@ export default defineEventHandler(async (event) => {
     return sendStream(event, segmentData.stream)
   } catch (err: any) {
     if (abort.signal.aborted) return
-    console.error(`[MediaEngine] Video segment ${segmentNumber} failed:`, err.message)
-    // Abandoned segments (ffmpeg moved past them due to seek) → 404 so
-    // HLS.js skips them instead of retrying. Timeouts/crashes → 504.
-    const isAbandoned = err.message?.includes('abandoned')
+    // "not ready" after 30s timeout is expected for abandoned segments
+    // (user seeked away) — log at info level, not error
+    const msg = err.message || ''
+    const isTimeout = msg.includes('not ready')
+    if (!isTimeout) {
+      console.error(`[MediaEngine] Video segment ${segmentNumber} failed:`, msg)
+    }
     throw createError({
-      statusCode: isAbandoned ? 404 : 504,
-      message: isAbandoned ? 'Segment no longer available' : 'Segment not ready',
+      statusCode: 504,
+      message: 'Segment not ready',
     })
   }
 })
