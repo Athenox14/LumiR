@@ -411,16 +411,21 @@ class FFmpegSession {
       if (Date.now() > deadline) {
         throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
       }
-      // If ffmpeg has moved past this segment (user seeked further), this
-      // segment will never be produced. Instead of throwing immediately
-      // (which causes HLS.js to retry in a tight loop), just keep waiting.
-      // HLS.js will abort the request via AbortSignal when it moves on,
-      // and the 30s deadline above protects against leaks.
+      // If this segment is behind where ffmpeg is working, it will never
+      // be produced. Waiting 30s would block a browser connection slot,
+      // starving real segment requests. Wait briefly (2s) for abort
+      // signal, then fail fast so the connection is freed.
       if (segmentNumber < this.currentStartSegment) {
-        await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
-        continue
+        const abandonDeadline = Date.now() + 2_000
+        while (Date.now() < abandonDeadline) {
+          if (signal?.aborted) throw new Error('Client disconnected')
+          await abortableSleep(200, signal)
+        }
+        throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
       }
-      // If ffmpeg died (and not in the middle of a restart), try to restart it
+      // If ffmpeg died (and not in the middle of a restart), try to restart it.
+      // BUT only if the segment is within range — don't restart for stale
+      // requests that are far from where we should be producing.
       if (!this.process && !this.isStarting) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
           throw new Error(`ffmpeg keeps dying, cannot produce segment ${segmentNumber}`)
@@ -500,9 +505,14 @@ class FFmpegSession {
     // Already cached
     if (existsSync(segPath)) return
 
-    if (this.process && targetSeg > this.highestReady + SEEK_THRESHOLD) {
-      // ffmpeg is running but far from this segment — use debounced seek
-      // so it won't conflict with concurrent getSegment() calls
+    const needsSeek = this.process && (
+      // Target is far ahead of where ffmpeg is producing
+      targetSeg > this.highestReady + SEEK_THRESHOLD
+      // Target is behind where ffmpeg started (backward seek)
+      || targetSeg < this.currentStartSegment
+    )
+
+    if (needsSeek) {
       await this.requestSeek(startSeg)
     } else if (!this.process) {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: startSeg })
