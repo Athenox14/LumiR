@@ -59,7 +59,7 @@ let hlsInstance: HlsJS | null = null
 let lastPreheatSegment = -1
 let preheatDebounce: ReturnType<typeof setTimeout> | null = null
 
-function preheatSeek(positionSec: number) {
+function preheatSeek(positionSec: number, immediate = false) {
   // Only for HLS streams (non-native)
   if (!props.src.includes('.m3u8')) return
 
@@ -68,14 +68,23 @@ function preheatSeek(positionSec: number) {
   if (segmentNumber === lastPreheatSegment) return
   lastPreheatSegment = segmentNumber
 
-  // Debounce: user is scrubbing, only fire after 300ms pause
-  if (preheatDebounce) clearTimeout(preheatDebounce)
-  preheatDebounce = setTimeout(() => {
+  const doFetch = () => {
     $fetch(`/api/stream/${props.mediaId}/preheat-seek`, {
       method: 'POST',
       body: { position: positionSec },
     }).catch(() => {}) // Best-effort, ignore errors
-  }, 300)
+  }
+
+  if (immediate) {
+    // User actually seeked — fire immediately, no debounce
+    if (preheatDebounce) clearTimeout(preheatDebounce)
+    doFetch()
+    return
+  }
+
+  // Debounce: user is scrubbing, only fire after 300ms pause
+  if (preheatDebounce) clearTimeout(preheatDebounce)
+  preheatDebounce = setTimeout(doFetch, 300)
 }
 
 // Position to restore after source change (e.g. audio track switch)
@@ -222,6 +231,15 @@ function onCanPlay() {
   pendingSeekPosition.value = null
 }
 
+// When user actually seeks (releases slider, clicks timeline), tell the
+// server to position ffmpeg at the new location. This is the ONLY mechanism
+// that triggers ffmpeg restarts — segment requests never do.
+function onSeeking() {
+  const player = playerRef.value
+  if (!player || !props.src.includes('.m3u8')) return
+  preheatSeek(player.currentTime, true)
+}
+
 function onError() {
   if (props.fallbackSrc && !usedFallback.value) {
     console.log('[VideoPlayer] Primary failed, switching to fallback:', props.fallbackSrc)
@@ -287,7 +305,6 @@ onUnmounted(() => {
         :src="playerSrc"
         :poster="poster"
         :title="title"
-        :current-time="initialPosition"
         :autoplay="autoplay"
         playsinline
         crossorigin=""
@@ -296,6 +313,7 @@ onUnmounted(() => {
         :style="{ width: '100%', height: '100%' }"
         @provider-change="onProviderChange"
         @can-play="onCanPlay"
+        @seeking="onSeeking"
         @error="onError"
         @ended="$emit('ended')"
       >
