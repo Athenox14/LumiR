@@ -185,15 +185,26 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         }
       })
 
-      // Recover from fatal errors by trying to restart
+      // Recover from fatal errors with retry logic
+      let networkRetries = 0
+      let mediaRetries = 0
+      const MAX_NETWORK_RETRIES = 5
+      const MAX_MEDIA_RETRIES = 3
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
         if (data.fatal) {
           console.warn('[HLS] Fatal error, attempting recovery:', data.type, data.details)
-          if (data.type === 'networkError') {
-            hls.startLoad()
-          } else if (data.type === 'mediaError') {
+          if (data.type === 'networkError' && networkRetries < MAX_NETWORK_RETRIES) {
+            networkRetries++
+            // Delay retry slightly to let server-side ffmpeg catch up after seek
+            setTimeout(() => hls.startLoad(), 1000)
+          } else if (data.type === 'mediaError' && mediaRetries < MAX_MEDIA_RETRIES) {
+            mediaRetries++
             hls.recoverMediaError()
           }
+        } else {
+          // Non-fatal: reset retry counters on successful recovery
+          networkRetries = 0
+          mediaRetries = 0
         }
       })
     })
