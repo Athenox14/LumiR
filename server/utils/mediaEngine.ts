@@ -213,7 +213,7 @@ class FFmpegSession {
         console.log(`[MediaEngine] Debounced seek: restarting at segment ${seg} (${resolvers.length} pending requests)`)
         await this.start({ audioTrack: this.audioTrackIndex, startSegment: seg })
         resolvers.forEach((r) => r())
-      }, 1500) // 1.5s debounce — lets parallel HLS.js requests settle
+      }, 500) // 500ms debounce — collapses rapid preheat-seek calls during scrub
     })
   }
 
@@ -492,6 +492,9 @@ class FFmpegSession {
   /** Preheat a specific position */
   async preheatSeek(positionSec: number) {
     const targetSeg = Math.floor(positionSec / SEGMENT_DURATION)
+    // Start a few segments before the target — HLS.js often requests
+    // segments before the seek position for keyframe alignment.
+    const startSeg = Math.max(0, targetSeg - 5)
     const segPath = join(this.outputDir, `segment-${targetSeg}.ts`)
 
     // Already cached
@@ -500,9 +503,9 @@ class FFmpegSession {
     if (this.process && targetSeg > this.highestReady + SEEK_THRESHOLD) {
       // ffmpeg is running but far from this segment — use debounced seek
       // so it won't conflict with concurrent getSegment() calls
-      await this.requestSeek(targetSeg)
+      await this.requestSeek(startSeg)
     } else if (!this.process) {
-      await this.start({ audioTrack: this.audioTrackIndex, startSegment: targetSeg })
+      await this.start({ audioTrack: this.audioTrackIndex, startSegment: startSeg })
     }
     // Otherwise ffmpeg is already working toward this segment — let it be
   }
