@@ -42,28 +42,8 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    // Create a session — the transcoder will be asked for a segment near
-    // this position, which triggers it to seek there and start producing
-    const session = await MediaEngine.createSession(mediaItem.filePath, id)
-
-    // Calculate which segment number corresponds to this position.
-    // HLS segments are typically 6 seconds each.
-    const segmentDuration = 6
-    const segmentNumber = Math.floor(position / segmentDuration)
-
-    // Request the segment in the background — we don't wait for it.
-    // This makes the transcoder seek to this position and start buffering.
-    // Use a short abort timer so we don't hold resources if something is stuck.
-    const abort = new AbortController()
-    const timeout = setTimeout(() => abort.abort(), 10000)
-
-    session.segment('video', 'original', 0, segmentNumber, abort.signal)
-      .catch(() => {}) // Swallow errors — this is best-effort
-      .finally(() => clearTimeout(timeout))
-
-    console.log(`[MediaEngine] Preheat seek: media=${id} position=${position}s segment=${segmentNumber}`)
-
-    return { preheated: true, segmentNumber }
+    await MediaEngine.preheatSeek(mediaItem.filePath, id, position)
+    return { preheated: true, position }
   } catch (err: any) {
     console.error(`[MediaEngine] Preheat seek failed for ${id}:`, err.message)
     return { preheated: false }

@@ -1,31 +1,27 @@
 /**
- * MediaEngine — Abstraction complète de FFmpeg.
+ * MediaEngine — FFmpeg direct, zéro abstraction tierce.
  *
- * Flow: probe → decide → play (session)
+ * Flow: probe → decide → session (spawn ffmpeg)
  *
- * Usage:
- *   const probe  = await MediaEngine.probe('/path/to/file.mkv')
- *   const plan   = MediaEngine.decide(probe)
- *   const session = await MediaEngine.createSession(filePath, clientId)
- *   const playlist = await session.masterPlaylist()
- *   const segment  = await session.segment('video', quality, streamIndex, segmentNum)
- *   session.stop()   // auto-managed, but explicit is fine
+ * Remux:     ffmpeg -i input.mkv -c:v copy -c:a aac → HLS segments (~instant)
+ * Transcode: ffmpeg -i input.mkv -c:v libx264 -c:a aac → HLS segments (CPU-heavy)
+ * Seek:      kill + restart ffmpeg with -ss → new segments from that point
  */
 
-import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { execSync, spawn, type ChildProcess } from 'child_process'
+import { createReadStream, existsSync, statSync, type ReadStream } from 'fs'
+import { mkdir, rm, readFile, readdir } from 'fs/promises'
 import { dirname, extname, join } from 'path'
 import { tmpdir } from 'os'
 import Ffmpeg from 'fluent-ffmpeg'
-import { HLSController, StreamType, VideoQualityEnum, AudioQualityEnum } from '@eleven-am/transcoder'
-import type { SegmentStream } from '@eleven-am/transcoder'
 
-// ─── Binary resolution (internal) ────────────────────────────────────────────
+// ─── Binary resolution ───────────────────────────────────────────────────────
 
+let _ffmpegPath: string | null = null
+let _ffprobePath: string | null = null
 let _pathsReady = false
 
 async function resolveBinary(name: 'ffmpeg' | 'ffprobe'): Promise<string | null> {
-  // 1. Try static package
   try {
     const pkg = name === 'ffmpeg' ? 'ffmpeg-static' : 'ffprobe-static'
     const mod = await import(pkg)
@@ -33,17 +29,15 @@ async function resolveBinary(name: 'ffmpeg' | 'ffprobe'): Promise<string | null>
     if (p && existsSync(p)) return p
   } catch {}
 
-  // 2. Try sibling of ffmpeg (for ffprobe)
   if (name === 'ffprobe') {
-    const ffmpegPath = await resolveBinary('ffmpeg')
-    if (ffmpegPath) {
+    const ffmpeg = await resolveBinary('ffmpeg')
+    if (ffmpeg) {
       const ext = process.platform === 'win32' ? '.exe' : ''
-      const p = join(dirname(ffmpegPath), `ffprobe${ext}`)
+      const p = join(dirname(ffmpeg), `ffprobe${ext}`)
       if (existsSync(p)) return p
     }
   }
 
-  // 3. Try system PATH
   try {
     const cmd = process.platform === 'win32' ? `where ${name}` : `which ${name}`
     const p = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim().split(/\r?\n/)[0]
@@ -55,11 +49,17 @@ async function resolveBinary(name: 'ffmpeg' | 'ffprobe'): Promise<string | null>
 
 async function ensureBinaries() {
   if (_pathsReady) return
-  const [ffmpeg, ffprobe] = await Promise.all([resolveBinary('ffmpeg'), resolveBinary('ffprobe')])
-  if (ffmpeg) Ffmpeg.setFfmpegPath(ffmpeg)
-  if (ffprobe) Ffmpeg.setFfprobePath(ffprobe)
+  _ffmpegPath = await resolveBinary('ffmpeg')
+  _ffprobePath = await resolveBinary('ffprobe')
+  if (_ffmpegPath) Ffmpeg.setFfmpegPath(_ffmpegPath)
+  if (_ffprobePath) Ffmpeg.setFfprobePath(_ffprobePath)
   _pathsReady = true
-  console.log(`[MediaEngine] Binaries: ffmpeg=${ffmpeg ? 'OK' : 'MISSING'}, ffprobe=${ffprobe ? 'OK' : 'MISSING'}`)
+  console.log(`[MediaEngine] Binaries: ffmpeg=${_ffmpegPath ? 'OK' : 'MISSING'}, ffprobe=${_ffprobePath ? 'OK' : 'MISSING'}`)
+}
+
+function getFfmpegPath(): string {
+  if (!_ffmpegPath) throw new Error('ffmpeg binary not found')
+  return _ffmpegPath
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -117,15 +117,17 @@ export interface PlaybackDecision {
   streamUrl: (mediaId: string) => string
 }
 
-// ─── Codec knowledge (internal) ──────────────────────────────────────────────
+export interface SegmentStream {
+  stream: ReadStream
+  size: number
+}
 
-/** Codecs browsers can decode natively */
+// ─── Codec knowledge ─────────────────────────────────────────────────────────
+
 const BROWSER_VIDEO_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1'])
 const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac'])
 const BROWSER_NATIVE_CONTAINERS = new Set(['.mp4', '.webm', '.m4v'])
-
-/** Codecs that can be remuxed into HLS/TS without re-encoding */
-const HLS_COMPATIBLE_VIDEO = new Set(['h264']) // HEVC in TS requires browser HEVC support — unreliable
+const HLS_COMPATIBLE_VIDEO = new Set(['h264'])
 const HLS_COMPATIBLE_AUDIO = new Set(['aac', 'mp3'])
 
 // ─── Probe ───────────────────────────────────────────────────────────────────
@@ -133,182 +135,357 @@ const HLS_COMPATIBLE_AUDIO = new Set(['aac', 'mp3'])
 function rawProbe(filePath: string): Promise<Ffmpeg.FfprobeData | null> {
   return new Promise((resolve) => {
     Ffmpeg.ffprobe(filePath, (err, data) => {
-      if (err) { console.error(`[MediaEngine] Probe failed for "${filePath}":`, err.message); resolve(null) }
+      if (err) { console.error(`[MediaEngine] Probe failed "${filePath}":`, err.message); resolve(null) }
       else resolve(data)
     })
   })
 }
 
-function getTag(tags: Record<string, string> | undefined, key: string): string | undefined {
+function getTag(tags: Record<string, any> | undefined, key: string): string | undefined {
   if (!tags) return undefined
-  return tags[key] || tags[key.toUpperCase()] || tags[key.toLowerCase()] || undefined
+  const v = tags[key] || tags[key.toUpperCase()] || tags[key.toLowerCase()]
+  return v != null ? String(v) : undefined
 }
 
-// ─── HLS Controller (singleton, internal) ────────────────────────────────────
+// ─── Session Manager ─────────────────────────────────────────────────────────
 
-let _controller: HLSController | null = null
-let _initPromise: Promise<void> | null = null
+const SEGMENT_DURATION = 6
+const HLS_DIR = join(tmpdir(), 'lumir-hls')
+const DISPOSE_TIMEOUT = 2 * 60 * 1000 // 2 min idle → cleanup
+const SEGMENT_WAIT_TIMEOUT = 30_000    // 30s max wait for a segment
+const SEGMENT_POLL_INTERVAL = 200      // Check every 200ms
+const SEEK_THRESHOLD = 30              // Segments ahead → restart ffmpeg with -ss
 
-function buildController(): HLSController {
-  return new HLSController({
-    cacheDirectory: join(tmpdir(), 'lumir-hls-cache'),
-    hwAccel: true,
-    maxSegmentBatchSize: 50,
-    videoQualities: [
-      VideoQualityEnum.P480,
-      VideoQualityEnum.P720,
-      VideoQualityEnum.P1080,
-      VideoQualityEnum.ORIGINAL,
-    ],
-    audioQualities: [
-      AudioQualityEnum.AAC,
-      AudioQualityEnum.ORIGINAL,
-    ],
-    config: {
-      disposeTimeout: 5 * 60 * 1000,
-      enableHardwareAccelFallback: true,
-      retryFailedSegments: true,
-      maxRetries: 3,
-      segmentTimeout: 120,
-      metricsInterval: 30000,
-    },
-  })
-}
+const sessions = new Map<string, FFmpegSession>()
 
-async function getController(): Promise<HLSController> {
-  if (!_controller) {
-    _controller = buildController()
+class FFmpegSession {
+  private process: ChildProcess | null = null
+  private outputDir: string
+  private totalSegments: number
+  private highestReady = -1
+  private disposeTimer: ReturnType<typeof setTimeout> | null = null
+  private currentStartSegment = 0
+  private decision: PlaybackDecision | null = null
+  private audioTrackIndex: number | undefined
+  private stderrLog = ''
 
-    _controller.onSessionChange((s) => {
-      console.log(`[MediaEngine] Session: client=${s.clientId} status=${s.status} video=${s.videoProfile.value} audio=${s.audioProfile.value}`)
-    })
-
-    let lastCompleted = 0
-    let stuckCount = 0
-    _controller.onStreamMetrics((e) => {
-      const hw = e.isUsingHardwareAcceleration && e.currentAccelerationMethod
-        ? e.currentAccelerationMethod
-        : 'CPU'
-
-      if (e.segmentsCompleted === lastCompleted && e.segmentsCompleted > 0) {
-        stuckCount++
-        if (stuckCount === 3) {
-          console.warn(`[MediaEngine] Transcoding stuck at ${e.segmentsCompleted}/${e.totalSegments} (${hw})`)
-        }
-      } else {
-        stuckCount = 0
-        lastCompleted = e.segmentsCompleted
-      }
-
-      if (e.segmentsCompleted % 10 === 0 && e.segmentsCompleted > 0) {
-        console.log(`[MediaEngine] Progress: ${e.segmentsCompleted}/${e.totalSegments} (${hw}) avg=${Math.round(e.averageSegmentDuration)}ms/seg`)
-      }
-    })
-  }
-
-  if (!_initPromise) {
-    _initPromise = _controller.initialize().then(() => {
-      console.log('[MediaEngine] HLS controller initialized')
-    }).catch((err) => {
-      console.error('[MediaEngine] HLS init failed:', err.message)
-      _initPromise = null
-      throw err
-    })
-  }
-
-  await _initPromise
-  return _controller
-}
-
-// ─── MediaSession ────────────────────────────────────────────────────────────
-
-const SEGMENT_MAX_RETRIES = 6
-const SEGMENT_RETRY_DELAY_MS = 3000
-
-export class MediaSession {
   constructor(
     public readonly filePath: string,
     public readonly clientId: string,
-    private controller: HLSController,
-  ) {}
-
-  /** Get the HLS master playlist (M3U8) */
-  async masterPlaylist(): Promise<string> {
-    return this.controller.getMasterPlaylist(this.filePath, this.clientId)
+    public readonly probe: ProbeResult,
+  ) {
+    this.outputDir = join(HLS_DIR, clientId)
+    this.totalSegments = Math.max(1, Math.ceil(probe.duration / SEGMENT_DURATION))
+    this.decision = MediaEngine.decide(probe)
   }
 
-  /** Get a variant playlist for a specific stream */
-  async playlist(type: 'video' | 'audio', quality: string, streamIndex: number): Promise<string> {
-    const streamType = type === 'video' ? StreamType.VIDEO : StreamType.AUDIO
-    return this.controller.getIndexPlaylist(this.filePath, this.clientId, streamType, quality, streamIndex)
-  }
+  /** Start the ffmpeg process to generate HLS segments */
+  async start(opts?: { audioTrack?: number, startSegment?: number }) {
+    this.audioTrackIndex = opts?.audioTrack
+    const startSeg = opts?.startSegment ?? 0
+    this.currentStartSegment = startSeg
+    const startTime = startSeg * SEGMENT_DURATION
 
-  /**
-   * Get a segment with automatic retry (transcoding may lag behind).
-   * Pass an AbortSignal to cancel retries when the client disconnects.
-   */
-  async segment(type: 'video' | 'audio', quality: string, streamIndex: number, segmentNumber: number, signal?: AbortSignal): Promise<SegmentStream> {
-    const streamType = type === 'video' ? StreamType.VIDEO : StreamType.AUDIO
+    // Ensure output directory
+    await mkdir(this.outputDir, { recursive: true })
 
-    for (let attempt = 0; attempt <= SEGMENT_MAX_RETRIES; attempt++) {
-      // Stop retrying if the client disconnected
-      if (signal?.aborted) {
-        throw new Error(`Client disconnected, aborting ${type} segment ${segmentNumber}`)
-      }
+    const decision = this.decision!
+    const probe = this.probe
 
-      try {
-        return await this.controller.getSegmentStream(
-          this.filePath, this.clientId, streamType, quality, streamIndex, segmentNumber,
-        )
-      } catch (err: any) {
-        if (attempt < SEGMENT_MAX_RETRIES) {
-          console.warn(`[MediaEngine] ${type} segment ${segmentNumber} not ready (${attempt + 1}/${SEGMENT_MAX_RETRIES + 1}), retrying...`)
-          // Abortable sleep: cancel the wait if client disconnects
-          await new Promise<void>((resolve) => {
-            const timer = setTimeout(resolve, SEGMENT_RETRY_DELAY_MS)
-            signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
-          })
-        } else {
-          throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_MAX_RETRIES + 1} attempts: ${err.message}`)
-        }
-      }
+    // Build ffmpeg args
+    const args: string[] = ['-hide_banner', '-y']
+
+    // Input seeking (fast, keyframe-based) — before -i
+    if (startTime > 0) {
+      args.push('-ss', String(startTime))
     }
 
-    // Unreachable, but TypeScript needs it
-    throw new Error('Segment retrieval failed')
+    args.push('-i', this.filePath)
+
+    // Stream mapping
+    args.push('-map', '0:v:0')
+    if (this.audioTrackIndex !== undefined) {
+      args.push('-map', `0:${this.audioTrackIndex}`)
+    } else {
+      args.push('-map', '0:a:0')
+    }
+
+    // Video codec
+    if (decision.videoAction === 'reencode') {
+      args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22')
+      args.push('-profile:v', 'high', '-level', '4.1')
+      args.push('-pix_fmt', 'yuv420p')
+    } else {
+      args.push('-c:v', 'copy')
+    }
+
+    // Audio codec
+    if (decision.audioAction === 'reencode' || !HLS_COMPATIBLE_AUDIO.has(probe.audio[0]?.codec || '')) {
+      args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2')
+    } else {
+      args.push('-c:a', 'copy')
+    }
+
+    // HLS output
+    args.push(
+      '-f', 'hls',
+      '-hls_time', String(SEGMENT_DURATION),
+      '-hls_segment_type', 'mpegts',
+      '-hls_segment_filename', join(this.outputDir, 'segment-%d.ts'),
+      '-hls_list_size', '0',
+      '-hls_flags', 'independent_segments',
+      '-start_number', String(startSeg),
+    )
+
+    // Output playlist (ffmpeg writes it)
+    args.push(join(this.outputDir, 'ffmpeg-playlist.m3u8'))
+
+    // Kill any existing process
+    this.killProcess()
+    this.stderrLog = ''
+
+    console.log(`[MediaEngine] Starting ffmpeg: mode=${decision.mode} startSeg=${startSeg} (${startTime}s) file=${this.filePath}`)
+
+    const proc = spawn(getFfmpegPath(), args, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+    })
+
+    this.process = proc
+
+    proc.stderr!.on('data', (chunk: Buffer) => {
+      // Keep last 2KB of stderr for debugging
+      this.stderrLog = (this.stderrLog + chunk.toString()).slice(-2048)
+    })
+
+    proc.on('exit', (code) => {
+      if (code !== 0 && code !== 255) { // 255 = killed by us
+        console.error(`[MediaEngine] ffmpeg exited with code ${code} for ${this.clientId}`)
+        if (this.stderrLog) {
+          console.error(`[MediaEngine] Last stderr: ${this.stderrLog.slice(-500)}`)
+        }
+      } else {
+        console.log(`[MediaEngine] ffmpeg finished for ${this.clientId}`)
+      }
+      this.process = null
+    })
+
+    proc.on('error', (err) => {
+      console.error(`[MediaEngine] ffmpeg spawn error:`, err.message)
+      this.process = null
+    })
+
+    this.touchActivity()
   }
 
-  /** Extract a subtitle track as VTT */
-  async subtitle(trackIndex: number): Promise<string> {
-    return this.controller.getVTTSubtitle(this.filePath, trackIndex)
+  /** Generate master playlist pointing to a single muxed variant */
+  masterPlaylist(): string {
+    const v = this.probe.video
+    const width = v?.width || 1920
+    const height = v?.height || 1080
+    const bandwidth = v?.bitrate || 8_000_000
+
+    return [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${height},CODECS="avc1.640028,mp4a.40.2"`,
+      `video/0/original/playlist.m3u8`,
+    ].join('\n')
   }
 
-  /** Extract a subtitle track as a readable stream */
-  async subtitleStream(trackIndex: number): Promise<NodeJS.ReadableStream> {
-    return this.controller.getVTTSubtitleStream(this.filePath, trackIndex)
+  /** Generate the full VOD variant playlist (all segments listed upfront) */
+  variantPlaylist(): string {
+    const lines: string[] = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      `#EXT-X-TARGETDURATION:${SEGMENT_DURATION}`,
+      '#EXT-X-MEDIA-SEQUENCE:0',
+      '#EXT-X-PLAYLIST-TYPE:VOD',
+    ]
+
+    const remaining = this.probe.duration
+    for (let i = 0; i < this.totalSegments; i++) {
+      const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
+      lines.push(`#EXTINF:${segDur.toFixed(3)},`)
+      lines.push(`segment-${i}.ts`)
+    }
+
+    lines.push('#EXT-X-ENDLIST')
+    return lines.join('\n')
   }
 
-  /** Explicit stop (sessions auto-dispose after 5 min idle, but this is cleaner) */
-  stop(): void {
-    console.log(`[MediaEngine] Session stopped: client=${this.clientId}`)
-    // @eleven-am/transcoder manages lifecycle via disposeTimeout
+  /** Get a segment, waiting for it to be generated. Restarts ffmpeg with -ss if needed. */
+  async getSegment(segmentNumber: number, signal?: AbortSignal): Promise<SegmentStream> {
+    this.touchActivity()
+
+    // If segment is far ahead of what ffmpeg is producing, seek there
+    if (this.process && segmentNumber > this.highestReady + SEEK_THRESHOLD) {
+      console.log(`[MediaEngine] Seeking: segment ${segmentNumber} requested, highest ready is ${this.highestReady} → restarting with -ss`)
+      await this.start({ audioTrack: this.audioTrackIndex, startSegment: segmentNumber })
+    }
+
+    // If ffmpeg hasn't started yet (or was stopped), start from this segment
+    if (!this.process) {
+      await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
+    }
+
+    const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
+
+    // Wait for segment file to appear
+    const deadline = Date.now() + SEGMENT_WAIT_TIMEOUT
+    while (!existsSync(segPath)) {
+      if (signal?.aborted) {
+        throw new Error('Client disconnected')
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
+      }
+      // Check if ffmpeg died
+      if (!this.process) {
+        throw new Error(`ffmpeg is not running, cannot produce segment ${segmentNumber}`)
+      }
+      await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
+    }
+
+    // Wait a tiny bit more for ffmpeg to finish writing the segment
+    // (the file exists but ffmpeg might still be flushing)
+    await abortableSleep(50, signal)
+
+    // Update highest ready
+    if (segmentNumber > this.highestReady) {
+      this.highestReady = segmentNumber
+    }
+
+    const stat = statSync(segPath)
+    return {
+      stream: createReadStream(segPath),
+      size: stat.size,
+    }
   }
+
+  /** Extract a subtitle track to VTT using ffmpeg */
+  async getSubtitle(trackIndex: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-hide_banner', '-y',
+        '-i', this.filePath,
+        '-map', `0:${trackIndex}`,
+        '-c:s', 'webvtt',
+        '-f', 'webvtt',
+        'pipe:1',
+      ]
+
+      const proc = spawn(getFfmpegPath(), args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      const chunks: Buffer[] = []
+      proc.stdout!.on('data', (d: Buffer) => chunks.push(d))
+
+      let stderr = ''
+      proc.stderr!.on('data', (d: Buffer) => { stderr += d.toString() })
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(Buffer.concat(chunks).toString('utf-8'))
+        } else {
+          reject(new Error(`VTT extraction failed (code ${code}): ${stderr.slice(-300)}`))
+        }
+      })
+
+      proc.on('error', reject)
+    })
+  }
+
+  /** Preheat: just start ffmpeg from the beginning so segments start appearing */
+  async preheat() {
+    if (this.process) return // Already running
+    await this.start()
+  }
+
+  /** Preheat a specific position */
+  async preheatSeek(positionSec: number) {
+    const targetSeg = Math.floor(positionSec / SEGMENT_DURATION)
+    const segPath = join(this.outputDir, `segment-${targetSeg}.ts`)
+
+    // Already cached
+    if (existsSync(segPath)) return
+
+    // If ffmpeg is running but far from this segment, restart
+    if (this.process && targetSeg > this.highestReady + SEEK_THRESHOLD) {
+      await this.start({ audioTrack: this.audioTrackIndex, startSegment: targetSeg })
+    } else if (!this.process) {
+      await this.start({ audioTrack: this.audioTrackIndex, startSegment: targetSeg })
+    }
+    // Otherwise ffmpeg is already working toward this segment — let it be
+  }
+
+  /** Stop the session and clean up */
+  async stop() {
+    this.killProcess()
+    this.clearDispose()
+    sessions.delete(this.clientId)
+    // Clean up temp files in background
+    rm(this.outputDir, { recursive: true, force: true }).catch(() => {})
+    console.log(`[MediaEngine] Session stopped & cleaned: ${this.clientId}`)
+  }
+
+  // ── Internal ──
+
+  private killProcess() {
+    if (this.process) {
+      this.process.kill('SIGKILL')
+      this.process = null
+    }
+  }
+
+  private touchActivity() {
+    this.clearDispose()
+    this.disposeTimer = setTimeout(() => {
+      console.log(`[MediaEngine] Session idle, disposing: ${this.clientId}`)
+      this.stop()
+    }, DISPOSE_TIMEOUT)
+  }
+
+  private clearDispose() {
+    if (this.disposeTimer) {
+      clearTimeout(this.disposeTimer)
+      this.disposeTimer = null
+    }
+  }
+}
+
+/** Sleep that resolves early if the signal aborts */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) { resolve(); return }
+    const timer = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+  })
+}
+
+// ─── Session factory ─────────────────────────────────────────────────────────
+
+async function getOrCreateSession(filePath: string, clientId: string): Promise<FFmpegSession> {
+  let session = sessions.get(clientId)
+  if (session && session.filePath === filePath) return session
+
+  // Different file or new → create new session
+  if (session) await session.stop()
+
+  const probe = await MediaEngine.probe(filePath)
+  session = new FFmpegSession(filePath, clientId, probe)
+  sessions.set(clientId, session)
+  return session
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export const MediaEngine = {
 
-  /**
-   * Probe a media file. Returns structured info about all streams.
-   */
   async probe(filePath: string): Promise<ProbeResult> {
     await ensureBinaries()
     const data = await rawProbe(filePath)
-
-    if (!data) {
-      throw new Error(`Failed to probe "${filePath}"`)
-    }
+    if (!data) throw new Error(`Failed to probe "${filePath}"`)
 
     const format = data.format || {} as any
     const fTags = format.tags || {}
@@ -329,7 +506,6 @@ export const MediaEngine = {
           bitrate: s.bit_rate ? parseInt(String(s.bit_rate), 10) : undefined,
         }
       }
-
       if (s.codec_type === 'audio') {
         audio.push({
           index: s.index,
@@ -341,7 +517,6 @@ export const MediaEngine = {
           isForced: disp.forced === 1,
         })
       }
-
       if (s.codec_type === 'subtitle') {
         subtitles.push({
           index: s.index,
@@ -357,7 +532,7 @@ export const MediaEngine = {
     return {
       filePath,
       container: extname(filePath).toLowerCase(),
-      duration: format.duration ? Math.round(parseFloat(format.duration)) : 0,
+      duration: format.duration ? Math.round(parseFloat(String(format.duration))) : 0,
       video,
       audio,
       subtitles,
@@ -371,16 +546,11 @@ export const MediaEngine = {
     }
   },
 
-  /**
-   * Decide the optimal playback strategy based on probe results.
-   * This is the brain — it knows what browsers can play.
-   */
   decide(probe: ProbeResult): PlaybackDecision {
     const videoCodec = probe.video?.codec || 'unknown'
     const audioCodec = probe.audio[0]?.codec || 'unknown'
     const container = probe.container
 
-    // Case 1: Browser-native container with compatible codecs → direct stream
     if (
       BROWSER_NATIVE_CONTAINERS.has(container) &&
       BROWSER_VIDEO_CODECS.has(videoCodec) &&
@@ -396,7 +566,6 @@ export const MediaEngine = {
       }
     }
 
-    // Case 2: Video is HLS-compatible, just need to repackage the container
     const canRemuxVideo = HLS_COMPATIBLE_VIDEO.has(videoCodec)
     const canRemuxAudio = HLS_COMPATIBLE_AUDIO.has(audioCodec)
 
@@ -407,12 +576,11 @@ export const MediaEngine = {
         reason: `${videoCodec} dans ${container} → remux HLS (vidéo: copie, audio: ${audioNote})`,
         videoAction: 'repackage',
         audioAction: canRemuxAudio ? 'repackage' : 'reencode',
-        estimatedLoad: canRemuxAudio ? 'low' : 'low', // Audio re-encode is cheap
+        estimatedLoad: 'low',
         streamUrl: (id) => `/api/stream/${id}/master.m3u8`,
       }
     }
 
-    // Case 3: Video needs re-encoding (HEVC, VP9 in MKV, etc.)
     return {
       mode: 'transcode',
       reason: `${videoCodec} incompatible navigateur → transcodage ${videoCodec} → H.264`,
@@ -423,39 +591,27 @@ export const MediaEngine = {
     }
   },
 
-  /**
-   * Create a streaming session for a media file.
-   * Returns a MediaSession with .masterPlaylist(), .segment(), etc.
-   */
-  async createSession(filePath: string, clientId: string): Promise<MediaSession> {
-    const controller = await getController()
-    return new MediaSession(filePath, clientId, controller)
+  /** Create or retrieve a streaming session */
+  async createSession(filePath: string, clientId: string): Promise<FFmpegSession> {
+    return getOrCreateSession(filePath, clientId)
   },
 
-  /**
-   * Pre-generate HLS metadata so first playback is faster.
-   */
-  async preheat(filePath: string): Promise<void> {
-    const controller = await getController()
-    await controller.createMetadata(filePath)
+  /** Preheat: start ffmpeg so segments are ready when the user clicks play */
+  async preheat(filePath: string, clientId: string): Promise<void> {
+    const session = await getOrCreateSession(filePath, clientId)
+    await session.preheat()
   },
 
-  /**
-   * Quick stream info for a media file — used by the info endpoint.
-   * Returns the playback decision + duration without creating a full session.
-   */
-  async getStreamInfo(filePath: string, mediaId: string, tmdbDurationMin?: number): Promise<{
-    mediaId: string
-    mode: PlaybackMode
-    reason: string
-    streamUrl: string
-    duration: number
-    estimatedLoad: 'none' | 'low' | 'high'
-  }> {
+  /** Preheat a specific timeline position (for hover) */
+  async preheatSeek(filePath: string, clientId: string, positionSec: number): Promise<void> {
+    const session = await getOrCreateSession(filePath, clientId)
+    await session.preheatSeek(positionSec)
+  },
+
+  /** Quick stream info for the info endpoint */
+  async getStreamInfo(filePath: string, mediaId: string, tmdbDurationMin?: number) {
     const probe = await this.probe(filePath)
     const decision = this.decide(probe)
-
-    // Prefer TMDB duration (in minutes → seconds), fallback to ffprobe
     const duration = tmdbDurationMin ? tmdbDurationMin * 60 : probe.duration
 
     return {
@@ -468,11 +624,14 @@ export const MediaEngine = {
     }
   },
 
-  /** Re-export StreamType for route handlers that need it */
-  StreamType,
+  /** Stop a session explicitly (e.g., on page leave) */
+  async stopSession(clientId: string): Promise<void> {
+    const session = sessions.get(clientId)
+    if (session) await session.stop()
+  },
 }
 
-// ─── Binary resolution (public, for catalog HLS downloads) ───────────────────
+// ─── Public exports ──────────────────────────────────────────────────────────
 
 export async function findFfmpeg(): Promise<string | null> {
   return resolveBinary('ffmpeg')
@@ -508,42 +667,28 @@ export type FileMetadata = {
   height?: number
 }
 
-/**
- * @deprecated Use MediaEngine.probe() instead
- */
+/** @deprecated Use MediaEngine.probe() instead */
 export async function extractStreams(filePath: string): Promise<StreamInfo[]> {
   const probe = await MediaEngine.probe(filePath)
   return [
     ...probe.audio.map(a => ({
-      index: a.index,
-      codecType: 'audio' as const,
-      codecName: a.codec,
-      language: a.language,
-      title: a.title,
-      channels: a.channels,
-      isDefault: a.isDefault,
-      isForced: a.isForced,
+      index: a.index, codecType: 'audio' as const, codecName: a.codec,
+      language: a.language, title: a.title, channels: a.channels,
+      isDefault: a.isDefault, isForced: a.isForced,
     })),
     ...probe.subtitles.map(s => ({
-      index: s.index,
-      codecType: 'subtitle' as const,
-      codecName: s.codec,
-      language: s.language,
-      title: s.title,
-      isDefault: s.isDefault,
-      isForced: s.isForced,
+      index: s.index, codecType: 'subtitle' as const, codecName: s.codec,
+      language: s.language, title: s.title,
+      isDefault: s.isDefault, isForced: s.isForced,
     })),
   ]
 }
 
-/**
- * @deprecated Use MediaEngine.probe() instead
- */
+/** @deprecated Use MediaEngine.probe() instead */
 export async function extractFileMetadata(filePath: string): Promise<FileMetadata | null> {
   try {
     const probe = await MediaEngine.probe(filePath)
     const meta: FileMetadata = {}
-
     if (probe.metadata.title) meta.title = probe.metadata.title
     if (probe.metadata.artist) meta.artist = probe.metadata.artist
     if (probe.metadata.album) meta.album = probe.metadata.album
@@ -556,7 +701,6 @@ export async function extractFileMetadata(filePath: string): Promise<FileMetadat
       meta.height = probe.video.height
     }
     if (probe.audio[0]) meta.audioCodec = probe.audio[0].codec
-
     return Object.keys(meta).length > 0 ? meta : null
   } catch {
     return null
