@@ -1,3 +1,5 @@
+import { MediaEngine } from '../../../utils/mediaEngine'
+
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
 
@@ -5,9 +7,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Media ID is required' })
   }
 
-  // With @eleven-am/transcoder, stream disposal is handled automatically
-  // via the disposeTimeout config. This endpoint is kept for client compatibility.
-  console.log(`[HLS] Preheat cancel requested for ${id} (auto-managed by transcoder)`)
+  // Actually stop the session and kill the ffmpeg process
+  await MediaEngine.stopSession(id)
+  console.log(`[MediaEngine] Session cancelled for ${id}`)
 
   return { cancelled: true }
 })

@@ -17,7 +17,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Invalid track index' })
   }
 
-  // Verify the track exists in DB
   const [trackInfo] = await db
     .select({ codec: subtitleTracks.codec })
     .from(subtitleTracks)
@@ -46,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    const vttContent = await session.subtitle(trackIndex)
+    const vttContent = await session.getSubtitle(trackIndex)
 
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
     setHeader(event, 'Cache-Control', 'public, max-age=86400')
