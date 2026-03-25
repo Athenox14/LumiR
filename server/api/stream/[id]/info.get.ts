@@ -2,11 +2,7 @@ import { db } from '../../../db'
 import { media } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
-import { extname } from 'path'
-import { extractFileMetadata } from '../../../utils/ffmpeg'
-
-// Formats natively supported by browsers
-const BROWSER_NATIVE = new Set(['.mp4', '.webm', '.m4v'])
+import { MediaEngine } from '../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -31,23 +27,20 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Media file not found' })
   }
 
-  const ext = extname(mediaItem.filePath).toLowerCase()
-  const isNative = BROWSER_NATIVE.has(ext)
-
-  // Get duration: prefer DB runtime (TMDB), fallback to ffprobe
-  let durationSec = mediaItem.runtime ? mediaItem.runtime * 60 : 0
-  if (!durationSec && !isNative) {
-    const meta = await extractFileMetadata(mediaItem.filePath)
-    durationSec = meta?.duration || 0
-  }
+  const info = await MediaEngine.getStreamInfo(
+    mediaItem.filePath,
+    id,
+    mediaItem.runtime || undefined,
+  )
 
   return {
-    mediaId: id,
-    isNative,
-    streamUrl: isNative
-      ? `/api/stream/${id}/direct`
-      : `/api/stream/${id}/master.m3u8`,
-    format: ext,
-    duration: durationSec,
+    mediaId: info.mediaId,
+    isNative: info.mode === 'direct',
+    mode: info.mode,
+    reason: info.reason,
+    streamUrl: info.streamUrl,
+    format: info.mode === 'direct' ? mediaItem.filePath.split('.').pop() : 'hls',
+    duration: info.duration,
+    estimatedLoad: info.estimatedLoad,
   }
 })

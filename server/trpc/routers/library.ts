@@ -10,7 +10,7 @@ import { basename } from 'path'
 import fg from 'fast-glob'
 import ptt from 'parse-torrent-title'
 import { searchTmdb, getTmdbInfo, tmdbInfoToMediaFields } from '../../utils/tmdb'
-import { extractFileMetadata, extractStreams, type FileMetadata } from '../../utils/ffmpeg'
+import { MediaEngine, extractStreams, extractFileMetadata, type FileMetadata } from '../../utils/mediaEngine'
 import { askGroqForTitle } from '../../utils/groq'
 import { cacheLibraryImages } from '../../utils/imageCache'
 
