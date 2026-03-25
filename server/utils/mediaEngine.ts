@@ -169,6 +169,7 @@ class FFmpegSession {
   private decision: PlaybackDecision | null = null
   private audioTrackIndex: number | undefined
   private stderrLog = ''
+  private lastStartTime = 0 // Timestamp of last start() call for seek cooldown
 
   constructor(
     public readonly filePath: string,
@@ -186,6 +187,7 @@ class FFmpegSession {
     const startSeg = opts?.startSegment ?? 0
     this.currentStartSegment = startSeg
     this.highestReady = startSeg - 1
+    this.lastStartTime = Date.now()
     const startTime = startSeg * SEGMENT_DURATION
 
     // Ensure output directory
@@ -255,9 +257,18 @@ class FFmpegSession {
 
     this.process = proc
 
+    // Regex to detect segment writes in ffmpeg HLS output
+    const segmentWriteRe = /Opening '.*segment-(\d+)\.ts'/
     proc.stderr!.on('data', (chunk: Buffer) => {
+      const text = chunk.toString()
       // Keep last 2KB of stderr for debugging
-      this.stderrLog = (this.stderrLog + chunk.toString()).slice(-2048)
+      this.stderrLog = (this.stderrLog + text).slice(-2048)
+      // Track highest segment written by ffmpeg for accurate seek decisions
+      const matches = text.matchAll(/Opening '.*segment-(\d+)\.ts'/g)
+      for (const m of matches) {
+        const seg = parseInt(m[1]!, 10)
+        if (seg > this.highestReady) this.highestReady = seg
+      }
     })
 
     proc.on('exit', (code) => {
@@ -339,9 +350,15 @@ class FFmpegSession {
     }
 
     // If segment is far ahead of what ffmpeg is producing, seek there.
-    // Only seek if ffmpeg is running AND the segment is far from where it
-    // started (highestReady tracks progress relative to currentStartSegment).
-    if (this.process && segmentNumber > this.highestReady + SEEK_THRESHOLD
+    // Guards:
+    //  - ffmpeg must be running
+    //  - segment must be far from both highestReady AND currentStartSegment
+    //  - cooldown: don't seek again within 10s of last start (prevents
+    //    cascade when HLS.js fires multiple segment requests in parallel)
+    const seekCooldownMs = 10_000
+    const cooldownOk = Date.now() - this.lastStartTime > seekCooldownMs
+    if (this.process && cooldownOk
+        && segmentNumber > this.highestReady + SEEK_THRESHOLD
         && segmentNumber >= this.currentStartSegment + SEEK_THRESHOLD) {
       console.log(`[MediaEngine] Seeking: segment ${segmentNumber} requested, highest ready is ${this.highestReady} → restarting with -ss`)
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: segmentNumber })
