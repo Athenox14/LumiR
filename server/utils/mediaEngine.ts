@@ -243,11 +243,19 @@ export class MediaSession {
     return this.controller.getIndexPlaylist(this.filePath, this.clientId, streamType, quality, streamIndex)
   }
 
-  /** Get a segment with automatic retry (transcoding may lag behind) */
-  async segment(type: 'video' | 'audio', quality: string, streamIndex: number, segmentNumber: number): Promise<SegmentStream> {
+  /**
+   * Get a segment with automatic retry (transcoding may lag behind).
+   * Pass an AbortSignal to cancel retries when the client disconnects.
+   */
+  async segment(type: 'video' | 'audio', quality: string, streamIndex: number, segmentNumber: number, signal?: AbortSignal): Promise<SegmentStream> {
     const streamType = type === 'video' ? StreamType.VIDEO : StreamType.AUDIO
 
     for (let attempt = 0; attempt <= SEGMENT_MAX_RETRIES; attempt++) {
+      // Stop retrying if the client disconnected
+      if (signal?.aborted) {
+        throw new Error(`Client disconnected, aborting ${type} segment ${segmentNumber}`)
+      }
+
       try {
         return await this.controller.getSegmentStream(
           this.filePath, this.clientId, streamType, quality, streamIndex, segmentNumber,
@@ -255,7 +263,11 @@ export class MediaSession {
       } catch (err: any) {
         if (attempt < SEGMENT_MAX_RETRIES) {
           console.warn(`[MediaEngine] ${type} segment ${segmentNumber} not ready (${attempt + 1}/${SEGMENT_MAX_RETRIES + 1}), retrying...`)
-          await new Promise(r => setTimeout(r, SEGMENT_RETRY_DELAY_MS))
+          // Abortable sleep: cancel the wait if client disconnects
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, SEGMENT_RETRY_DELAY_MS)
+            signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
+          })
         } else {
           throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_MAX_RETRIES + 1} attempts: ${err.message}`)
         }
