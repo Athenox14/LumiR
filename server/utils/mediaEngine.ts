@@ -409,9 +409,13 @@ class FFmpegSession {
         throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
       }
       // If ffmpeg has moved past this segment (user seeked further), this
-      // segment will never be produced. Fail fast instead of waiting 30s.
+      // segment will never be produced. Instead of throwing immediately
+      // (which causes HLS.js to retry in a tight loop), just keep waiting.
+      // HLS.js will abort the request via AbortSignal when it moves on,
+      // and the 30s deadline above protects against leaks.
       if (segmentNumber < this.currentStartSegment) {
-        throw new Error(`Segment ${segmentNumber} abandoned: ffmpeg moved to segment ${this.currentStartSegment}`)
+        await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
+        continue
       }
       // If ffmpeg died, try to restart it (up to MAX_RESTART_ATTEMPTS times)
       if (!this.process) {
