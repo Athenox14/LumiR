@@ -169,7 +169,10 @@ class FFmpegSession {
   private decision: PlaybackDecision | null = null
   private audioTrackIndex: number | undefined
   private stderrLog = ''
-  private lastStartTime = 0 // Timestamp of last start() call for seek cooldown
+  /** Debounced seek: collects rapid seek requests and executes only the last one */
+  private pendingSeekSegment: number | null = null
+  private pendingSeekTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingSeekResolvers: Array<() => void> = []
 
   constructor(
     public readonly filePath: string,
@@ -181,13 +184,43 @@ class FFmpegSession {
     this.decision = MediaEngine.decide(probe)
   }
 
+  /**
+   * Schedule a debounced seek. Multiple rapid seek requests (e.g. HLS.js
+   * requesting segments 724, 984, 1250 in quick succession) are collapsed
+   * into a single ffmpeg restart at the LOWEST requested position — so that
+   * all nearby segments can be produced sequentially.
+   * Returns a promise that resolves when the seek actually executes.
+   */
+  private requestSeek(segmentNumber: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      // Keep the lowest requested segment (ffmpeg produces sequentially)
+      if (this.pendingSeekSegment === null || segmentNumber < this.pendingSeekSegment) {
+        this.pendingSeekSegment = segmentNumber
+      }
+      this.pendingSeekResolvers.push(resolve)
+
+      // Reset the debounce timer
+      if (this.pendingSeekTimer) clearTimeout(this.pendingSeekTimer)
+      this.pendingSeekTimer = setTimeout(async () => {
+        const seg = this.pendingSeekSegment!
+        const resolvers = this.pendingSeekResolvers
+        this.pendingSeekSegment = null
+        this.pendingSeekTimer = null
+        this.pendingSeekResolvers = []
+
+        console.log(`[MediaEngine] Debounced seek: restarting at segment ${seg} (${resolvers.length} pending requests)`)
+        await this.start({ audioTrack: this.audioTrackIndex, startSegment: seg })
+        resolvers.forEach((r) => r())
+      }, 1500) // 1.5s debounce — lets parallel HLS.js requests settle
+    })
+  }
+
   /** Start the ffmpeg process to generate HLS segments */
   async start(opts?: { audioTrack?: number, startSegment?: number }) {
     this.audioTrackIndex = opts?.audioTrack
     const startSeg = opts?.startSegment ?? 0
     this.currentStartSegment = startSeg
     this.highestReady = startSeg - 1
-    this.lastStartTime = Date.now()
     const startTime = startSeg * SEGMENT_DURATION
 
     // Ensure output directory
@@ -349,19 +382,14 @@ class FFmpegSession {
       return { stream: createReadStream(segPath), size: stat.size }
     }
 
-    // If segment is far ahead of what ffmpeg is producing, seek there.
-    // Guards:
-    //  - ffmpeg must be running
-    //  - segment must be far from both highestReady AND currentStartSegment
-    //  - cooldown: don't seek again within 10s of last start (prevents
-    //    cascade when HLS.js fires multiple segment requests in parallel)
-    const seekCooldownMs = 10_000
-    const cooldownOk = Date.now() - this.lastStartTime > seekCooldownMs
-    if (this.process && cooldownOk
+    // If segment is far ahead of what ffmpeg is producing, schedule a
+    // debounced seek. This collapses rapid parallel requests (HLS.js fires
+    // multiple segment requests at once during seek) into a single restart.
+    if (this.process
         && segmentNumber > this.highestReady + SEEK_THRESHOLD
         && segmentNumber >= this.currentStartSegment + SEEK_THRESHOLD) {
-      console.log(`[MediaEngine] Seeking: segment ${segmentNumber} requested, highest ready is ${this.highestReady} → restarting with -ss`)
-      await this.start({ audioTrack: this.audioTrackIndex, startSegment: segmentNumber })
+      console.log(`[MediaEngine] Seek needed: segment ${segmentNumber} requested, highest ready is ${this.highestReady}`)
+      await this.requestSeek(segmentNumber)
     }
 
     // If ffmpeg hasn't started yet (or was stopped), start from this segment
@@ -462,9 +490,10 @@ class FFmpegSession {
     // Already cached
     if (existsSync(segPath)) return
 
-    // If ffmpeg is running but far from this segment, restart
     if (this.process && targetSeg > this.highestReady + SEEK_THRESHOLD) {
-      await this.start({ audioTrack: this.audioTrackIndex, startSegment: targetSeg })
+      // ffmpeg is running but far from this segment — use debounced seek
+      // so it won't conflict with concurrent getSegment() calls
+      await this.requestSeek(targetSeg)
     } else if (!this.process) {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: targetSeg })
     }
@@ -475,6 +504,14 @@ class FFmpegSession {
   async stop() {
     this.killProcess()
     this.clearDispose()
+    // Cancel any pending debounced seek
+    if (this.pendingSeekTimer) {
+      clearTimeout(this.pendingSeekTimer)
+      this.pendingSeekTimer = null
+      this.pendingSeekSegment = null
+      this.pendingSeekResolvers.forEach((r) => r())
+      this.pendingSeekResolvers = []
+    }
     sessions.delete(this.clientId)
     // Clean up temp files in background
     rm(this.outputDir, { recursive: true, force: true }).catch(() => {})
