@@ -6,12 +6,10 @@ import { MediaEngine } from '../../../../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const streamIndex = parseInt(getRouterParam(event, 'streamIndex') || '', 10)
-  const quality = getRouterParam(event, 'quality')
   const segmentParam = getRouterParam(event, 'segment') || ''
 
   const segmentMatch = segmentParam.match(/^segment-(\d+)\.ts$/)
-  if (!id || isNaN(streamIndex) || !quality || !segmentMatch) {
+  if (!id || !segmentMatch) {
     throw createError({ statusCode: 400, message: 'Invalid segment request' })
   }
 
@@ -33,14 +31,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Media file not found' })
   }
 
-  // Create an AbortController tied to client disconnect so retries stop
-  // when the user navigates away or the browser cancels the request
+  // Abort retries/waits when client disconnects
   const abort = new AbortController()
   event.node.req.on('close', () => abort.abort())
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    const segmentData = await session.segment('video', quality, streamIndex, segmentNumber, abort.signal)
+    const segmentData = await session.getSegment(segmentNumber, abort.signal)
 
     setHeader(event, 'Content-Type', 'video/mp2t')
     setHeader(event, 'Content-Length', segmentData.size)
@@ -48,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
     return sendStream(event, segmentData.stream)
   } catch (err: any) {
-    if (abort.signal.aborted) return // Client disconnected, nothing to send
+    if (abort.signal.aborted) return
     console.error(`[MediaEngine] Video segment ${segmentNumber} failed:`, err.message)
     throw createError({ statusCode: 504, message: 'Segment not ready' })
   }

@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    const playlist = await session.masterPlaylist()
+    const playlist = session.masterPlaylist()
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
     setHeader(event, 'Cache-Control', 'no-cache')

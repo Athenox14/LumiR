@@ -6,10 +6,8 @@ import { MediaEngine } from '../../../../../../utils/mediaEngine'
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
-  const streamIndex = parseInt(getRouterParam(event, 'streamIndex') || '', 10)
-  const quality = getRouterParam(event, 'quality')
 
-  if (!id || isNaN(streamIndex) || !quality) {
+  if (!id) {
     throw createError({ statusCode: 400, message: 'Media ID, stream index, and quality are required' })
   }
 
@@ -31,7 +29,9 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    const playlist = await session.playlist('video', quality, streamIndex)
+    // Ensure ffmpeg is running so segments start appearing
+    await session.preheat()
+    const playlist = session.variantPlaylist()
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
     setHeader(event, 'Cache-Control', 'no-cache')
