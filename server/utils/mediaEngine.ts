@@ -57,8 +57,9 @@ async function ensureBinaries() {
   console.log(`[MediaEngine] Binaries: ffmpeg=${_ffmpegPath ? 'OK' : 'MISSING'}, ffprobe=${_ffprobePath ? 'OK' : 'MISSING'}`)
 }
 
-function getFfmpegPath(): string {
-  if (!_ffmpegPath) throw new Error('ffmpeg binary not found')
+async function getFfmpegPath(): Promise<string> {
+  await ensureBinaries()
+  if (!_ffmpegPath) throw new Error('ffmpeg binary not found — install ffmpeg-static or add ffmpeg to PATH')
   return _ffmpegPath
 }
 
@@ -244,9 +245,10 @@ class FFmpegSession {
     this.killProcess()
     this.stderrLog = ''
 
+    const ffmpeg = await getFfmpegPath()
     console.log(`[MediaEngine] Starting ffmpeg: mode=${decision.mode} startSeg=${startSeg} (${startTime}s) file=${this.filePath}`)
 
-    const proc = spawn(getFfmpegPath(), args, {
+    const proc = spawn(ffmpeg, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
     })
 
@@ -364,6 +366,7 @@ class FFmpegSession {
 
   /** Extract a subtitle track to VTT using ffmpeg */
   async getSubtitle(trackIndex: number): Promise<string> {
+    const ffmpeg = await getFfmpegPath()
     return new Promise((resolve, reject) => {
       const args = [
         '-hide_banner', '-y',
@@ -374,7 +377,7 @@ class FFmpegSession {
         'pipe:1',
       ]
 
-      const proc = spawn(getFfmpegPath(), args, {
+      const proc = spawn(ffmpeg, args, {
         stdio: ['ignore', 'pipe', 'pipe'],
       })
 
