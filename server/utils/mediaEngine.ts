@@ -375,7 +375,7 @@ class FFmpegSession {
     return lines.join('\n')
   }
 
-  /** Get a segment, waiting for it to be generated. Restarts ffmpeg with -ss if needed. */
+  /** Get a segment, waiting for it to be generated. */
   async getSegment(segmentNumber: number, signal?: AbortSignal): Promise<SegmentStream> {
     this.touchActivity()
 
@@ -389,15 +389,10 @@ class FFmpegSession {
       return { stream: createReadStream(segPath), size: stat.size }
     }
 
-    // If segment is far ahead of what ffmpeg is producing, schedule a
-    // debounced seek. This collapses rapid parallel requests (HLS.js fires
-    // multiple segment requests at once during seek) into a single restart.
-    if (this.process
-        && segmentNumber > this.highestReady + SEEK_THRESHOLD
-        && segmentNumber >= this.currentStartSegment + SEEK_THRESHOLD) {
-      console.log(`[MediaEngine] Seek needed: segment ${segmentNumber} requested, highest ready is ${this.highestReady}`)
-      await this.requestSeek(segmentNumber)
-    }
+    // NOTE: We do NOT trigger seeks here. Only the frontend (via
+    // preheat-seek API) controls where ffmpeg is positioned. This avoids
+    // cascading restarts when HLS.js speculatively requests segments at
+    // positions far from the current playback (prefetch, ABR probing, etc).
 
     // If ffmpeg hasn't started yet (or was stopped), start from this segment
     // Skip if start() is already in progress (isStarting) to avoid race condition
