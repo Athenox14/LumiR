@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const session = await MediaEngine.createSession(mediaItem.filePath, id)
+    const session = await MediaEngine.createSession(mediaItem.filePath, id, mediaItem.runtime ? mediaItem.runtime * 60 : undefined)
     const vttContent = await session.getSubtitle(trackIndex)
 
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')

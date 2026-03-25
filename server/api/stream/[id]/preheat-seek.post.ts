@@ -42,7 +42,8 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await MediaEngine.preheatSeek(mediaItem.filePath, id, position)
+    const knownDuration = mediaItem.runtime ? mediaItem.runtime * 60 : undefined
+    await MediaEngine.preheatSeek(mediaItem.filePath, id, position, knownDuration)
     return { preheated: true, position }
   } catch (err: any) {
     console.error(`[MediaEngine] Preheat seek failed for ${id}:`, err.message)

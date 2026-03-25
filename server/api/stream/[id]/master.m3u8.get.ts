@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const session = await MediaEngine.createSession(mediaItem.filePath, id)
+    const session = await MediaEngine.createSession(mediaItem.filePath, id, mediaItem.runtime ? mediaItem.runtime * 60 : undefined)
     const playlist = session.masterPlaylist()
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
