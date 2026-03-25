@@ -114,6 +114,15 @@ function handleBurnInSubtitleChange(trackIndex: number | undefined) {
 }
 
 async function handleEnded() {
+  // Guard: only navigate if we're actually near the end of the video.
+  // HLS.js may emit 'ended' on fatal errors (e.g. after seek failures),
+  // which would incorrectly navigate the user away from the player.
+  const duration = streamInfo.value?.duration || (media.value?.runtime ? media.value.runtime * 60 : 0)
+  if (duration > 0 && currentPosition.value < duration - 120) {
+    console.warn('[Watch] Ignoring ended event: position', currentPosition.value, 'is far from end', duration)
+    return
+  }
+
   // For TV shows, try to auto-play next episode
   if (media.value?.mediaType === 'tv') {
     try {
