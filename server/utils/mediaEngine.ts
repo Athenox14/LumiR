@@ -363,6 +363,11 @@ class FFmpegSession {
       if (Date.now() > deadline) {
         throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
       }
+      // If ffmpeg has moved past this segment (user seeked further), this
+      // segment will never be produced. Fail fast instead of waiting 30s.
+      if (segmentNumber < this.currentStartSegment) {
+        throw new Error(`Segment ${segmentNumber} abandoned: ffmpeg moved to segment ${this.currentStartSegment}`)
+      }
       // If ffmpeg died, try to restart it (up to MAX_RESTART_ATTEMPTS times)
       if (!this.process) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
