@@ -185,6 +185,7 @@ class FFmpegSession {
     this.audioTrackIndex = opts?.audioTrack
     const startSeg = opts?.startSegment ?? 0
     this.currentStartSegment = startSeg
+    this.highestReady = startSeg - 1
     const startTime = startSeg * SEGMENT_DURATION
 
     // Ensure output directory
@@ -260,20 +261,28 @@ class FFmpegSession {
     })
 
     proc.on('exit', (code) => {
+      // Only clear this.process if it's still the same process (avoids race
+      // condition where an old process's exit handler fires after a new one
+      // has been spawned during seek/restart).
+      const isCurrentProcess = this.process === proc
       if (code !== 0 && code !== 255) { // 255 = killed by us
         console.error(`[MediaEngine] ffmpeg exited with code ${code} for ${this.clientId}`)
         if (this.stderrLog) {
           console.error(`[MediaEngine] Last stderr: ${this.stderrLog.slice(-500)}`)
         }
-      } else {
+      } else if (isCurrentProcess) {
         console.log(`[MediaEngine] ffmpeg finished for ${this.clientId}`)
       }
-      this.process = null
+      if (isCurrentProcess) {
+        this.process = null
+      }
     })
 
     proc.on('error', (err) => {
       console.error(`[MediaEngine] ffmpeg spawn error:`, err.message)
-      this.process = null
+      if (this.process === proc) {
+        this.process = null
+      }
     })
 
     this.touchActivity()
@@ -319,8 +328,21 @@ class FFmpegSession {
   async getSegment(segmentNumber: number, signal?: AbortSignal): Promise<SegmentStream> {
     this.touchActivity()
 
-    // If segment is far ahead of what ffmpeg is producing, seek there
-    if (this.process && segmentNumber > this.highestReady + SEEK_THRESHOLD) {
+    const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
+
+    // If segment is already cached on disk, serve it immediately
+    if (existsSync(segPath)) {
+      if (segmentNumber > this.highestReady) this.highestReady = segmentNumber
+      await abortableSleep(50, signal) // let ffmpeg finish flushing
+      const stat = statSync(segPath)
+      return { stream: createReadStream(segPath), size: stat.size }
+    }
+
+    // If segment is far ahead of what ffmpeg is producing, seek there.
+    // Only seek if ffmpeg is running AND the segment is far from where it
+    // started (highestReady tracks progress relative to currentStartSegment).
+    if (this.process && segmentNumber > this.highestReady + SEEK_THRESHOLD
+        && segmentNumber >= this.currentStartSegment + SEEK_THRESHOLD) {
       console.log(`[MediaEngine] Seeking: segment ${segmentNumber} requested, highest ready is ${this.highestReady} → restarting with -ss`)
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: segmentNumber })
     }
@@ -330,10 +352,10 @@ class FFmpegSession {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
     }
 
-    const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
-
     // Wait for segment file to appear
     const deadline = Date.now() + SEGMENT_WAIT_TIMEOUT
+    let restartAttempts = 0
+    const MAX_RESTART_ATTEMPTS = 2
     while (!existsSync(segPath)) {
       if (signal?.aborted) {
         throw new Error('Client disconnected')
@@ -341,9 +363,14 @@ class FFmpegSession {
       if (Date.now() > deadline) {
         throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
       }
-      // Check if ffmpeg died
+      // If ffmpeg died, try to restart it (up to MAX_RESTART_ATTEMPTS times)
       if (!this.process) {
-        throw new Error(`ffmpeg is not running, cannot produce segment ${segmentNumber}`)
+        if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
+          throw new Error(`ffmpeg keeps dying, cannot produce segment ${segmentNumber}`)
+        }
+        restartAttempts++
+        console.log(`[MediaEngine] ffmpeg not running while waiting for segment ${segmentNumber}, restart attempt ${restartAttempts}`)
+        await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
       }
       await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
     }
