@@ -179,11 +179,17 @@ class FFmpegSession {
   constructor(
     public readonly filePath: string,
     public readonly clientId: string,
-    public readonly probe: ProbeResult,
+    public probe: ProbeResult,
   ) {
     this.outputDir = join(HLS_DIR, clientId)
     this.totalSegments = Math.max(1, Math.ceil(probe.duration / SEGMENT_DURATION))
     this.decision = MediaEngine.decide(probe)
+  }
+
+  /** Update duration (e.g. from TMDB) when probe reported a wrong value */
+  overrideDuration(durationSec: number) {
+    this.probe.duration = durationSec
+    this.totalSegments = Math.max(1, Math.ceil(durationSec / SEGMENT_DURATION))
   }
 
   /**
@@ -574,14 +580,25 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 // ─── Session factory ─────────────────────────────────────────────────────────
 
-async function getOrCreateSession(filePath: string, clientId: string): Promise<FFmpegSession> {
+async function getOrCreateSession(filePath: string, clientId: string, knownDurationSec?: number): Promise<FFmpegSession> {
   let session = sessions.get(clientId)
-  if (session && session.filePath === filePath) return session
+  if (session && session.filePath === filePath) {
+    // Update duration if a better value is now available
+    if (knownDurationSec && knownDurationSec > session.probe.duration) {
+      session.overrideDuration(knownDurationSec)
+    }
+    return session
+  }
 
   // Different file or new → create new session
   if (session) await session.stop()
 
   const probe = await MediaEngine.probe(filePath)
+  // Override probe duration with TMDB/known duration if available and larger
+  // (ffprobe can report wrong duration for AVI files with VBR)
+  if (knownDurationSec && knownDurationSec > probe.duration) {
+    probe.duration = knownDurationSec
+  }
   session = new FFmpegSession(filePath, clientId, probe)
   sessions.set(clientId, session)
   return session
@@ -701,19 +718,19 @@ export const MediaEngine = {
   },
 
   /** Create or retrieve a streaming session */
-  async createSession(filePath: string, clientId: string): Promise<FFmpegSession> {
-    return getOrCreateSession(filePath, clientId)
+  async createSession(filePath: string, clientId: string, knownDurationSec?: number): Promise<FFmpegSession> {
+    return getOrCreateSession(filePath, clientId, knownDurationSec)
   },
 
   /** Preheat: start ffmpeg so segments are ready when the user clicks play */
-  async preheat(filePath: string, clientId: string): Promise<void> {
-    const session = await getOrCreateSession(filePath, clientId)
+  async preheat(filePath: string, clientId: string, knownDurationSec?: number): Promise<void> {
+    const session = await getOrCreateSession(filePath, clientId, knownDurationSec)
     await session.preheat()
   },
 
   /** Preheat a specific timeline position (for hover) */
-  async preheatSeek(filePath: string, clientId: string, positionSec: number): Promise<void> {
-    const session = await getOrCreateSession(filePath, clientId)
+  async preheatSeek(filePath: string, clientId: string, positionSec: number, knownDurationSec?: number): Promise<void> {
+    const session = await getOrCreateSession(filePath, clientId, knownDurationSec)
     await session.preheatSeek(positionSec)
   },
 

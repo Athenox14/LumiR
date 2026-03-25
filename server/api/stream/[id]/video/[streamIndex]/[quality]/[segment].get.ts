@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
   event.node.req.on('close', () => abort.abort())
 
   try {
-    const session = await MediaEngine.createSession(mediaItem.filePath, id)
+    const session = await MediaEngine.createSession(mediaItem.filePath, id, mediaItem.runtime ? mediaItem.runtime * 60 : undefined)
     const segmentData = await session.getSegment(segmentNumber, abort.signal)
 
     setHeader(event, 'Content-Type', 'video/mp2t')
