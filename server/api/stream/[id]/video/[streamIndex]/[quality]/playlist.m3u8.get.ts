@@ -29,8 +29,10 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    // Ensure ffmpeg is running so segments start appearing
-    await session.preheat()
+    // Don't preheat here: the first getSegment() call will start ffmpeg
+    // at the correct position (e.g. saved resume position). Preheating at
+    // segment 0 wastes work and forces an immediate seek when the player
+    // requests segments at the resume position.
     const playlist = session.variantPlaylist()
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
