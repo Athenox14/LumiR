@@ -27,7 +27,6 @@ export default defineEventHandler(async (event) => {
     return { preheated: false, reason: 'file_not_found' }
   }
 
-  // Use probe + decide to check if preheat is needed
   try {
     const probe = await MediaEngine.probe(mediaItem.filePath)
     const decision = MediaEngine.decide(probe)
@@ -36,8 +35,9 @@ export default defineEventHandler(async (event) => {
       return { preheated: false, reason: 'native' }
     }
 
-    await MediaEngine.preheat(mediaItem.filePath)
-    console.log(`[MediaEngine] Preheat done for ${id} (${decision.mode}: ${decision.reason})`)
+    // Start ffmpeg so segments are ready when the user clicks play
+    await MediaEngine.preheat(mediaItem.filePath, id)
+    console.log(`[MediaEngine] Preheat started: ${id} (${decision.mode}: ${decision.reason})`)
     return { preheated: true, mode: decision.mode, reason: decision.reason }
   } catch (err: any) {
     console.error(`[MediaEngine] Preheat failed for ${id}:`, err.message)
