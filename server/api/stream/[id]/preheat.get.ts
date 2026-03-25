@@ -38,10 +38,11 @@ export default defineEventHandler(async (event) => {
     // Start ffmpeg at the resume position (if any) so segments are ready
     const positionParam = getQuery(event).position
     const startPosition = positionParam ? parseFloat(String(positionParam)) : 0
+    const knownDuration = mediaItem.runtime ? mediaItem.runtime * 60 : undefined
     if (startPosition > 0) {
-      await MediaEngine.preheatSeek(mediaItem.filePath, id, startPosition)
+      await MediaEngine.preheatSeek(mediaItem.filePath, id, startPosition, knownDuration)
     } else {
-      await MediaEngine.preheat(mediaItem.filePath, id)
+      await MediaEngine.preheat(mediaItem.filePath, id, knownDuration)
     }
     console.log(`[MediaEngine] Preheat started: ${id} at ${startPosition}s (${decision.mode}: ${decision.reason})`)
     return { preheated: true, mode: decision.mode, reason: decision.reason }
