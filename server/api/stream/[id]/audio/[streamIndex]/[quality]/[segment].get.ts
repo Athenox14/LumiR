@@ -33,9 +33,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: 'Media file not found' })
   }
 
+  // Create an AbortController tied to client disconnect so retries stop
+  // when the user navigates away or the browser cancels the request
+  const abort = new AbortController()
+  event.node.req.on('close', () => abort.abort())
+
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id)
-    const segmentData = await session.segment('audio', quality, streamIndex, segmentNumber)
+    const segmentData = await session.segment('audio', quality, streamIndex, segmentNumber, abort.signal)
 
     setHeader(event, 'Content-Type', 'video/mp2t')
     setHeader(event, 'Content-Length', segmentData.size)
@@ -43,6 +48,7 @@ export default defineEventHandler(async (event) => {
 
     return sendStream(event, segmentData.stream)
   } catch (err: any) {
+    if (abort.signal.aborted) return // Client disconnected, nothing to send
     console.error(`[MediaEngine] Audio segment ${segmentNumber} failed:`, err.message)
     throw createError({ statusCode: 504, message: 'Segment not ready' })
   }

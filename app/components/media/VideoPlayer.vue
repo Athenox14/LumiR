@@ -53,6 +53,31 @@ const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let hlsInstance: HlsJS | null = null
 
+// ─── Timeline hover preheat ──────────────────────────────────────────────────
+// When user hovers over the timeline, preemptively tell the server to prepare
+// the segment at that position so seeking is instant.
+let lastPreheatSegment = -1
+let preheatDebounce: ReturnType<typeof setTimeout> | null = null
+
+function preheatSeek(positionSec: number) {
+  // Only for HLS streams (non-native)
+  if (!props.src.includes('.m3u8')) return
+
+  const segmentNumber = Math.floor(positionSec / 6)
+  // Don't re-preheat the same segment
+  if (segmentNumber === lastPreheatSegment) return
+  lastPreheatSegment = segmentNumber
+
+  // Debounce: user is scrubbing, only fire after 300ms pause
+  if (preheatDebounce) clearTimeout(preheatDebounce)
+  preheatDebounce = setTimeout(() => {
+    $fetch(`/api/stream/${props.mediaId}/preheat-seek`, {
+      method: 'POST',
+      body: { position: positionSec },
+    }).catch(() => {}) // Best-effort, ignore errors
+  }, 300)
+}
+
 // Position to restore after source change (e.g. audio track switch)
 const pendingSeekPosition = ref<number | null>(null)
 
@@ -213,10 +238,29 @@ onMounted(() => {
       emit('progress', player.currentTime, effectiveDuration.value)
     }
   }, 10000)
+
+  // Listen for timeline hover to preheat segments at the hovered position
+  // Vidstack fires 'media-slider-value-change-event' on the time slider
+  nextTick(() => {
+    const player = playerRef.value
+    if (!player) return
+    const slider = player.querySelector('media-time-slider')
+    if (slider) {
+      slider.addEventListener('pointervalue-change', ((e: CustomEvent) => {
+        // pointerValue is 0-100 (percentage of duration)
+        const pct = e.detail as number
+        if (typeof pct === 'number' && effectiveDuration.value > 0) {
+          const positionSec = (pct / 100) * effectiveDuration.value
+          preheatSeek(positionSec)
+        }
+      }) as EventListener)
+    }
+  })
 })
 
 onUnmounted(() => {
   if (progressInterval) clearInterval(progressInterval)
+  if (preheatDebounce) clearTimeout(preheatDebounce)
   const player = playerRef.value
   if (player && player.currentTime > 0) {
     emit('progress', player.currentTime, effectiveDuration.value)
