@@ -169,6 +169,8 @@ class FFmpegSession {
   private decision: PlaybackDecision | null = null
   private audioTrackIndex: number | undefined
   private stderrLog = ''
+  /** True while start() is between killProcess and spawn — prevents polling loops from restarting */
+  private isStarting = false
   /** Debounced seek: collects rapid seek requests and executes only the last one */
   private pendingSeekSegment: number | null = null
   private pendingSeekTimer: ReturnType<typeof setTimeout> | null = null
@@ -222,6 +224,12 @@ class FFmpegSession {
     this.currentStartSegment = startSeg
     this.highestReady = startSeg - 1
     const startTime = startSeg * SEGMENT_DURATION
+
+    // Kill any existing process FIRST, but mark that we're starting a new
+    // one so polling loops don't try to restart at the old position.
+    this.killProcess()
+    this.isStarting = true
+    this.stderrLog = ''
 
     // Ensure output directory
     await mkdir(this.outputDir, { recursive: true })
@@ -277,10 +285,6 @@ class FFmpegSession {
     // Output playlist (ffmpeg writes it)
     args.push(join(this.outputDir, 'ffmpeg-playlist.m3u8'))
 
-    // Kill any existing process
-    this.killProcess()
-    this.stderrLog = ''
-
     const ffmpeg = await getFfmpegPath()
     console.log(`[MediaEngine] Starting ffmpeg: mode=${decision.mode} startSeg=${startSeg} (${startTime}s) file=${this.filePath}`)
 
@@ -289,6 +293,7 @@ class FFmpegSession {
     })
 
     this.process = proc
+    this.isStarting = false
 
     // Regex to detect segment writes in ffmpeg HLS output
     const segmentWriteRe = /Opening '.*segment-(\d+)\.ts'/
@@ -304,17 +309,19 @@ class FFmpegSession {
       }
     })
 
-    proc.on('exit', (code) => {
+    proc.on('exit', (code, signal) => {
       // Only clear this.process if it's still the same process (avoids race
       // condition where an old process's exit handler fires after a new one
       // has been spawned during seek/restart).
       const isCurrentProcess = this.process === proc
-      if (code !== 0 && code !== 255) { // 255 = killed by us
-        console.error(`[MediaEngine] ffmpeg exited with code ${code} for ${this.clientId}`)
+      const killedByUs = code === 255 || signal === 'SIGKILL' || signal === 'SIGTERM'
+      if (code !== 0 && !killedByUs) {
+        console.error(`[MediaEngine] ffmpeg exited unexpectedly: code=${code} signal=${signal} for ${this.clientId}`)
         if (this.stderrLog) {
           console.error(`[MediaEngine] Last stderr: ${this.stderrLog.slice(-500)}`)
         }
-      } else if (isCurrentProcess) {
+      } else if (isCurrentProcess && !signal) {
+        // Normal completion (code 0, no signal)
         console.log(`[MediaEngine] ffmpeg finished for ${this.clientId}`)
       }
       if (isCurrentProcess) {
@@ -393,7 +400,8 @@ class FFmpegSession {
     }
 
     // If ffmpeg hasn't started yet (or was stopped), start from this segment
-    if (!this.process) {
+    // Skip if start() is already in progress (isStarting) to avoid race condition
+    if (!this.process && !this.isStarting) {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
     }
 
@@ -417,8 +425,8 @@ class FFmpegSession {
         await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
         continue
       }
-      // If ffmpeg died, try to restart it (up to MAX_RESTART_ATTEMPTS times)
-      if (!this.process) {
+      // If ffmpeg died (and not in the middle of a restart), try to restart it
+      if (!this.process && !this.isStarting) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
           throw new Error(`ffmpeg keeps dying, cannot produce segment ${segmentNumber}`)
         }
