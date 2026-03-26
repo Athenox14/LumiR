@@ -149,22 +149,6 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       testBandwidth: false,
       abrEwmaDefaultEstimate: 500_000_000,
       maxFragLookUpTolerance: 0.1,
-      // Abort far-ahead fragment requests after 50ms. HLS.js's VOD seek
-      // binary-searches ~100 segments ahead. We can't redirect (corrupts
-      // timeline), can't serve fake TS (parsing errors), can't wait
-      // (blocks 60s). Aborting is the only safe option — the circuit
-      // breaker restarts sequential loading after 3 aborts.
-      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
-        const segMatch = url.match(/segment-(\d+)\.ts/)
-        if (segMatch) {
-          const segNum = parseInt(segMatch[1], 10)
-          const player = playerRef.value
-          const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
-          if (segNum > currentSeg + 25) {
-            setTimeout(() => { try { xhr.abort() } catch {} }, 50)
-          }
-        }
-      },
       // Fragment loading policy tuned for live transcoding:
       // - Short first-byte timeout (8s): nearby segments arrive in 1-3s,
       //   far-ahead speculative requests get no data → fail fast
@@ -295,16 +279,34 @@ function onCanPlay() {
   playerReady = true
 }
 
-// When user actually seeks (releases slider, clicks timeline), tell the
-// server to position ffmpeg at the new location. This is the ONLY mechanism
-// that triggers ffmpeg restarts — segment requests never do.
+// When user actually seeks, take control of HLS.js loading to prevent
+// its VOD binary-search algorithm from requesting segments ~100+ ahead.
+// Sequence: stopLoad → preheat server → startLoad(pos) → sequential load.
 function onSeeking() {
   const player = playerRef.value
   if (!player || !props.src.includes('.m3u8')) return
-  // Ignore seeking events during initial load — HLS.js fires these as it
-  // positions the player. Only handle user-initiated seeks after canPlay.
   if (!playerReady) return
-  preheatSeek(player.currentTime, true)
+
+  const seekPos = player.currentTime
+
+  // 1. STOP HLS.js loading immediately — kills any pending fragment
+  //    requests including the binary-search probes
+  if (hlsInstance) {
+    hlsInstance.stopLoad()
+  }
+
+  // 2. Tell server to start producing at new position
+  preheatSeek(seekPos, true)
+
+  // 3. Restart loading in sequential mode after server starts ffmpeg
+  //    stopLoad + startLoad = fresh sequential load, no binary search
+  if (hlsInstance) {
+    setTimeout(() => {
+      if (hlsInstance) {
+        hlsInstance.startLoad(seekPos)
+      }
+    }, 300) // 300ms for preheat-seek to reach server
+  }
 }
 
 function onError() {
