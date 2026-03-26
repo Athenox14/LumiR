@@ -220,26 +220,40 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         }
       })
 
-      // Recover from fatal errors with retry logic
+      // Recover from fatal errors with circuit breaker.
+      // If the same fragment keeps failing, stop retrying to avoid
+      // infinite loops (e.g. segment 300 behind ffmpeg → 404 → retry loop).
       let networkRetries = 0
       let mediaRetries = 0
-      const MAX_NETWORK_RETRIES = 5
+      let lastErrorFrag = -1
+      let sameFragErrors = 0
+      const MAX_NETWORK_RETRIES = 3
       const MAX_MEDIA_RETRIES = 3
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
         if (data.fatal) {
-          // Get the current playback position to resume from (NOT from 0!)
+          const fragSn = data.frag?.sn ?? -1
+          // Circuit breaker: detect infinite retry on the same fragment
+          if (fragSn === lastErrorFrag) {
+            sameFragErrors++
+            if (sameFragErrors > 2) {
+              console.warn('[HLS] Circuit breaker: stuck on fragment', fragSn, '- stopping retries')
+              return // Give up on this fragment
+            }
+          } else {
+            lastErrorFrag = fragSn
+            sameFragErrors = 0
+          }
+
           const resumePos = playerRef.value?.currentTime || startPos || 0
-          console.warn('[HLS] Fatal error, recovery from', resumePos, 's:', data.type, data.details)
+          console.warn('[HLS] Fatal error, recovery from', resumePos, 's:', data.type, data.details, 'frag:', fragSn)
           if (data.type === 'networkError' && networkRetries < MAX_NETWORK_RETRIES) {
             networkRetries++
-            // Resume loading from current position, not from the beginning
             setTimeout(() => hls.startLoad(resumePos), 1000)
           } else if (data.type === 'mediaError' && mediaRetries < MAX_MEDIA_RETRIES) {
             mediaRetries++
             hls.recoverMediaError()
           }
         } else {
-          // Non-fatal: reset retry counters on successful recovery
           networkRetries = 0
           mediaRetries = 0
         }
