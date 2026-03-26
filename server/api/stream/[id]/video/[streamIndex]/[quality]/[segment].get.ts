@@ -4,16 +4,57 @@ import { eq } from 'drizzle-orm'
 import { promises as fs } from 'fs'
 import { MediaEngine } from '../../../../../../utils/mediaEngine'
 
-// Valid MPEG-TS containing only null packets (PID 0x1FFF).
-// HLS.js demuxer parses this successfully → produces 0 frames →
-// marks fragment as loaded → moves to next fragment. No errors.
-const NULL_TS_PACKET = Buffer.alloc(188)
-NULL_TS_PACKET[0] = 0x47 // sync byte
-NULL_TS_PACKET[1] = 0x1F // PID high (0x1FFF)
-NULL_TS_PACKET[2] = 0xFF // PID low
-NULL_TS_PACKET[3] = 0x10 // adaptation=01 (payload only), cc=0
-for (let i = 4; i < 188; i++) NULL_TS_PACKET[i] = 0xFF // stuffing
-const EMPTY_TS_SEGMENT = Buffer.concat([NULL_TS_PACKET, NULL_TS_PACKET])
+// Minimal valid MPEG-TS with PAT + PMT (no media frames).
+// HLS.js needs PAT/PMT to avoid fragParsingError. With these tables
+// present but no PES data, the demuxer produces 0 frames and moves on.
+function buildEmptyTsSegment(): Buffer {
+  // CRC32 for MPEG-TS (ISO 13818-1)
+  const crcTable: number[] = []
+  for (let i = 0; i < 256; i++) {
+    let c = i << 24
+    for (let j = 0; j < 8; j++) {
+      c = (c & 0x80000000) ? (c << 1) ^ 0x04C11DB7 : c << 1
+    }
+    crcTable[i] = c >>> 0
+  }
+  function crc32(data: number[]): number {
+    let crc = 0xFFFFFFFF
+    for (const byte of data) {
+      crc = ((crc << 8) ^ crcTable[((crc >>> 24) ^ byte) & 0xFF]) >>> 0
+    }
+    return crc
+  }
+
+  // PAT: Program 1 → PMT PID 0x1000
+  const patData = [0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00, 0x00, 0x01, 0xF0, 0x00]
+  const patCrc = crc32(patData)
+  const pat = Buffer.alloc(188, 0xFF)
+  pat[0] = 0x47; pat[1] = 0x40; pat[2] = 0x00; pat[3] = 0x10 // PID 0, payload
+  pat[4] = 0x00 // pointer field
+  patData.forEach((b, i) => pat[5 + i] = b)
+  pat[17] = (patCrc >>> 24) & 0xFF
+  pat[18] = (patCrc >>> 16) & 0xFF
+  pat[19] = (patCrc >>> 8) & 0xFF
+  pat[20] = patCrc & 0xFF
+
+  // PMT: H.264 video PID 0x100, AAC audio PID 0x101
+  const pmtData = [0x02, 0xB0, 0x17, 0x00, 0x01, 0xC1, 0x00, 0x00,
+    0xE1, 0x00, 0xF0, 0x00,
+    0x1B, 0xE1, 0x00, 0xF0, 0x00, // H.264 on PID 0x100
+    0x0F, 0xE1, 0x01, 0xF0, 0x00] // AAC on PID 0x101
+  const pmtCrc = crc32(pmtData)
+  const pmt = Buffer.alloc(188, 0xFF)
+  pmt[0] = 0x47; pmt[1] = 0x50; pmt[2] = 0x00; pmt[3] = 0x10 // PID 0x1000, payload
+  pmt[4] = 0x00 // pointer field
+  pmtData.forEach((b, i) => pmt[5 + i] = b)
+  pmt[26] = (pmtCrc >>> 24) & 0xFF
+  pmt[27] = (pmtCrc >>> 16) & 0xFF
+  pmt[28] = (pmtCrc >>> 8) & 0xFF
+  pmt[29] = pmtCrc & 0xFF
+
+  return Buffer.concat([pat, pmt])
+}
+const EMPTY_TS_SEGMENT = buildEmptyTsSegment()
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
@@ -55,6 +96,7 @@ export default defineEventHandler(async (event) => {
     // This prevents HLS.js's VOD binary-search from blocking playback
     // for 60+ seconds while ffmpeg catches up to a far-ahead segment.
     if (session.isSegmentUnavailable(segmentNumber)) {
+      console.log(`[MediaEngine] Segment ${segmentNumber} unavailable → null TS (startSeg=${session.currentStartSegment} highest=${session.highestReady})`)
       setHeader(event, 'Content-Type', 'video/mp2t')
       setHeader(event, 'Content-Length', String(EMPTY_TS_SEGMENT.length))
       setHeader(event, 'Cache-Control', 'no-store')
