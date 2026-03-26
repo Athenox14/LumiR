@@ -342,7 +342,7 @@ async function saveSettings() {
         </div>
       </div>
 
-      <!-- Bug Reports + Deferred Updates -->
+      <!-- Bug Reports + Announcements -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <!-- Bug Reports -->
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
@@ -377,10 +377,8 @@ async function saveSettings() {
           </UiInput>
         </div>
 
-      </div>
-
-      <!-- Announcements -->
-      <div class="mb-6 p-6 bg-surface border border-border rounded-xl space-y-4">
+        <!-- Announcements -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="font-semibold text-text-primary">{{ t('announcements.title') }}</h3>
           <button
@@ -484,6 +482,7 @@ async function saveSettings() {
               </button>
             </div>
           </div>
+        </div>
         </div>
       </div>
 

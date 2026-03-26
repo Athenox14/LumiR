@@ -149,12 +149,11 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       testBandwidth: false,
       abrEwmaDefaultEstimate: 500_000_000,
       maxFragLookUpTolerance: 0.1,
-      // CRITICAL: Intercept XHR requests to instantly timeout segments
-      // far from the current playback position. HLS.js's VOD seek algo
-      // does a binary search that requests segments ~100 ahead of the
-      // seek target, which blocks the pipeline for 60+ seconds during
-      // live transcoding. With 500ms timeout, these fail instantly and
-      // error recovery restarts sequential loading from current position.
+      // CRITICAL: Abort XHR requests for segments far from current position.
+      // HLS.js's VOD seek algo binary-searches ~100 segments ahead, blocking
+      // playback for 60+ seconds. We abort those requests after 500ms.
+      // NOTE: xhr.timeout doesn't work here — HLS.js overwrites it after
+      // xhrSetup. Using setTimeout+abort instead.
       xhrSetup: (xhr: XMLHttpRequest, url: string) => {
         const segMatch = url.match(/segment-(\d+)\.ts/)
         if (segMatch) {
@@ -162,7 +161,11 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           const player = playerRef.value
           const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
           if (segNum > currentSeg + 20) {
-            xhr.timeout = 500 // 500ms — instant fail for far-ahead segments
+            // Abort after 500ms — HLS.js detects the abort, retries briefly,
+            // then error recovery restarts loading from current position
+            setTimeout(() => {
+              try { xhr.abort() } catch {}
+            }, 500)
           }
         }
       },
