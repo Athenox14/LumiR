@@ -149,6 +149,25 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       testBandwidth: false,
       abrEwmaDefaultEstimate: 500_000_000,
       maxFragLookUpTolerance: 0.1,
+      // CRITICAL: Redirect far-ahead fragment requests to a nearby segment.
+      // HLS.js's VOD seek algo binary-searches ~100+ segments ahead,
+      // blocking the pipeline. By redirecting the XHR to a nearby segment,
+      // HLS.js gets valid TS data instantly → marks it as loaded → moves
+      // to the next sequential fragment near the playback position.
+      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+        const segMatch = url.match(/segment-(\d+)\.ts/)
+        if (segMatch) {
+          const segNum = parseInt(segMatch[1], 10)
+          const player = playerRef.value
+          const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
+          if (segNum > currentSeg + 25) {
+            // Re-open XHR with the URL of a nearby segment instead
+            const nearSeg = currentSeg + 1
+            const newUrl = url.replace(`segment-${segNum}.ts`, `segment-${nearSeg}.ts`)
+            xhr.open('GET', newUrl, true)
+          }
+        }
+      },
       // Fragment loading policy tuned for live transcoding:
       // - Short first-byte timeout (8s): nearby segments arrive in 1-3s,
       //   far-ahead speculative requests get no data → fail fast
