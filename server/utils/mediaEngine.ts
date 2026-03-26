@@ -165,7 +165,7 @@ class FFmpegSession {
   private totalSegments: number
   private highestReady = -1
   private disposeTimer: ReturnType<typeof setTimeout> | null = null
-  private currentStartSegment = 0
+  currentStartSegment = 0
   private decision: PlaybackDecision | null = null
   private audioTrackIndex: number | undefined
   private stderrLog = ''
@@ -293,6 +293,7 @@ class FFmpegSession {
 
     const ffmpeg = await getFfmpegPath()
     console.log(`[MediaEngine] Starting ffmpeg: mode=${decision.mode} startSeg=${startSeg} (${startTime}s) file=${this.filePath}`)
+    console.log(`[MediaEngine] ffmpeg cmd: ${ffmpeg} ${args.join(' ')}`)
 
     const proc = spawn(ffmpeg, args, {
       stdio: ['ignore', 'ignore', 'pipe'],
@@ -302,7 +303,7 @@ class FFmpegSession {
     this.isStarting = false
 
     // Regex to detect segment writes in ffmpeg HLS output
-    const segmentWriteRe = /Opening '.*segment-(\d+)\.ts'/
+    let firstSegmentLogged = false
     proc.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       // Keep last 2KB of stderr for debugging
@@ -311,6 +312,10 @@ class FFmpegSession {
       const matches = text.matchAll(/Opening '.*segment-(\d+)\.ts'/g)
       for (const m of matches) {
         const seg = parseInt(m[1]!, 10)
+        if (!firstSegmentLogged) {
+          firstSegmentLogged = true
+          console.log(`[MediaEngine] First segment produced: ${seg} for ${this.clientId}`)
+        }
         if (seg > this.highestReady) this.highestReady = seg
       }
     })
@@ -393,6 +398,7 @@ class FFmpegSession {
     this.touchActivity()
 
     const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
+    console.log(`[MediaEngine] getSegment(${segmentNumber}) cached=${existsSync(segPath)} ffmpeg=${this.process ? 'running' : 'stopped'} startSeg=${this.currentStartSegment} highest=${this.highestReady}`)
 
     // If segment is already cached on disk, serve it immediately
     if (existsSync(segPath)) {
