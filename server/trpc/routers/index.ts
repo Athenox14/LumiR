@@ -5,6 +5,8 @@ import { usersRouter } from './users'
 import { settingsRouter } from './settings'
 import { libraryRouter } from './library'
 import { catalogRouter } from './catalog'
+import { announcementsRouter } from './announcements'
+import { bugReportRouter } from './bugReport'
 
 export const appRouter = router({
   auth: authRouter,
@@ -13,6 +15,8 @@ export const appRouter = router({
   settings: settingsRouter,
   library: libraryRouter,
   catalog: catalogRouter,
+  announcements: announcementsRouter,
+  bugReport: bugReportRouter,
 })
 
 export type AppRouter = typeof appRouter

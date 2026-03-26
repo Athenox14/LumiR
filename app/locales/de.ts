@@ -384,6 +384,16 @@ export default {
     downloadsEnabledDesc: 'Inhalte aus dem Online-Katalog herunterladen',
     registrationEnabled: 'Registrierung',
     registrationEnabledDesc: 'Neuen Benutzern erlauben, ein Konto zu erstellen',
+    bugReports: 'Fehlermeldungen',
+    bugReportEnabled: 'Fehlermeldung aktivieren',
+    bugReportEnabledDesc: 'Benutzern erlauben, Fehler über die Oberfläche zu melden',
+    bugReportWebhook: 'Discord-Webhook-URL',
+    bugReportWebhookDesc: 'Fehlermeldungen werden an diesen Discord-Kanal gesendet',
+    deferredUpdates: 'Verzögerte Updates',
+    updateScheduleEnabled: 'Updates planen',
+    updateScheduleEnabledDesc: 'Updates zu einem bestimmten Zeitpunkt installieren statt sofort',
+    updateScheduleHour: 'Update-Stunde',
+    updateScheduleHourDesc: 'Tageszeit für die Installation von Updates (0-23)',
   },
 
   // Admin update
@@ -519,6 +529,48 @@ export default {
     remind3d: 'In 3 Tagen erinnern',
     remind7d: 'In 7 Tagen erinnern',
     dismissVersion: 'Diese Version ignorieren',
+  },
+
+  // Announcements
+  announcements: {
+    title: 'Ankündigungen',
+    create: 'Ankündigung erstellen',
+    edit: 'Ankündigung bearbeiten',
+    message: 'Nachricht',
+    messagePlaceholder: 'Ankündigungsnachricht eingeben...',
+    type: 'Typ',
+    active: 'Aktiv',
+    dismissible: 'Ausblendbar',
+    noAnnouncements: 'Keine Ankündigungen',
+    deleteConfirm: 'Diese Ankündigung löschen?',
+    info: 'Info',
+    warning: 'Warnung',
+    success: 'Erfolg',
+    error: 'Fehler',
+  },
+
+  // Bug report
+  bugReport: {
+    title: 'Fehler melden',
+    description: 'Beschreibung',
+    descriptionPlaceholder: 'Beschreiben Sie das Problem...',
+    titleLabel: 'Titel',
+    titlePlaceholder: 'Kurze Zusammenfassung des Problems',
+    submit: 'Bericht senden',
+    success: 'Fehlerbericht erfolgreich gesendet',
+    failed: 'Bericht konnte nicht gesendet werden',
+    disabled: 'Fehlermeldung ist deaktiviert',
+  },
+
+  // Media edit
+  mediaEdit: {
+    title: 'Medieninfo bearbeiten',
+    overview: 'Übersicht',
+    tagline: 'Slogan',
+    genres: 'Genres',
+    genresHint: 'Kommagetrennt',
+    saved: 'Änderungen gespeichert',
+    saveFailed: 'Speichern fehlgeschlagen',
   },
 
   // Language selector

@@ -1056,4 +1056,53 @@ export const mediaRouter = router({
       totalWatched: recentlyWatched[0]?.count || 0,
     }
   }),
+
+  // Update media info (admin only)
+  updateInfo: adminProcedure
+    .input(z.object({
+      id: z.string(),
+      title: z.string().optional(),
+      year: z.number().optional(),
+      runtime: z.number().optional(),
+      overview: z.string().optional(),
+      tagline: z.string().optional(),
+      rating: z.number().optional(),
+      genres: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...fields } = input
+
+      const [existing] = await db
+        .select()
+        .from(media)
+        .where(eq(media.id, id))
+        .limit(1)
+
+      if (!existing) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Media not found',
+        })
+      }
+
+      const updates: Record<string, unknown> = {}
+      if (fields.title !== undefined) updates.title = fields.title
+      if (fields.year !== undefined) updates.year = fields.year
+      if (fields.runtime !== undefined) updates.runtime = fields.runtime
+      if (fields.overview !== undefined) updates.overview = fields.overview
+      if (fields.tagline !== undefined) updates.tagline = fields.tagline
+      if (fields.rating !== undefined) updates.rating = fields.rating
+      if (fields.genres !== undefined) updates.genres = fields.genres
+
+      if (Object.keys(updates).length === 0) {
+        return { success: true }
+      }
+
+      await db
+        .update(media)
+        .set(updates)
+        .where(eq(media.id, id))
+
+      return { success: true }
+    }),
 })

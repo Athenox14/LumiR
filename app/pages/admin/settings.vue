@@ -24,6 +24,10 @@ const scanInterval = ref(24)
 const catalogEnabled = ref(true)
 const downloadsEnabled = ref(true)
 const registrationEnabled = ref(true)
+const bugReportEnabled = ref(false)
+const bugReportWebhookUrl = ref('')
+const updateScheduleEnabled = ref(false)
+const updateScheduleHour = ref(3)
 
 // Load settings
 const { data: settings, pending } = useAsyncData('settings', async () => {
@@ -45,6 +49,10 @@ watch(settings, (data) => {
     catalogEnabled.value = data.catalogEnabled !== false
     downloadsEnabled.value = data.downloadsEnabled !== false
     registrationEnabled.value = data.registrationEnabled !== false
+    bugReportEnabled.value = (data.bugReportEnabled as boolean) || false
+    bugReportWebhookUrl.value = (data.bugReportWebhookUrl as string) || ''
+    updateScheduleEnabled.value = (data.updateScheduleEnabled as boolean) || false
+    updateScheduleHour.value = (data.updateScheduleHour as number) ?? 3
   }
 }, { immediate: true })
 
@@ -66,6 +74,10 @@ async function saveSettings() {
       catalogEnabled: catalogEnabled.value,
       downloadsEnabled: downloadsEnabled.value,
       registrationEnabled: registrationEnabled.value,
+      bugReportEnabled: bugReportEnabled.value,
+      bugReportWebhookUrl: bugReportWebhookUrl.value || undefined,
+      updateScheduleEnabled: updateScheduleEnabled.value,
+      updateScheduleHour: updateScheduleHour.value,
     })
     success.value = true
     setTimeout(() => {
@@ -236,6 +248,77 @@ async function saveSettings() {
             <template #description>
               <p class="text-xs text-text-muted mt-1">
                 {{ t('adminSettings.githubTokenDesc') }}
+              </p>
+            </template>
+          </UiInput>
+        </div>
+      </div>
+
+      <!-- Bug Reports + Deferred Updates -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Bug Reports -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.bugReports') }}</h3>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.bugReportEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.bugReportEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="bugReportEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
+
+          <UiInput
+            v-if="bugReportEnabled"
+            v-model="bugReportWebhookUrl"
+            :label="t('adminSettings.bugReportWebhook')"
+            placeholder="https://discord.com/api/webhooks/..."
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.bugReportWebhookDesc') }}
+              </p>
+            </template>
+          </UiInput>
+        </div>
+
+        <!-- Deferred Updates -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.deferredUpdates') }}</h3>
+
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.updateScheduleEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.updateScheduleEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="updateScheduleEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
+
+          <UiInput
+            v-if="updateScheduleEnabled"
+            v-model.number="updateScheduleHour"
+            type="number"
+            :label="t('adminSettings.updateScheduleHour')"
+            :min="0"
+            :max="23"
+          >
+            <template #description>
+              <p class="text-xs text-text-muted mt-1">
+                {{ t('adminSettings.updateScheduleHourDesc') }}
               </p>
             </template>
           </UiInput>
