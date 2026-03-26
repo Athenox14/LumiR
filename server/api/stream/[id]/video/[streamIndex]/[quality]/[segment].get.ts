@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
     // (non-fatal), skip this fragment, and load the next nearby one.
     // This prevents HLS.js's VOD binary-search from blocking playback
     // for 60+ seconds while ffmpeg catches up to a far-ahead segment.
-    if (session.isSegmentFarAhead(segmentNumber)) {
+    if (session.isSegmentUnavailable(segmentNumber)) {
       setHeader(event, 'Content-Type', 'video/mp2t')
       setHeader(event, 'Content-Length', '0')
       setHeader(event, 'Cache-Control', 'no-store')
