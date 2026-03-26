@@ -154,20 +154,24 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       abrEwmaDefaultEstimate: 500_000_000,
       // Prevent HLS.js from loading fragments beyond the buffer window
       maxFragLookUpTolerance: 0.1,
-      // Robust fragment loading: transcoded segments may take time
+      // Fragment loading policy tuned for live transcoding:
+      // - Short first-byte timeout (8s): nearby segments arrive in 1-3s,
+      //   far-ahead speculative requests get no data → fail fast
+      // - Minimal retries: far-ahead failures resolve via error recovery
+      //   which restarts loading from the current position
       fragLoadPolicy: {
         default: {
-          maxTimeToFirstByteMs: 30000,
-          maxLoadTimeMs: 120000,
+          maxTimeToFirstByteMs: 8000,
+          maxLoadTimeMs: 60000,
           timeoutRetry: {
-            maxNumRetry: 4,
-            retryDelayMs: 1000,
-            maxRetryDelayMs: 8000,
+            maxNumRetry: 1,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 1000,
           },
           errorRetry: {
-            maxNumRetry: 6,
-            retryDelayMs: 1000,
-            maxRetryDelayMs: 8000,
+            maxNumRetry: 2,
+            retryDelayMs: 500,
+            maxRetryDelayMs: 2000,
           },
         },
       },
