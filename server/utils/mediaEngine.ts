@@ -448,22 +448,10 @@ class FFmpegSession {
         }
         throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
       }
-      // If this segment is far ahead of ffmpeg's progress, it's a
-      // speculative HLS.js request (ABR probing, prefetch). Don't block
-      // a connection slot for 30s — fail fast so real requests get through.
-      if (segmentNumber > this.highestReady + SEEK_THRESHOLD
-          && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD) {
-        const specDeadline = Date.now() + 2_000
-        while (Date.now() < specDeadline) {
-          if (signal?.aborted) throw new Error('Client disconnected')
-          if (existsSync(segPath)) break
-          await abortableSleep(200, signal)
-        }
-        if (!existsSync(segPath)) {
-          throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
-        }
-        break // segment appeared during the short wait
-      }
+      // Far-ahead speculative requests (HLS.js probing) are handled by
+      // the normal 30s timeout. HLS.js will abort them via AbortSignal
+      // when it moves on. Returning 504 early causes fatal HLS.js errors.
+
       // If ffmpeg died (and not in the middle of a restart), try to restart it.
       // BUT only if the segment is within range — don't restart for stale
       // requests that are far from where we should be producing.
