@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     const startPosition = positionParam ? parseFloat(String(positionParam)) : 0
     const knownDuration = mediaItem.runtime ? mediaItem.runtime * 60 : undefined
     if (startPosition > 0) {
-      await MediaEngine.preheatSeek(mediaItem.filePath, id, startPosition, knownDuration)
+      await MediaEngine.preheatSeek(mediaItem.filePath, id, startPosition, knownDuration, true)
     } else {
       await MediaEngine.preheat(mediaItem.filePath, id, knownDuration)
     }
