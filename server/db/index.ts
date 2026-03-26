@@ -198,6 +198,16 @@ export function initializeDatabase() {
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_media_ratings_user_media ON media_ratings(user_id, media_id);
     CREATE INDEX IF NOT EXISTS idx_media_ratings_media ON media_ratings(media_id);
+
+    CREATE TABLE IF NOT EXISTS announcements (
+      id TEXT PRIMARY KEY,
+      message TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'info',
+      active INTEGER NOT NULL DEFAULT 1,
+      dismissible INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER,
+      updated_at INTEGER
+    );
   `)
 
   // Add columns for existing databases (safe to fail if already exist)

@@ -560,6 +560,7 @@ export default {
     success: 'Fehlerbericht erfolgreich gesendet',
     failed: 'Bericht konnte nicht gesendet werden',
     disabled: 'Fehlermeldung ist deaktiviert',
+    pageLabel: 'Seite',
   },
 
   // Media edit
@@ -571,6 +572,11 @@ export default {
     genresHint: 'Kommagetrennt',
     saved: 'Änderungen gespeichert',
     saveFailed: 'Speichern fehlgeschlagen',
+    titleLabel: 'Titel',
+    year: 'Jahr',
+    runtime: 'Laufzeit (Minuten)',
+    rating: 'Bewertung',
+    fileType: 'Dateityp',
   },
 
   // Language selector

@@ -51,12 +51,12 @@ async function submitReport() {
   <button
     v-if="enabled"
     type="button"
-    class="fixed bottom-24 left-4 lg:bottom-6 lg:left-6 z-40 w-10 h-10 rounded-full bg-surface border border-border shadow-lg flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors"
+    class="fixed bottom-24 right-4 lg:bottom-6 lg:right-6 z-40 w-10 h-10 rounded-full bg-surface border border-border shadow-lg flex items-center justify-center text-text-muted hover:text-primary hover:border-primary transition-colors"
     :title="t('bugReport.title')"
     @click="openModal"
   >
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-      <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M3.05 11a9 9 0 0117.9 0M3.05 13a9 9 0 0017.9 0M8 21h8M12 17v4M7 4l1.5 3M17 4l-1.5 3M5 11h-.5a2.5 2.5 0 010-5h.5M19 11h.5a2.5 2.5 0 000-5H19" />
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
     </svg>
   </button>
 
