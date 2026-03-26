@@ -284,7 +284,7 @@ class FFmpegSession {
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', join(this.outputDir, 'segment-%d.ts'),
       '-hls_list_size', '0',
-      '-hls_flags', 'independent_segments',
+      '-hls_flags', 'independent_segments+temp_file',
       '-start_number', String(startSeg),
     )
 
@@ -302,21 +302,27 @@ class FFmpegSession {
     this.process = proc
     this.isStarting = false
 
-    // Regex to detect segment writes in ffmpeg HLS output
-    let firstSegmentLogged = false
+    // Track segment production from ffmpeg stderr.
+    // With temp_file flag, ffmpeg writes segment-N.ts.tmp then renames to
+    // segment-N.ts. When we see "Opening segment-N.ts.tmp", segment N-1
+    // is COMPLETE (renamed to its final name).
+    let lastOpenedSeg = -1
     proc.stderr!.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
       // Keep last 2KB of stderr for debugging
       this.stderrLog = (this.stderrLog + text).slice(-2048)
-      // Track highest segment written by ffmpeg for accurate seek decisions
-      const matches = text.matchAll(/Opening '.*segment-(\d+)\.ts'/g)
+      // Detect segment opens (temp_file: *.ts.tmp)
+      const matches = text.matchAll(/Opening '.*segment-(\d+)\.ts/g)
       for (const m of matches) {
         const seg = parseInt(m[1]!, 10)
-        if (!firstSegmentLogged) {
-          firstSegmentLogged = true
-          console.log(`[MediaEngine] First segment produced: ${seg} for ${this.clientId}`)
+        // When segment N is opened, segment N-1 is complete
+        if (lastOpenedSeg >= 0 && lastOpenedSeg > this.highestReady) {
+          this.highestReady = lastOpenedSeg
         }
-        if (seg > this.highestReady) this.highestReady = seg
+        if (lastOpenedSeg < 0) {
+          console.log(`[MediaEngine] First segment started: ${seg} for ${this.clientId}`)
+        }
+        lastOpenedSeg = seg
       }
     })
 
@@ -400,10 +406,10 @@ class FFmpegSession {
     const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
     console.log(`[MediaEngine] getSegment(${segmentNumber}) cached=${existsSync(segPath)} ffmpeg=${this.process ? 'running' : 'stopped'} startSeg=${this.currentStartSegment} highest=${this.highestReady}`)
 
-    // If segment is already cached on disk, serve it immediately
+    // If segment is already cached on disk, serve it immediately.
+    // With temp_file flag, the file only exists once fully written.
     if (existsSync(segPath)) {
       if (segmentNumber > this.highestReady) this.highestReady = segmentNumber
-      await abortableSleep(50, signal) // let ffmpeg finish flushing
       const stat = statSync(segPath)
       return { stream: createReadStream(segPath), size: stat.size }
     }
@@ -472,9 +478,8 @@ class FFmpegSession {
       await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
     }
 
-    // Wait a tiny bit more for ffmpeg to finish writing the segment
-    // (the file exists but ffmpeg might still be flushing)
-    await abortableSleep(50, signal)
+    // With temp_file flag, the file only appears after atomic rename —
+    // no need to wait for flushing.
 
     // Update highest ready
     if (segmentNumber > this.highestReady) {
