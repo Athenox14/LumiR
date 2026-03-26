@@ -37,6 +37,19 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id, mediaItem.runtime ? mediaItem.runtime * 60 : undefined)
+
+    // For segments far ahead of ffmpeg's progress AND not cached on disk,
+    // return 200 with empty body INSTANTLY. HLS.js will get a demux error
+    // (non-fatal), skip this fragment, and load the next nearby one.
+    // This prevents HLS.js's VOD binary-search from blocking playback
+    // for 60+ seconds while ffmpeg catches up to a far-ahead segment.
+    if (session.isSegmentFarAhead(segmentNumber)) {
+      setHeader(event, 'Content-Type', 'video/mp2t')
+      setHeader(event, 'Content-Length', '0')
+      setHeader(event, 'Cache-Control', 'no-store')
+      return send(event, '')
+    }
+
     const segmentData = await session.getSegment(segmentNumber, abort.signal)
 
     setHeader(event, 'Content-Type', 'video/mp2t')
