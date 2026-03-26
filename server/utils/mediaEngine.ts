@@ -219,7 +219,7 @@ class FFmpegSession {
         console.log(`[MediaEngine] Debounced seek: restarting at segment ${seg} (${resolvers.length} pending requests)`)
         await this.start({ audioTrack: this.audioTrackIndex, startSegment: seg })
         resolvers.forEach((r) => r())
-      }, 500) // 500ms debounce — collapses rapid preheat-seek calls during scrub
+      }, 100) // 100ms debounce — fast response for user seeks
     })
   }
 
@@ -418,8 +418,14 @@ class FFmpegSession {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
     }
 
-    // Wait for segment file to appear
-    const deadline = Date.now() + SEGMENT_WAIT_TIMEOUT
+    // Adaptive timeout: segments near ffmpeg's position get the full 30s.
+    // Far-ahead speculative segments (HLS.js probing) get 8s — short enough
+    // to free the connection quickly, long enough for HLS.js retries to
+    // eventually succeed as ffmpeg catches up.
+    const isFarAhead = segmentNumber > this.highestReady + SEEK_THRESHOLD
+      && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD
+    const timeout = isFarAhead ? 8_000 : SEGMENT_WAIT_TIMEOUT
+    const deadline = Date.now() + timeout
     let restartAttempts = 0
     const MAX_RESTART_ATTEMPTS = 2
     while (!existsSync(segPath)) {
@@ -427,12 +433,10 @@ class FFmpegSession {
         throw new Error('Client disconnected')
       }
       if (Date.now() > deadline) {
-        throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
+        throw new Error(`Segment ${segmentNumber} not ready after ${timeout / 1000}s`)
       }
-      // If this segment is well behind where ffmpeg is working, it will
-      // never be produced. Wait briefly then fail fast to free connection.
-      // Allow a grace zone of 5 segments below startSeg — HLS.js may
-      // request segments slightly before the seek target for alignment.
+      // Segments well behind ffmpeg (will never be produced): fast-fail.
+      // Grace zone of 5 segments below startSeg for keyframe alignment.
       if (segmentNumber < this.currentStartSegment - 5) {
         const abandonDeadline = Date.now() + 2_000
         while (Date.now() < abandonDeadline) {
@@ -441,13 +445,7 @@ class FFmpegSession {
         }
         throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
       }
-      // Far-ahead speculative requests (HLS.js probing) are handled by
-      // the normal 30s timeout. HLS.js will abort them via AbortSignal
-      // when it moves on. Returning 504 early causes fatal HLS.js errors.
-
-      // If ffmpeg died (and not in the middle of a restart), try to restart it.
-      // BUT only if the segment is within range — don't restart for stale
-      // requests that are far from where we should be producing.
+      // Restart ffmpeg if it died (not during seek transition)
       if (!this.process && !this.isStarting) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
           throw new Error(`ffmpeg keeps dying, cannot produce segment ${segmentNumber}`)

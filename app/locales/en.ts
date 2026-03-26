@@ -560,6 +560,7 @@ export default {
     success: 'Bug report sent successfully',
     failed: 'Failed to send report',
     disabled: 'Bug reporting is disabled',
+    pageLabel: 'Page',
   },
 
   // Media edit
@@ -571,6 +572,11 @@ export default {
     genresHint: 'Comma-separated',
     saved: 'Changes saved',
     saveFailed: 'Failed to save changes',
+    titleLabel: 'Title',
+    year: 'Year',
+    runtime: 'Runtime (minutes)',
+    rating: 'Rating',
+    fileType: 'File type',
   },
 
   // Language selector
