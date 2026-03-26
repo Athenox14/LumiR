@@ -192,28 +192,6 @@ class FFmpegSession {
     this.totalSegments = Math.max(1, Math.ceil(durationSec / SEGMENT_DURATION))
   }
 
-  /**
-   * Check if a segment is unavailable and won't be produced soon.
-   * Returns true for segments that are:
-   * - Not cached on disk AND
-   * - Either far ahead of ffmpeg OR behind ffmpeg's start position
-   * The segment endpoint uses this to return empty 200 instantly —
-   * HLS.js processes the empty segment (0 frames), skips it, and
-   * loads the next nearby fragment that IS available.
-   */
-  isSegmentUnavailable(segmentNumber: number): boolean {
-    const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
-    if (existsSync(segPath)) return false // Cached on disk — serve it
-
-    // Behind ffmpeg's start position (won't be produced)
-    if (segmentNumber < this.currentStartSegment - 5) return true
-
-    // Far ahead of ffmpeg's progress (would take too long)
-    if (segmentNumber > this.highestReady + SEEK_THRESHOLD
-        && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD) return true
-
-    return false // Within production range — let getSegment wait for it
-  }
 
   /**
    * Schedule a debounced seek. Multiple rapid seek requests (e.g. HLS.js
