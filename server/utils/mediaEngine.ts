@@ -436,11 +436,11 @@ class FFmpegSession {
       if (Date.now() > deadline) {
         throw new Error(`Segment ${segmentNumber} not ready after ${SEGMENT_WAIT_TIMEOUT / 1000}s`)
       }
-      // If this segment is behind where ffmpeg is working, it will never
-      // be produced. Waiting 30s would block a browser connection slot,
-      // starving real segment requests. Wait briefly (2s) for abort
-      // signal, then fail fast so the connection is freed.
-      if (segmentNumber < this.currentStartSegment) {
+      // If this segment is well behind where ffmpeg is working, it will
+      // never be produced. Wait briefly then fail fast to free connection.
+      // Allow a grace zone of 5 segments below startSeg — HLS.js may
+      // request segments slightly before the seek target for alignment.
+      if (segmentNumber < this.currentStartSegment - 5) {
         const abandonDeadline = Date.now() + 2_000
         while (Date.now() < abandonDeadline) {
           if (signal?.aborted) throw new Error('Client disconnected')
@@ -543,7 +543,7 @@ class FFmpegSession {
     const targetSeg = Math.floor(positionSec / SEGMENT_DURATION)
     // Start a few segments before the target — HLS.js often requests
     // segments before the seek position for keyframe alignment.
-    const startSeg = Math.max(0, targetSeg - 5)
+    const startSeg = Math.max(0, targetSeg - 10)
     const segPath = join(this.outputDir, `segment-${targetSeg}.ts`)
 
     // Already cached
