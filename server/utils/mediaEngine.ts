@@ -529,8 +529,12 @@ class FFmpegSession {
     await this.start()
   }
 
-  /** Preheat a specific position */
-  async preheatSeek(positionSec: number) {
+  /**
+   * Preheat a specific position.
+   * @param force - if true (user actually seeked), can kill running ffmpeg.
+   *                if false (timeline hover), only starts if ffmpeg not running.
+   */
+  async preheatSeek(positionSec: number, force = false) {
     const targetSeg = Math.floor(positionSec / SEGMENT_DURATION)
     // Start a few segments before the target — HLS.js often requests
     // segments before the seek position for keyframe alignment.
@@ -540,19 +544,19 @@ class FFmpegSession {
     // Already cached
     if (existsSync(segPath)) return
 
-    const needsSeek = this.process && (
-      // Target is far ahead of where ffmpeg is producing
-      targetSeg > this.highestReady + SEEK_THRESHOLD
-      // Target is behind where ffmpeg started (backward seek)
-      || targetSeg < this.currentStartSegment
-    )
-
-    if (needsSeek) {
-      await this.requestSeek(startSeg)
-    } else if (!this.process) {
+    if (!this.process) {
+      // No ffmpeg running — always start
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: startSeg })
+    } else if (force) {
+      // User actually seeked — OK to restart ffmpeg if needed
+      const needsSeek = targetSeg > this.highestReady + SEEK_THRESHOLD
+        || targetSeg < this.currentStartSegment
+      if (needsSeek) {
+        console.log(`[MediaEngine] Forced seek to segment ${startSeg} (user seek to ${targetSeg})`)
+        await this.requestSeek(startSeg)
+      }
     }
-    // Otherwise ffmpeg is already working toward this segment — let it be
+    // Hover/non-force: never kill a running ffmpeg, just let it be
   }
 
   /** Stop the session and clean up */
@@ -757,10 +761,10 @@ export const MediaEngine = {
     await session.preheat()
   },
 
-  /** Preheat a specific timeline position (for hover) */
-  async preheatSeek(filePath: string, clientId: string, positionSec: number, knownDurationSec?: number): Promise<void> {
+  /** Preheat a specific timeline position */
+  async preheatSeek(filePath: string, clientId: string, positionSec: number, knownDurationSec?: number, force = false): Promise<void> {
     const session = await getOrCreateSession(filePath, clientId, knownDurationSec)
-    await session.preheatSeek(positionSec)
+    await session.preheatSeek(positionSec, force)
   },
 
   /** Quick stream info for the info endpoint */
