@@ -146,11 +146,14 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       maxBufferHole: 1.5,
       backBufferLength: 15,
       lowLatencyMode: false,
-      // Disable ABR bandwidth testing — with a single quality level,
-      // probing wastes time by requesting far-ahead segments that block
-      // the loading pipeline for minutes during live transcoding.
+      // Disable ALL ABR logic — with a single quality level and live
+      // transcoding, ABR probing requests far-ahead segments that block
+      // the loading pipeline. Setting abrEwmaDefaultEstimate very high
+      // prevents quality switches, and testBandwidth:false skips probing.
       testBandwidth: false,
-      abrEwmaDefaultEstimate: 100_000_000,
+      abrEwmaDefaultEstimate: 500_000_000,
+      // Prevent HLS.js from loading fragments beyond the buffer window
+      maxFragLookUpTolerance: 0.1,
       // Robust fragment loading: transcoded segments may take time
       fragLoadPolicy: {
         default: {
@@ -201,8 +204,11 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         manifestHandled = true
 
         if (hls.levels.length > 0) {
+          // Lock to the single quality level — prevents ABR from probing
+          // other levels and requesting far-ahead segments
           hls.currentLevel = hls.levels.length - 1
-          console.log(`[HLS] Forced original quality (level ${hls.levels.length - 1} of ${hls.levels.length})`)
+          hls.autoLevelEnabled = false
+          console.log(`[HLS] Locked quality level ${hls.levels.length - 1}, ABR disabled`)
         }
         if (startPos > 0) {
           console.log(`[HLS] Forcing startLoad at ${startPos}s`)

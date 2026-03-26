@@ -245,6 +245,69 @@ export const usersRouter = router({
       return { success: true }
     }),
 
+  // Impersonate user (login as another user)
+  impersonate: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      // Can't impersonate yourself
+      if (input.userId === ctx.user.id) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot impersonate yourself',
+        })
+      }
+
+      // Find target user
+      const [targetUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .limit(1)
+
+      if (!targetUser) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'User not found',
+        })
+      }
+
+      // Only super_admin can impersonate admins/super_admins
+      if ((targetUser.role === 'admin' || targetUser.role === 'super_admin') && ctx.user.role !== 'super_admin') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only super admins can impersonate admin users',
+        })
+      }
+
+      // Can never impersonate another super_admin
+      if (targetUser.role === 'super_admin') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Cannot impersonate a super admin',
+        })
+      }
+
+      // Set session as the target user (same pattern as auth login)
+      await setUserSession(ctx.event, {
+        user: {
+          id: targetUser.id,
+          email: targetUser.email,
+          displayName: targetUser.displayName,
+          role: targetUser.role,
+          permissions: targetUser.permissions,
+          bio: targetUser.bio,
+          isProfilePublic: targetUser.isProfilePublic,
+          showWatchedFilms: targetUser.showWatchedFilms,
+          showLikedFilms: targetUser.showLikedFilms,
+          favoriteActorId: targetUser.favoriteActorId,
+          favoriteActorName: targetUser.favoriteActorName,
+          favoriteActorImage: targetUser.favoriteActorImage,
+        },
+      })
+
+      return { success: true }
+    }),
+
   // ===== Public profile endpoints =====
 
   // Get public profile

@@ -15,8 +15,8 @@ const collapsed = useState('sidebar-collapsed', () => false)
         collapsed ? 'lg:ml-20' : 'lg:ml-64',
       ]"
     >
-      <LayoutAnnouncementBanner />
       <LayoutHeader />
+      <LayoutAnnouncementBanner />
       <main class="min-h-[calc(100vh-4rem)] pb-20 lg:pb-6">
         <slot />
       </main>
