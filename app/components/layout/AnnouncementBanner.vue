@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const { t } = useI18n()
 const trpc = useTrpc()
 const { data: announcements } = useAsyncData('announcements', () => trpc.announcements.getActive.query())
 
@@ -24,13 +23,6 @@ const typeColors: Record<string, string> = {
   success: 'bg-green-500/10 border-green-500/30 text-green-400',
   error: 'bg-red-500/10 border-red-500/30 text-red-400',
 }
-
-const typeIcons: Record<string, string> = {
-  info: 'i-heroicons-information-circle',
-  warning: 'i-heroicons-exclamation-triangle',
-  success: 'i-heroicons-check-circle',
-  error: 'i-heroicons-x-circle',
-}
 </script>
 
 <template>
@@ -43,20 +35,31 @@ const typeIcons: Record<string, string> = {
         typeColors[announcement.type] || typeColors.info,
       ]"
     >
-      <span
-        :class="[
-          'shrink-0 size-5',
-          typeIcons[announcement.type] || typeIcons.info,
-        ]"
-      />
+      <!-- Type icon -->
+      <svg v-if="announcement.type === 'info'" class="shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <svg v-else-if="announcement.type === 'warning'" class="shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <svg v-else-if="announcement.type === 'success'" class="shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <svg v-else class="shrink-0 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+
       <span class="flex-1 text-sm">{{ announcement.message }}</span>
+
+      <!-- Dismiss button -->
       <button
         v-if="announcement.dismissible"
         class="shrink-0 p-1 rounded hover:bg-white/10 transition-colors"
-        :aria-label="t('common.close', 'Close')"
         @click="dismiss(announcement.id)"
       >
-        <span class="i-heroicons-x-mark size-4" />
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
       </button>
     </div>
   </div>
