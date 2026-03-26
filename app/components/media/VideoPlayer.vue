@@ -146,14 +146,26 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       maxBufferHole: 1.5,
       backBufferLength: 15,
       lowLatencyMode: false,
-      // Disable ALL ABR logic — with a single quality level and live
-      // transcoding, ABR probing requests far-ahead segments that block
-      // the loading pipeline. Setting abrEwmaDefaultEstimate very high
-      // prevents quality switches, and testBandwidth:false skips probing.
       testBandwidth: false,
       abrEwmaDefaultEstimate: 500_000_000,
-      // Prevent HLS.js from loading fragments beyond the buffer window
       maxFragLookUpTolerance: 0.1,
+      // CRITICAL: Intercept XHR requests to instantly timeout segments
+      // far from the current playback position. HLS.js's VOD seek algo
+      // does a binary search that requests segments ~100 ahead of the
+      // seek target, which blocks the pipeline for 60+ seconds during
+      // live transcoding. With 500ms timeout, these fail instantly and
+      // error recovery restarts sequential loading from current position.
+      xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+        const segMatch = url.match(/segment-(\d+)\.ts/)
+        if (segMatch) {
+          const segNum = parseInt(segMatch[1], 10)
+          const player = playerRef.value
+          const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
+          if (segNum > currentSeg + 20) {
+            xhr.timeout = 500 // 500ms — instant fail for far-ahead segments
+          }
+        }
+      },
       // Fragment loading policy tuned for live transcoding:
       // - Short first-byte timeout (8s): nearby segments arrive in 1-3s,
       //   far-ahead speculative requests get no data → fail fast
