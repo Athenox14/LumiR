@@ -34,6 +34,8 @@ export default defineEventHandler(async (event) => {
     // segment 0 wastes work and forces an immediate seek when the player
     // requests segments at the resume position.
     const playlist = session.variantPlaylist()
+    const segCount = (playlist.match(/EXTINF/g) || []).length
+    console.log(`[MediaEngine] Playlist served: ${segCount} segments, probe.duration=${session.probe.duration}s, startSeg=${session.currentStartSegment}`)
 
     setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
     setHeader(event, 'Cache-Control', 'no-cache')
