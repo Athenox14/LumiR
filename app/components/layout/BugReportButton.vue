@@ -9,16 +9,12 @@ const title = ref('')
 const description = ref('')
 const page = ref('')
 const submitting = ref(false)
-const enabled = ref(false)
-
 // Check if bug reporting is enabled
 const { data: isEnabled } = useAsyncData('bug-report-enabled', () =>
   trpc.bugReport.isEnabled.query()
 )
 
-watch(isEnabled, (val) => {
-  if (val != null) enabled.value = !!val
-}, { immediate: true })
+const enabled = computed(() => isEnabled.value?.enabled === true)
 
 function openModal() {
   title.value = ''
