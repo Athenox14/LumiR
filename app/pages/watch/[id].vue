@@ -119,7 +119,14 @@ async function handleEnded() {
   // which would incorrectly navigate the user away from the player.
   const duration = streamInfo.value?.duration || (media.value?.runtime ? media.value.runtime * 60 : 0)
   if (duration > 0 && currentPosition.value < duration - 120) {
-    console.warn('[Watch] Ignoring ended event: position', currentPosition.value, 'is far from end', duration)
+    console.warn('[Watch] Premature ended event at', currentPosition.value, '- resuming (end is', duration, ')')
+    // HLS.js can fire spurious ended events after seeks. Resume playback.
+    nextTick(() => {
+      const player = document.querySelector('media-player') as any
+      if (player) {
+        player.play?.()
+      }
+    })
     return
   }
 
