@@ -372,28 +372,18 @@ class FFmpegSession {
   }
 
   /**
-   * Generate the variant playlist.
-   * Uses EVENT type (not VOD) so HLS.js reloads it periodically.
-   * Only lists segments that exist or are being produced — prevents
-   * HLS.js from requesting far-ahead segments that block playback.
+   * Generate the VOD variant playlist with GAP markers for unavailable segments.
+   * Segments behind currentStartSegment that aren't cached on disk are marked
+   * as GAP so HLS.js skips them (prevents infinite 404 retry loops).
+   * Segments ahead of ffmpeg are NOT marked as GAP — the 8s timeout handles them.
    */
   variantPlaylist(): string {
-    // Determine which segments to include:
-    // - Segments on disk from any previous run (cached)
-    // - Segments from currentStartSegment to highestReady + buffer
-    const buffer = 10 // segments beyond highestReady to include
-    const lastIncluded = Math.min(
-      this.totalSegments - 1,
-      Math.max(this.highestReady + buffer, this.currentStartSegment + buffer)
-    )
-    const isComplete = !this.process && this.highestReady >= this.totalSegments - 2
-
     const lines: string[] = [
       '#EXTM3U',
       '#EXT-X-VERSION:6',
       `#EXT-X-TARGETDURATION:${SEGMENT_DURATION}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
-      '#EXT-X-PLAYLIST-TYPE:EVENT',
+      '#EXT-X-PLAYLIST-TYPE:VOD',
     ]
 
     const remaining = this.probe.duration
@@ -401,23 +391,20 @@ class FFmpegSession {
       const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
       lines.push(`#EXTINF:${segDur.toFixed(3)},`)
 
-      // Mark unavailable segments as GAP so HLS.js skips them
-      const segPath = join(this.outputDir, `segment-${i}.ts`)
-      const onDisk = existsSync(segPath)
-      const inProduction = i >= this.currentStartSegment && i <= lastIncluded
-
-      if (!onDisk && !inProduction) {
-        lines.push('#EXT-X-GAP')
+      // Mark segments BEHIND ffmpeg that aren't cached as GAP.
+      // This prevents HLS.js from requesting segments that will never
+      // be produced (e.g. segment 300 when ffmpeg is at 639).
+      if (i < this.currentStartSegment) {
+        const segPath = join(this.outputDir, `segment-${i}.ts`)
+        if (!existsSync(segPath)) {
+          lines.push('#EXT-X-GAP')
+        }
       }
 
       lines.push(`segment-${i}.ts`)
     }
 
-    // Only add ENDLIST when ffmpeg has finished the entire file
-    if (isComplete) {
-      lines.push('#EXT-X-ENDLIST')
-    }
-
+    lines.push('#EXT-X-ENDLIST')
     return lines.join('\n')
   }
 
