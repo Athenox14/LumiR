@@ -140,14 +140,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
     const startPos = pendingSeekPosition.value ?? props.initialPosition
     provider.config = {
       startPosition: startPos,
-      maxBufferLength: 30,
-      maxMaxBufferLength: 60,
-      maxBufferSize: 60 * 1000 * 1000,
+      maxBufferLength: 15,
+      maxMaxBufferLength: 30,
+      maxBufferSize: 30 * 1000 * 1000,
       maxBufferHole: 1.5,
-      startFragPrefetch: true,
-      backBufferLength: 30,
+      backBufferLength: 15,
       lowLatencyMode: false,
-      // High bandwidth estimate so ABR doesn't pick low quality initially
+      // Disable ABR bandwidth testing — with a single quality level,
+      // probing wastes time by requesting far-ahead segments that block
+      // the loading pipeline for minutes during live transcoding.
+      testBandwidth: false,
       abrEwmaDefaultEstimate: 100_000_000,
       // Robust fragment loading: transcoded segments may take time
       fragLoadPolicy: {
