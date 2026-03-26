@@ -184,13 +184,19 @@ function onProviderChange(event: MediaProviderChangeEvent) {
     provider.onInstance((hls) => {
       hlsInstance = hls
 
-      // Force original quality (last level = ORIGINAL = DIRECT_STREAM, no CPU transcoding)
-      // This is critical: CPU transcoding is too slow and gets stuck,
-      // while ORIGINAL just remuxes (copies codec to HLS segments) = instant
+      // Force original quality and ensure correct start position
       hls.on(hls.constructor.Events.MANIFEST_PARSED, () => {
         if (hls.levels.length > 0) {
           hls.currentLevel = hls.levels.length - 1
           console.log(`[HLS] Forced original quality (level ${hls.levels.length - 1} of ${hls.levels.length})`)
+        }
+        // Force-restart loading at the correct position. The config
+        // startPosition may be ignored by vidstack, and #EXT-X-START in
+        // the playlist may not be honoured by all HLS.js versions.
+        // hls.startLoad(seconds) is the most reliable way.
+        if (startPos > 0) {
+          console.log(`[HLS] Forcing startLoad at ${startPos}s`)
+          hls.startLoad(startPos)
         }
       })
 
