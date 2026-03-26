@@ -242,6 +242,53 @@ function cancelOnUnload() {
 onMounted(() => window.addEventListener('beforeunload', cancelOnUnload))
 onUnmounted(() => window.removeEventListener('beforeunload', cancelOnUnload))
 
+// Media edit modal (admin only)
+const showEditModal = ref(false)
+const editTitle = ref('')
+const editYear = ref<number | null>(null)
+const editRuntime = ref<number | null>(null)
+const editOverview = ref('')
+const editTagline = ref('')
+const editGenres = ref('')
+const editRating = ref<number | null>(null)
+const editSaving = ref(false)
+
+function openEditModal() {
+  if (!media.value) return
+  editTitle.value = media.value.title || ''
+  editYear.value = media.value.year || null
+  editRuntime.value = media.value.runtime || null
+  editOverview.value = media.value.overview || ''
+  editTagline.value = media.value.tagline || ''
+  editGenres.value = (media.value.genres || []).join(', ')
+  editRating.value = media.value.rating || null
+  showEditModal.value = true
+}
+
+async function saveMediaInfo() {
+  if (!media.value || editSaving.value) return
+  editSaving.value = true
+  try {
+    await trpc.media.updateInfo.mutate({
+      id: mediaId.value,
+      title: editTitle.value,
+      year: editYear.value,
+      runtime: editRuntime.value,
+      overview: editOverview.value,
+      tagline: editTagline.value,
+      genres: editGenres.value.split(',').map((g: string) => g.trim()).filter(Boolean),
+      rating: editRating.value,
+    })
+    useToast().success(t('mediaEdit.saved'))
+    showEditModal.value = false
+    refreshNuxtData(`media-${mediaId.value}`)
+  } catch (e: any) {
+    useToast().error(e.message || t('mediaEdit.saveFailed'))
+  } finally {
+    editSaving.value = false
+  }
+}
+
 const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"%3E%3Crect fill="%230a0a0a" width="1920" height="1080"/%3E%3C/svg%3E'
 </script>
 
@@ -271,19 +318,35 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
       <div class="relative">
         <div class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-transparent z-10" />
 
-        <!-- Settings gear button (top right) -->
-        <button
-          v-if="media.filePath || isAdmin"
-          type="button"
-          class="absolute top-4 right-4 z-20 p-2.5 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
-          :title="t('media.fileInfo')"
-          @click="openSettings"
-        >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
+        <!-- Admin action buttons (top right) -->
+        <div class="absolute top-4 right-4 z-20 flex items-center gap-2">
+          <!-- Edit media info (admin only) -->
+          <button
+            v-if="isAdmin"
+            type="button"
+            class="p-2.5 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
+            :title="t('mediaEdit.title')"
+            @click="openEditModal"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94L14.7 6.3z" />
+            </svg>
+          </button>
+
+          <!-- Settings gear button -->
+          <button
+            v-if="media.filePath || isAdmin"
+            type="button"
+            class="p-2.5 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-colors backdrop-blur-sm"
+            :title="t('media.fileInfo')"
+            @click="openSettings"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
 
         <img
           :src="media.backdropPath || placeholderBackdrop"
@@ -574,6 +637,79 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
           </div>
         </div>
       </div>
+
+      <!-- Media Edit Modal (admin only) -->
+      <UiModal v-model="showEditModal" :title="t('mediaEdit.title')" size="lg">
+        <form class="space-y-4" @submit.prevent="saveMediaInfo">
+          <UiInput
+            v-model="editTitle"
+            :label="t('mediaEdit.titleLabel')"
+          />
+
+          <div class="grid grid-cols-2 gap-4">
+            <UiInput
+              v-model.number="editYear"
+              type="number"
+              :label="t('mediaEdit.year')"
+              :min="1888"
+              :max="2100"
+            />
+            <UiInput
+              v-model.number="editRuntime"
+              type="number"
+              :label="t('mediaEdit.runtime')"
+              :min="0"
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-text-primary mb-1">
+              {{ t('mediaEdit.overview') }}
+            </label>
+            <textarea
+              v-model="editOverview"
+              class="w-full px-4 py-2.5 bg-background border border-border rounded-xl text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary resize-y min-h-[100px]"
+              rows="4"
+            />
+          </div>
+
+          <UiInput
+            v-model="editTagline"
+            :label="t('mediaEdit.tagline')"
+          />
+
+          <UiInput
+            v-model="editGenres"
+            :label="t('mediaEdit.genres')"
+            :placeholder="t('mediaEdit.genresPlaceholder')"
+          />
+
+          <UiInput
+            v-model.number="editRating"
+            type="number"
+            :label="t('mediaEdit.rating')"
+            :min="0"
+            :max="10"
+            :step="0.1"
+          />
+        </form>
+
+        <template #footer>
+          <button
+            type="button"
+            class="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors"
+            @click="showEditModal = false"
+          >
+            {{ t('common.cancel') }}
+          </button>
+          <UiButton
+            :loading="editSaving"
+            @click="saveMediaInfo"
+          >
+            {{ t('common.save') }}
+          </UiButton>
+        </template>
+      </UiModal>
 
       <!-- Settings Modal -->
       <Teleport to="body">

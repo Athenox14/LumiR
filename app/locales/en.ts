@@ -384,6 +384,16 @@ export default {
     downloadsEnabledDesc: 'Download content from the online catalog',
     registrationEnabled: 'Registration',
     registrationEnabledDesc: 'Allow new users to create an account',
+    bugReports: 'Bug Reports',
+    bugReportEnabled: 'Enable bug reporting',
+    bugReportEnabledDesc: 'Allow users to report bugs via the interface',
+    bugReportWebhook: 'Discord webhook URL',
+    bugReportWebhookDesc: 'Bug reports will be sent to this Discord channel',
+    deferredUpdates: 'Deferred updates',
+    updateScheduleEnabled: 'Schedule updates',
+    updateScheduleEnabledDesc: 'Install updates at a specific time instead of immediately',
+    updateScheduleHour: 'Update hour',
+    updateScheduleHourDesc: 'Hour of the day to install updates (0-23)',
   },
 
   // Admin update
@@ -519,6 +529,48 @@ export default {
     remind3d: 'Remind me in 3 days',
     remind7d: 'Remind me in 7 days',
     dismissVersion: 'Dismiss this version',
+  },
+
+  // Announcements
+  announcements: {
+    title: 'Announcements',
+    create: 'Create announcement',
+    edit: 'Edit announcement',
+    message: 'Message',
+    messagePlaceholder: 'Enter announcement message...',
+    type: 'Type',
+    active: 'Active',
+    dismissible: 'Dismissible',
+    noAnnouncements: 'No announcements',
+    deleteConfirm: 'Delete this announcement?',
+    info: 'Info',
+    warning: 'Warning',
+    success: 'Success',
+    error: 'Error',
+  },
+
+  // Bug report
+  bugReport: {
+    title: 'Report a bug',
+    description: 'Description',
+    descriptionPlaceholder: 'Describe the issue...',
+    titleLabel: 'Title',
+    titlePlaceholder: 'Brief summary of the issue',
+    submit: 'Submit report',
+    success: 'Bug report sent successfully',
+    failed: 'Failed to send report',
+    disabled: 'Bug reporting is disabled',
+  },
+
+  // Media edit
+  mediaEdit: {
+    title: 'Edit media info',
+    overview: 'Overview',
+    tagline: 'Tagline',
+    genres: 'Genres',
+    genresHint: 'Comma-separated',
+    saved: 'Changes saved',
+    saveFailed: 'Failed to save changes',
   },
 
   // Language selector

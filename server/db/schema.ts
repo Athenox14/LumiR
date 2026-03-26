@@ -149,6 +149,17 @@ export const downloads = sqliteTable('downloads', {
   completedAt: integer('completed_at', { mode: 'timestamp' }),
 })
 
+// Announcements
+export const announcements = sqliteTable('announcements', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  message: text('message').notNull(),
+  type: text('type', { enum: ['info', 'warning', 'success', 'error'] }).notNull().default('info'),
+  active: integer('active', { mode: 'boolean' }).notNull().default(true),
+  dismissible: integer('dismissible', { mode: 'boolean' }).notNull().default(true),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
 // Type exports
 export type User = typeof users.$inferSelect
 export type NewUser = typeof users.$inferInsert
@@ -162,3 +173,5 @@ export type MediaRating = typeof mediaRatings.$inferSelect
 export type NewMediaRating = typeof mediaRatings.$inferInsert
 export type OnlineWatchProgress = typeof onlineWatchProgress.$inferSelect
 export type Download = typeof downloads.$inferSelect
+export type Announcement = typeof announcements.$inferSelect
+export type NewAnnouncement = typeof announcements.$inferInsert

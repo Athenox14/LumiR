@@ -384,6 +384,16 @@ export default {
     downloadsEnabledDesc: 'Permet de télécharger du contenu depuis le catalogue en ligne',
     registrationEnabled: 'Inscription',
     registrationEnabledDesc: 'Permet aux nouveaux utilisateurs de créer un compte',
+    bugReports: 'Signalement de bugs',
+    bugReportEnabled: 'Activer le signalement de bugs',
+    bugReportEnabledDesc: 'Permettre aux utilisateurs de signaler des bugs via l\'interface',
+    bugReportWebhook: 'URL du webhook Discord',
+    bugReportWebhookDesc: 'Les signalements seront envoyés à ce canal Discord',
+    deferredUpdates: 'Mises à jour différées',
+    updateScheduleEnabled: 'Planifier les mises à jour',
+    updateScheduleEnabledDesc: 'Installer les mises à jour à une heure précise au lieu de immédiatement',
+    updateScheduleHour: 'Heure de mise à jour',
+    updateScheduleHourDesc: 'Heure du jour pour installer les mises à jour (0-23)',
   },
 
   // Admin update
@@ -519,6 +529,48 @@ export default {
     remind3d: 'Me rappeler dans 3 jours',
     remind7d: 'Me rappeler dans 7 jours',
     dismissVersion: 'Ignorer cette version',
+  },
+
+  // Announcements
+  announcements: {
+    title: 'Annonces',
+    create: 'Créer une annonce',
+    edit: 'Modifier l\'annonce',
+    message: 'Message',
+    messagePlaceholder: 'Saisissez le message de l\'annonce...',
+    type: 'Type',
+    active: 'Active',
+    dismissible: 'Masquable',
+    noAnnouncements: 'Aucune annonce',
+    deleteConfirm: 'Supprimer cette annonce ?',
+    info: 'Info',
+    warning: 'Avertissement',
+    success: 'Succès',
+    error: 'Erreur',
+  },
+
+  // Bug report
+  bugReport: {
+    title: 'Signaler un bug',
+    description: 'Description',
+    descriptionPlaceholder: 'Décrivez le problème...',
+    titleLabel: 'Titre',
+    titlePlaceholder: 'Résumé bref du problème',
+    submit: 'Envoyer le signalement',
+    success: 'Signalement envoyé avec succès',
+    failed: 'Échec de l\'envoi du signalement',
+    disabled: 'Le signalement de bugs est désactivé',
+  },
+
+  // Media edit
+  mediaEdit: {
+    title: 'Modifier les infos du média',
+    overview: 'Synopsis',
+    tagline: 'Slogan',
+    genres: 'Genres',
+    genresHint: 'Séparés par des virgules',
+    saved: 'Modifications enregistrées',
+    saveFailed: 'Échec de l\'enregistrement',
   },
 
   // Language selector
