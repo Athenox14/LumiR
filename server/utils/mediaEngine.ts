@@ -193,6 +193,18 @@ class FFmpegSession {
   }
 
   /**
+   * Check if a segment is far ahead of what ffmpeg is producing and NOT cached.
+   * Used by the segment endpoint to return an empty 200 instantly instead of
+   * blocking the connection — lets HLS.js skip and load nearby segments.
+   */
+  isSegmentFarAhead(segmentNumber: number): boolean {
+    const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
+    if (existsSync(segPath)) return false // Cached on disk — serve it
+    return segmentNumber > this.highestReady + SEEK_THRESHOLD
+      && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD
+  }
+
+  /**
    * Schedule a debounced seek. Multiple rapid seek requests (e.g. HLS.js
    * requesting segments 724, 984, 1250 in quick succession) are collapsed
    * into a single ffmpeg restart at the LOWEST requested position — so that
