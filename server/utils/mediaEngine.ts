@@ -193,15 +193,26 @@ class FFmpegSession {
   }
 
   /**
-   * Check if a segment is far ahead of what ffmpeg is producing and NOT cached.
-   * Used by the segment endpoint to return an empty 200 instantly instead of
-   * blocking the connection — lets HLS.js skip and load nearby segments.
+   * Check if a segment is unavailable and won't be produced soon.
+   * Returns true for segments that are:
+   * - Not cached on disk AND
+   * - Either far ahead of ffmpeg OR behind ffmpeg's start position
+   * The segment endpoint uses this to return empty 200 instantly —
+   * HLS.js processes the empty segment (0 frames), skips it, and
+   * loads the next nearby fragment that IS available.
    */
-  isSegmentFarAhead(segmentNumber: number): boolean {
+  isSegmentUnavailable(segmentNumber: number): boolean {
     const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
     if (existsSync(segPath)) return false // Cached on disk — serve it
-    return segmentNumber > this.highestReady + SEEK_THRESHOLD
-      && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD
+
+    // Behind ffmpeg's start position (won't be produced)
+    if (segmentNumber < this.currentStartSegment - 5) return true
+
+    // Far ahead of ffmpeg's progress (would take too long)
+    if (segmentNumber > this.highestReady + SEEK_THRESHOLD
+        && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD) return true
+
+    return false // Within production range — let getSegment wait for it
   }
 
   /**
@@ -391,15 +402,14 @@ class FFmpegSession {
   }
 
   /**
-   * Generate the VOD variant playlist with GAP markers for unavailable segments.
-   * Segments behind currentStartSegment that aren't cached on disk are marked
-   * as GAP so HLS.js skips them (prevents infinite 404 retry loops).
-   * Segments ahead of ffmpeg are NOT marked as GAP — the 8s timeout handles them.
+   * Generate the VOD variant playlist. No GAP markers — they become stale
+   * after seeks (playlist is cached by HLS.js). Unavailable segments are
+   * handled by isSegmentAvailable() returning empty 200 in the endpoint.
    */
   variantPlaylist(): string {
     const lines: string[] = [
       '#EXTM3U',
-      '#EXT-X-VERSION:6',
+      '#EXT-X-VERSION:3',
       `#EXT-X-TARGETDURATION:${SEGMENT_DURATION}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
       '#EXT-X-PLAYLIST-TYPE:VOD',
@@ -409,17 +419,6 @@ class FFmpegSession {
     for (let i = 0; i < this.totalSegments; i++) {
       const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
       lines.push(`#EXTINF:${segDur.toFixed(3)},`)
-
-      // Mark segments BEHIND ffmpeg that aren't cached as GAP.
-      // This prevents HLS.js from requesting segments that will never
-      // be produced (e.g. segment 300 when ffmpeg is at 639).
-      if (i < this.currentStartSegment) {
-        const segPath = join(this.outputDir, `segment-${i}.ts`)
-        if (!existsSync(segPath)) {
-          lines.push('#EXT-X-GAP')
-        }
-      }
-
       lines.push(`segment-${i}.ts`)
     }
 
