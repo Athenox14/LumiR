@@ -277,6 +277,13 @@ class FFmpegSession {
       args.push('-c:a', 'copy')
     }
 
+    // Force A/V sync — prevents video rollbacks where audio continues
+    // but video jumps backward (common with -ss input seeking on AVI)
+    args.push('-max_muxing_queue_size', '1024')
+    if (startTime > 0) {
+      args.push('-avoid_negative_ts', 'make_zero')
+    }
+
     // HLS output
     args.push(
       '-f', 'hls',
