@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { db } from '../db'
+import { recordUserActivity } from '../utils/activityTracker'
 
 export interface User {
   id: string
@@ -22,6 +23,8 @@ export async function createContext(event: H3Event): Promise<Context> {
     const session = await getUserSession(event)
     if (session?.user) {
       user = session.user as User
+      // Track user activity for auto-update system
+      recordUserActivity(user.id)
     }
   } catch {
     // No session, user remains null

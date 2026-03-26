@@ -391,11 +391,6 @@ export default {
     bugReportEnabledDesc: 'Allow users to report bugs via the interface',
     bugReportWebhook: 'Discord webhook URL',
     bugReportWebhookDesc: 'Bug reports will be sent to this Discord channel',
-    deferredUpdates: 'Deferred updates',
-    updateScheduleEnabled: 'Schedule updates',
-    updateScheduleEnabledDesc: 'Install updates at a specific time instead of immediately',
-    updateScheduleHour: 'Update hour',
-    updateScheduleHourDesc: 'Hour of the day to install updates (0-23)',
   },
 
   // Admin update
