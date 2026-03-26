@@ -52,6 +52,9 @@ const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let hlsInstance: HlsJS | null = null
+// Suppress onSeeking during initial load — HLS.js fires seeking events
+// as it positions the player, which would trigger spurious preheat-seeks
+let playerReady = false
 
 // ─── Timeline hover preheat ──────────────────────────────────────────────────
 // When user hovers over the timeline, preemptively tell the server to prepare
@@ -207,11 +210,13 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       const MAX_MEDIA_RETRIES = 3
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
         if (data.fatal) {
-          console.warn('[HLS] Fatal error, attempting recovery:', data.type, data.details)
+          // Get the current playback position to resume from (NOT from 0!)
+          const resumePos = playerRef.value?.currentTime || startPos || 0
+          console.warn('[HLS] Fatal error, recovery from', resumePos, 's:', data.type, data.details)
           if (data.type === 'networkError' && networkRetries < MAX_NETWORK_RETRIES) {
             networkRetries++
-            // Delay retry slightly to let server-side ffmpeg catch up after seek
-            setTimeout(() => hls.startLoad(), 1000)
+            // Resume loading from current position, not from the beginning
+            setTimeout(() => hls.startLoad(resumePos), 1000)
           } else if (data.type === 'mediaError' && mediaRetries < MAX_MEDIA_RETRIES) {
             mediaRetries++
             hls.recoverMediaError()
@@ -235,6 +240,8 @@ function onCanPlay() {
     player.currentTime = targetPos
   }
   pendingSeekPosition.value = null
+  // Now safe to handle user-initiated seeks
+  playerReady = true
 }
 
 // When user actually seeks (releases slider, clicks timeline), tell the
@@ -243,6 +250,9 @@ function onCanPlay() {
 function onSeeking() {
   const player = playerRef.value
   if (!player || !props.src.includes('.m3u8')) return
+  // Ignore seeking events during initial load — HLS.js fires these as it
+  // positions the player. Only handle user-initiated seeks after canPlay.
+  if (!playerReady) return
   preheatSeek(player.currentTime, true)
 }
 
