@@ -371,33 +371,53 @@ class FFmpegSession {
     ].join('\n')
   }
 
-  /** Generate the full VOD variant playlist (all segments listed upfront) */
+  /**
+   * Generate the variant playlist.
+   * Uses EVENT type (not VOD) so HLS.js reloads it periodically.
+   * Only lists segments that exist or are being produced — prevents
+   * HLS.js from requesting far-ahead segments that block playback.
+   */
   variantPlaylist(): string {
+    // Determine which segments to include:
+    // - Segments on disk from any previous run (cached)
+    // - Segments from currentStartSegment to highestReady + buffer
+    const buffer = 10 // segments beyond highestReady to include
+    const lastIncluded = Math.min(
+      this.totalSegments - 1,
+      Math.max(this.highestReady + buffer, this.currentStartSegment + buffer)
+    )
+    const isComplete = !this.process && this.highestReady >= this.totalSegments - 2
+
     const lines: string[] = [
       '#EXTM3U',
       '#EXT-X-VERSION:6',
       `#EXT-X-TARGETDURATION:${SEGMENT_DURATION}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
-      '#EXT-X-PLAYLIST-TYPE:VOD',
+      '#EXT-X-PLAYLIST-TYPE:EVENT',
     ]
 
     const remaining = this.probe.duration
     for (let i = 0; i < this.totalSegments; i++) {
       const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
       lines.push(`#EXTINF:${segDur.toFixed(3)},`)
-      // Mark segments that don't exist and won't be produced as GAPs.
-      // HLS.js skips GAP fragments instead of requesting them.
-      // A segment exists if: it's on disk OR ffmpeg is producing it (>= currentStartSegment).
-      if (i < this.currentStartSegment) {
-        const segPath = join(this.outputDir, `segment-${i}.ts`)
-        if (!existsSync(segPath)) {
-          lines.push('#EXT-X-GAP')
-        }
+
+      // Mark unavailable segments as GAP so HLS.js skips them
+      const segPath = join(this.outputDir, `segment-${i}.ts`)
+      const onDisk = existsSync(segPath)
+      const inProduction = i >= this.currentStartSegment && i <= lastIncluded
+
+      if (!onDisk && !inProduction) {
+        lines.push('#EXT-X-GAP')
       }
+
       lines.push(`segment-${i}.ts`)
     }
 
-    lines.push('#EXT-X-ENDLIST')
+    // Only add ENDLIST when ffmpeg has finished the entire file
+    if (isComplete) {
+      lines.push('#EXT-X-ENDLIST')
+    }
+
     return lines.join('\n')
   }
 
