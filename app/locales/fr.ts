@@ -560,6 +560,7 @@ export default {
     success: 'Signalement envoyé avec succès',
     failed: 'Échec de l\'envoi du signalement',
     disabled: 'Le signalement de bugs est désactivé',
+    pageLabel: 'Page',
   },
 
   // Media edit
@@ -571,6 +572,11 @@ export default {
     genresHint: 'Séparés par des virgules',
     saved: 'Modifications enregistrées',
     saveFailed: 'Échec de l\'enregistrement',
+    titleLabel: 'Titre',
+    year: 'Année',
+    runtime: 'Durée (minutes)',
+    rating: 'Note',
+    fileType: 'Type de fichier',
   },
 
   // Language selector

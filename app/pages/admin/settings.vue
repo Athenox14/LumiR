@@ -29,6 +29,100 @@ const bugReportWebhookUrl = ref('')
 const updateScheduleEnabled = ref(false)
 const updateScheduleHour = ref(3)
 
+// Announcements
+const announcementsLoading = ref(false)
+const announcementsError = ref('')
+const showAnnouncementForm = ref(false)
+const editingAnnouncementId = ref<string | null>(null)
+const announcementForm = ref({
+  message: '',
+  type: 'info' as 'info' | 'warning' | 'success' | 'error',
+  dismissible: true,
+})
+
+const { data: announcements, refresh: refreshAnnouncements } = useAsyncData(
+  'settings-announcements',
+  () => trpc.announcements.getAll.query()
+)
+
+function openCreateAnnouncement() {
+  editingAnnouncementId.value = null
+  announcementForm.value = { message: '', type: 'info', dismissible: true }
+  announcementsError.value = ''
+  showAnnouncementForm.value = true
+}
+
+function openEditAnnouncement(a: any) {
+  editingAnnouncementId.value = a.id
+  announcementForm.value = { message: a.message, type: a.type, dismissible: a.dismissible }
+  announcementsError.value = ''
+  showAnnouncementForm.value = true
+}
+
+function cancelAnnouncementForm() {
+  showAnnouncementForm.value = false
+  editingAnnouncementId.value = null
+  announcementsError.value = ''
+}
+
+async function saveAnnouncement() {
+  if (!announcementForm.value.message.trim()) return
+  announcementsLoading.value = true
+  announcementsError.value = ''
+  try {
+    if (editingAnnouncementId.value) {
+      await trpc.announcements.update.mutate({
+        id: editingAnnouncementId.value,
+        message: announcementForm.value.message,
+        type: announcementForm.value.type,
+        dismissible: announcementForm.value.dismissible,
+      })
+    } else {
+      await trpc.announcements.create.mutate({
+        message: announcementForm.value.message,
+        type: announcementForm.value.type,
+        dismissible: announcementForm.value.dismissible,
+      })
+    }
+    showAnnouncementForm.value = false
+    editingAnnouncementId.value = null
+    await refreshAnnouncements()
+  } catch (e: any) {
+    announcementsError.value = e.message || 'Failed to save'
+  } finally {
+    announcementsLoading.value = false
+  }
+}
+
+async function deleteAnnouncement(id: string) {
+  if (!window.confirm(t('announcements.deleteConfirm'))) return
+  try {
+    await trpc.announcements.delete.mutate({ id })
+    await refreshAnnouncements()
+  } catch (e: any) {
+    useToast().error(e.message)
+  }
+}
+
+async function toggleAnnouncementActive(a: any) {
+  try {
+    await trpc.announcements.update.mutate({ id: a.id, active: !a.active })
+    await refreshAnnouncements()
+  } catch (e: any) {
+    useToast().error(e.message)
+  }
+}
+
+function getAnnouncementBadgeClass(type: string) {
+  switch (type) {
+    case 'info': return 'bg-blue-500/10 text-blue-500'
+    case 'warning': return 'bg-yellow-500/10 text-yellow-500'
+    case 'success': return 'bg-green-500/10 text-green-500'
+    case 'error': return 'bg-red-500/10 text-red-500'
+    default: return 'bg-gray-500/10 text-gray-400'
+  }
+}
+
 // Load settings
 const { data: settings, pending } = useAsyncData('settings', async () => {
   const data = await trpc.settings.getAll.query()
@@ -322,6 +416,114 @@ async function saveSettings() {
               </p>
             </template>
           </UiInput>
+        </div>
+      </div>
+
+      <!-- Announcements -->
+      <div class="mb-6 p-6 bg-surface border border-border rounded-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold text-text-primary">{{ t('announcements.title') }}</h3>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+            @click="openCreateAnnouncement"
+          >
+            {{ t('announcements.create') }}
+          </button>
+        </div>
+
+        <!-- Inline create/edit form -->
+        <div v-if="showAnnouncementForm" class="p-4 bg-background border border-border rounded-lg space-y-3">
+          <div>
+            <label class="block text-sm font-medium text-text-primary mb-1">{{ t('announcements.message') }}</label>
+            <textarea
+              v-model="announcementForm.message"
+              rows="2"
+              class="w-full px-3 py-2 bg-surface border border-border rounded-lg text-text-primary text-sm placeholder:text-text-muted focus:outline-none focus:border-primary resize-none"
+            />
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="flex-1">
+              <label class="block text-xs font-medium text-text-primary mb-1">{{ t('announcements.type') }}</label>
+              <select
+                v-model="announcementForm.type"
+                class="w-full px-3 py-1.5 bg-surface border border-border rounded-lg text-text-primary text-sm focus:outline-none focus:border-primary"
+              >
+                <option value="info">{{ t('announcements.info') }}</option>
+                <option value="warning">{{ t('announcements.warning') }}</option>
+                <option value="success">{{ t('announcements.success') }}</option>
+                <option value="error">{{ t('announcements.error') }}</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2 pt-4">
+              <label class="text-xs text-text-primary">{{ t('announcements.dismissible') }}</label>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input v-model="announcementForm.dismissible" type="checkbox" class="sr-only peer">
+                <div class="w-9 h-5 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
+              </label>
+            </div>
+          </div>
+          <div v-if="announcementsError" class="text-xs text-red-500">{{ announcementsError }}</div>
+          <div class="flex items-center gap-2 justify-end">
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              @click="cancelAnnouncementForm"
+            >
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary/90 rounded-lg transition-colors"
+              :disabled="announcementsLoading || !announcementForm.message.trim()"
+              @click="saveAnnouncement"
+            >
+              {{ t('common.save') }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Announcements list -->
+        <div v-if="!announcements?.length && !showAnnouncementForm" class="text-sm text-text-muted text-center py-3">
+          {{ t('announcements.noAnnouncements') }}
+        </div>
+        <div v-else-if="announcements?.length" class="divide-y divide-border border border-border rounded-lg">
+          <div
+            v-for="a in announcements"
+            :key="a.id"
+            class="flex items-center justify-between px-4 py-3"
+          >
+            <div class="flex-1 min-w-0 mr-3">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span :class="['px-2 py-0.5 rounded text-xs font-medium', getAnnouncementBadgeClass(a.type)]">
+                  {{ t(`announcements.${a.type}`) }}
+                </span>
+                <span v-if="!a.active" class="px-2 py-0.5 rounded text-xs font-medium bg-gray-500/10 text-gray-400">
+                  {{ t('announcements.active') }}: off
+                </span>
+              </div>
+              <p class="text-sm text-text-primary truncate">{{ a.message }}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+              <!-- Active toggle -->
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" :checked="a.active" class="sr-only peer" @change="toggleAnnouncementActive(a)">
+                <div class="w-9 h-5 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all" />
+              </label>
+              <!-- Edit -->
+              <button type="button" class="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-secondary transition-colors" @click="openEditAnnouncement(a)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <!-- Delete -->
+              <button type="button" class="p-1.5 rounded-lg text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors" @click="deleteAnnouncement(a.id)">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
