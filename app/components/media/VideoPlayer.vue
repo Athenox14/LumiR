@@ -215,6 +215,38 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         }
       })
 
+      // CRITICAL: Block HLS.js's VOD binary search probe.
+      // After a seek, HLS.js loads the target fragment then a fragment
+      // ~150 segments ahead (binary search). We intercept FRAG_LOADING
+      // and cancel+restart when the fragment is too far from playback.
+      // On restart (startLoad from IDLE), HLS.js loads sequentially.
+      let lastBlockedSn = -1
+      let blockCount = 0
+      hls.on(hls.constructor.Events.FRAG_LOADING, (_event: any, data: any) => {
+        const fragSn = data.frag?.sn
+        if (typeof fragSn !== 'number') return
+        const player = playerRef.value
+        const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
+        if (fragSn > currentSeg + 25) {
+          // Prevent infinite loop: if same fragment blocked >3 times, let it through
+          if (fragSn === lastBlockedSn) {
+            blockCount++
+            if (blockCount > 3) return
+          } else {
+            lastBlockedSn = fragSn
+            blockCount = 0
+          }
+          console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (current: ${currentSeg})`)
+          hls.stopLoad()
+          const pos = player?.currentTime || startPos || 0
+          setTimeout(() => hls.startLoad(pos), 50)
+        } else {
+          // Reset block counter when loading a nearby fragment
+          lastBlockedSn = -1
+          blockCount = 0
+        }
+      })
+
       // Recover from fatal errors with circuit breaker.
       // If the same fragment keeps failing, skip it and restart
       // sequential loading from the current playback position.
@@ -279,34 +311,14 @@ function onCanPlay() {
   playerReady = true
 }
 
-// When user actually seeks, take control of HLS.js loading to prevent
-// its VOD binary-search algorithm from requesting segments ~100+ ahead.
-// Sequence: stopLoad → preheat server → startLoad(pos) → sequential load.
+// When user actually seeks, tell the server to start producing at the
+// new position. The FRAG_LOADING interceptor handles canceling far-ahead
+// binary search probes on the HLS.js side.
 function onSeeking() {
   const player = playerRef.value
   if (!player || !props.src.includes('.m3u8')) return
   if (!playerReady) return
-
-  const seekPos = player.currentTime
-
-  // 1. STOP HLS.js loading immediately — kills any pending fragment
-  //    requests including the binary-search probes
-  if (hlsInstance) {
-    hlsInstance.stopLoad()
-  }
-
-  // 2. Tell server to start producing at new position
-  preheatSeek(seekPos, true)
-
-  // 3. Restart loading in sequential mode after server starts ffmpeg
-  //    stopLoad + startLoad = fresh sequential load, no binary search
-  if (hlsInstance) {
-    setTimeout(() => {
-      if (hlsInstance) {
-        hlsInstance.startLoad(seekPos)
-      }
-    }, 300) // 300ms for preheat-seek to reach server
-  }
+  preheatSeek(player.currentTime, true)
 }
 
 function onError() {
