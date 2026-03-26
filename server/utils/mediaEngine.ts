@@ -375,7 +375,7 @@ class FFmpegSession {
   variantPlaylist(): string {
     const lines: string[] = [
       '#EXTM3U',
-      '#EXT-X-VERSION:3',
+      '#EXT-X-VERSION:6',
       `#EXT-X-TARGETDURATION:${SEGMENT_DURATION}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
       '#EXT-X-PLAYLIST-TYPE:VOD',
@@ -385,6 +385,15 @@ class FFmpegSession {
     for (let i = 0; i < this.totalSegments; i++) {
       const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
       lines.push(`#EXTINF:${segDur.toFixed(3)},`)
+      // Mark segments that don't exist and won't be produced as GAPs.
+      // HLS.js skips GAP fragments instead of requesting them.
+      // A segment exists if: it's on disk OR ffmpeg is producing it (>= currentStartSegment).
+      if (i < this.currentStartSegment) {
+        const segPath = join(this.outputDir, `segment-${i}.ts`)
+        if (!existsSync(segPath)) {
+          lines.push('#EXT-X-GAP')
+        }
+      }
       lines.push(`segment-${i}.ts`)
     }
 
