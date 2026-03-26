@@ -9,7 +9,7 @@
  */
 
 import { execSync, spawn, type ChildProcess } from 'child_process'
-import { createReadStream, existsSync, statSync, type ReadStream } from 'fs'
+import { createReadStream, existsSync, statSync, readdirSync, unlinkSync, type ReadStream } from 'fs'
 import { mkdir, rm, readFile, readdir } from 'fs/promises'
 import { dirname, extname, join } from 'path'
 import { tmpdir } from 'os'
@@ -163,7 +163,7 @@ class FFmpegSession {
   private process: ChildProcess | null = null
   private outputDir: string
   private totalSegments: number
-  private highestReady = -1
+  highestReady = -1
   private disposeTimer: ReturnType<typeof setTimeout> | null = null
   currentStartSegment = 0
   private decision: PlaybackDecision | null = null
@@ -260,19 +260,16 @@ class FFmpegSession {
     this.isStarting = true
     this.stderrLog = ''
 
-    // Clean stale segment files from previous ffmpeg runs.
-    // Without this, HLS.js loads cached segments with wrong timestamps
-    // (from different -ss positions), polluting the MSE source buffer.
-    // This makes HLS.js think large portions are buffered → it skips
-    // ahead to find the next "gap" → loads segment 1066 instead of 579.
+    // Clean ALL segment files from previous runs.
     try {
-      const { readdirSync, unlinkSync } = await import('fs')
       const files = readdirSync(this.outputDir)
+      let cleaned = 0
       for (const file of files) {
         if (file.match(/^segment-\d+\.ts(\.tmp)?$/)) {
-          try { unlinkSync(join(this.outputDir, file)) } catch {}
+          try { unlinkSync(join(this.outputDir, file)); cleaned++ } catch {}
         }
       }
+      if (cleaned > 0) console.log(`[MediaEngine] Cleaned ${cleaned} stale segments`)
     } catch {} // Directory might not exist yet
 
     // Ensure output directory
