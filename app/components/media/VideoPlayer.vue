@@ -149,11 +149,11 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       testBandwidth: false,
       abrEwmaDefaultEstimate: 500_000_000,
       maxFragLookUpTolerance: 0.1,
-      // CRITICAL: Redirect far-ahead fragment requests to a nearby segment.
-      // HLS.js's VOD seek algo binary-searches ~100+ segments ahead,
-      // blocking the pipeline. By redirecting the XHR to a nearby segment,
-      // HLS.js gets valid TS data instantly → marks it as loaded → moves
-      // to the next sequential fragment near the playback position.
+      // Abort far-ahead fragment requests after 50ms. HLS.js's VOD seek
+      // binary-searches ~100 segments ahead. We can't redirect (corrupts
+      // timeline), can't serve fake TS (parsing errors), can't wait
+      // (blocks 60s). Aborting is the only safe option — the circuit
+      // breaker restarts sequential loading after 3 aborts.
       xhrSetup: (xhr: XMLHttpRequest, url: string) => {
         const segMatch = url.match(/segment-(\d+)\.ts/)
         if (segMatch) {
@@ -161,10 +161,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           const player = playerRef.value
           const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
           if (segNum > currentSeg + 25) {
-            // Re-open XHR with the URL of a nearby segment instead
-            const nearSeg = currentSeg + 1
-            const newUrl = url.replace(`segment-${segNum}.ts`, `segment-${nearSeg}.ts`)
-            xhr.open('GET', newUrl, true)
+            setTimeout(() => { try { xhr.abort() } catch {} }, 50)
           }
         }
       },
@@ -235,8 +232,8 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       })
 
       // Recover from fatal errors with circuit breaker.
-      // If the same fragment keeps failing, stop retrying to avoid
-      // infinite loops (e.g. segment 300 behind ffmpeg → 404 → retry loop).
+      // If the same fragment keeps failing, skip it and restart
+      // sequential loading from the current playback position.
       let networkRetries = 0
       let mediaRetries = 0
       let lastErrorFrag = -1
@@ -246,12 +243,21 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
         if (data.fatal) {
           const fragSn = data.frag?.sn ?? -1
-          // Circuit breaker: detect infinite retry on the same fragment
+          // Circuit breaker: detect same fragment failing repeatedly
           if (fragSn === lastErrorFrag) {
             sameFragErrors++
             if (sameFragErrors > 2) {
-              console.warn('[HLS] Circuit breaker: stuck on fragment', fragSn, '- stopping retries')
-              return // Give up on this fragment
+              console.warn('[HLS] Circuit breaker: skipping fragment', fragSn, '→ restarting from current pos')
+              // Reset state and restart sequential loading
+              sameFragErrors = 0
+              lastErrorFrag = -1
+              networkRetries = 0
+              mediaRetries = 0
+              const pos = playerRef.value?.currentTime || startPos || 0
+              // recoverMediaError resets the transmuxer state
+              hls.recoverMediaError()
+              setTimeout(() => hls.startLoad(pos), 200)
+              return
             }
           } else {
             lastErrorFrag = fragSn
