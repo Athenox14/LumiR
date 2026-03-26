@@ -260,6 +260,21 @@ class FFmpegSession {
     this.isStarting = true
     this.stderrLog = ''
 
+    // Clean stale segment files from previous ffmpeg runs.
+    // Without this, HLS.js loads cached segments with wrong timestamps
+    // (from different -ss positions), polluting the MSE source buffer.
+    // This makes HLS.js think large portions are buffered → it skips
+    // ahead to find the next "gap" → loads segment 1066 instead of 579.
+    try {
+      const { readdirSync, unlinkSync } = await import('fs')
+      const files = readdirSync(this.outputDir)
+      for (const file of files) {
+        if (file.match(/^segment-\d+\.ts(\.tmp)?$/)) {
+          try { unlinkSync(join(this.outputDir, file)) } catch {}
+        }
+      }
+    } catch {} // Directory might not exist yet
+
     // Ensure output directory
     await mkdir(this.outputDir, { recursive: true })
 
