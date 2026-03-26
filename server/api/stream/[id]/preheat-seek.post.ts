@@ -18,8 +18,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Media ID is required' })
   }
 
-  const body = await readBody<{ position?: number }>(event)
+  const body = await readBody<{ position?: number, force?: boolean }>(event)
   const position = body?.position
+  const force = body?.force === true
 
   if (typeof position !== 'number' || position < 0) {
     throw createError({ statusCode: 400, message: 'Valid position (seconds) is required' })
@@ -43,7 +44,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const knownDuration = mediaItem.runtime ? mediaItem.runtime * 60 : undefined
-    await MediaEngine.preheatSeek(mediaItem.filePath, id, position, knownDuration)
+    await MediaEngine.preheatSeek(mediaItem.filePath, id, position, knownDuration, force)
     return { preheated: true, position }
   } catch (err: any) {
     console.error(`[MediaEngine] Preheat seek failed for ${id}:`, err.message)

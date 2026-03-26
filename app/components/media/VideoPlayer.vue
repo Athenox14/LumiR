@@ -62,7 +62,7 @@ let playerReady = false
 let lastPreheatSegment = -1
 let preheatDebounce: ReturnType<typeof setTimeout> | null = null
 
-function preheatSeek(positionSec: number, immediate = false) {
+function preheatSeek(positionSec: number, force = false) {
   // Only for HLS streams (non-native)
   if (!props.src.includes('.m3u8')) return
 
@@ -74,11 +74,13 @@ function preheatSeek(positionSec: number, immediate = false) {
   const doFetch = () => {
     $fetch(`/api/stream/${props.mediaId}/preheat-seek`, {
       method: 'POST',
-      body: { position: positionSec },
+      // force=true only for actual user seeks — allows killing running ffmpeg
+      // force=false for hover — only starts ffmpeg if not running
+      body: { position: positionSec, force },
     }).catch(() => {}) // Best-effort, ignore errors
   }
 
-  if (immediate) {
+  if (force) {
     // User actually seeked — fire immediately, no debounce
     if (preheatDebounce) clearTimeout(preheatDebounce)
     doFetch()
