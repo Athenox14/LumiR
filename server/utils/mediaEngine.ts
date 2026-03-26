@@ -370,6 +370,13 @@ class FFmpegSession {
       '#EXT-X-PLAYLIST-TYPE:VOD',
     ]
 
+    // Tell HLS.js where to start playback — this is more reliable than
+    // the startPosition config option which vidstack may not apply.
+    if (this.currentStartSegment > 0) {
+      const startOffset = this.currentStartSegment * SEGMENT_DURATION
+      lines.push(`#EXT-X-START:TIME-OFFSET=${startOffset.toFixed(3)},PRECISE=YES`)
+    }
+
     const remaining = this.probe.duration
     for (let i = 0; i < this.totalSegments; i++) {
       const segDur = Math.min(SEGMENT_DURATION, remaining - i * SEGMENT_DURATION)
