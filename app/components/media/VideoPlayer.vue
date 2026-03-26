@@ -189,16 +189,19 @@ function onProviderChange(event: MediaProviderChangeEvent) {
     provider.onInstance((hls) => {
       hlsInstance = hls
 
-      // Force original quality and ensure correct start position
+      // Force original quality and ensure correct start position.
+      // Only run ONCE — MANIFEST_PARSED can fire multiple times (e.g.
+      // after error recovery). A second startLoad() resets HLS.js state
+      // and can cause premature "ended" events.
+      let manifestHandled = false
       hls.on(hls.constructor.Events.MANIFEST_PARSED, () => {
+        if (manifestHandled) return
+        manifestHandled = true
+
         if (hls.levels.length > 0) {
           hls.currentLevel = hls.levels.length - 1
           console.log(`[HLS] Forced original quality (level ${hls.levels.length - 1} of ${hls.levels.length})`)
         }
-        // Force-restart loading at the correct position. The config
-        // startPosition may be ignored by vidstack, and #EXT-X-START in
-        // the playlist may not be honoured by all HLS.js versions.
-        // hls.startLoad(seconds) is the most reliable way.
         if (startPos > 0) {
           console.log(`[HLS] Forcing startLoad at ${startPos}s`)
           hls.startLoad(startPos)
