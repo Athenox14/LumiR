@@ -111,6 +111,35 @@ async function updateUser() {
   }
 }
 
+function canImpersonate(user: any) {
+  // Can't impersonate yourself
+  if (user.id === currentUser.value?.id) return false
+  // Can't impersonate super_admin
+  if (user.role === 'super_admin') return false
+  // Only super_admin can impersonate admins
+  if (user.role === 'admin' && currentUser.value?.role !== 'super_admin') return false
+  return true
+}
+
+async function impersonateUser(user: any) {
+  const { confirm } = useConfirmDialog()
+  const ok = await confirm({
+    title: t('adminUsers.impersonate'),
+    message: t('adminUsers.impersonateConfirm', { name: user.displayName }),
+  })
+  if (!ok) return
+
+  try {
+    await trpc.users.impersonate.mutate({ userId: user.id })
+    // Refresh session then redirect to home
+    const { fetchUser } = useAuth()
+    await fetchUser()
+    await navigateTo('/')
+  } catch (e: any) {
+    useToast().error(e.message || 'Failed to impersonate user')
+  }
+}
+
 async function deleteUser(userId: string) {
   const { confirm } = useConfirmDialog()
   const ok = await confirm({ title: t('common.confirm'), message: t('adminUsers.confirmDelete') })
@@ -243,6 +272,17 @@ function getRoleBadgeClass(role: string) {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
             </NuxtLink>
+            <button
+              v-if="canImpersonate(user)"
+              type="button"
+              class="p-2 rounded-lg text-text-muted hover:text-amber-500 hover:bg-amber-500/10 transition-colors"
+              :title="t('adminUsers.impersonate')"
+              @click="impersonateUser(user)"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+            </button>
             <button
               type="button"
               class="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-secondary transition-colors"

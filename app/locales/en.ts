@@ -290,6 +290,8 @@ export default {
     saveChanges: 'Save Changes',
     viewProfile: 'View profile',
     publicProfile: 'Public profile',
+    impersonate: 'Login as',
+    impersonateConfirm: 'Login as {name}?',
   },
 
   // Admin dashboard tools

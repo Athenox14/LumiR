@@ -290,6 +290,8 @@ export default {
     saveChanges: 'Änderungen speichern',
     viewProfile: 'Profil anzeigen',
     publicProfile: 'Öffentliches Profil',
+    impersonate: 'Anmelden als',
+    impersonateConfirm: 'Als {name} anmelden?',
   },
 
   // Admin dashboard tools
