@@ -1,20 +1,22 @@
 <script setup lang="ts">
 const { t } = useI18n()
-const trpc = useTrpc()
 const toast = useToast()
-const route = useRoute()
 
 const showModal = ref(false)
 const title = ref('')
 const description = ref('')
 const page = ref('')
 const submitting = ref(false)
+
 // Check if bug reporting is enabled
 const { data: isEnabled } = useAsyncData('bug-report-enabled', () =>
-  trpc.bugReport.isEnabled.query()
+  useTrpc().bugReport.isEnabled.query()
 )
 
 const enabled = computed(() => isEnabled.value?.enabled === true)
+
+const { submitReport, logs } = useBugReport()
+const logCount = computed(() => logs.length)
 
 function openModal() {
   title.value = ''
@@ -23,20 +25,22 @@ function openModal() {
   showModal.value = true
 }
 
-async function submitReport() {
+async function submitBugReport() {
   if (submitting.value || !title.value.trim()) return
   submitting.value = true
   try {
-    await trpc.bugReport.submit.mutate({
+    await submitReport({
       title: title.value.trim(),
       description: description.value.trim(),
       page: page.value,
     })
     toast.success(t('bugReport.submitted'))
     showModal.value = false
-  } catch (e: any) {
+  }
+  catch (e: any) {
     toast.error(e.message || t('bugReport.submitError'))
-  } finally {
+  }
+  finally {
     submitting.value = false
   }
 }
@@ -58,7 +62,7 @@ async function submitReport() {
 
   <!-- Bug report modal -->
   <UiModal v-model="showModal" :title="t('bugReport.title')" size="md">
-    <form class="space-y-4" @submit.prevent="submitReport">
+    <form class="space-y-4" @submit.prevent="submitBugReport">
       <UiInput
         v-model="title"
         :label="t('bugReport.titleLabel')"
@@ -83,6 +87,10 @@ async function submitReport() {
         :label="t('bugReport.pageLabel')"
         disabled
       />
+
+      <p class="text-xs text-text-muted">
+        {{ t('bugReport.logsNote', { count: logCount }) }}
+      </p>
     </form>
 
     <template #footer>
@@ -96,7 +104,7 @@ async function submitReport() {
       <UiButton
         :loading="submitting"
         :disabled="!title.trim()"
-        @click="submitReport"
+        @click="submitBugReport"
       >
         {{ t('bugReport.submit') }}
       </UiButton>
