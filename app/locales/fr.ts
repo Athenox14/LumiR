@@ -550,6 +550,7 @@ export default {
   bugReport: {
     title: 'Signaler un bug',
     description: 'Description',
+    descriptionLabel: 'Description',
     descriptionPlaceholder: 'Décrivez le problème...',
     titleLabel: 'Titre',
     titlePlaceholder: 'Résumé bref du problème',
@@ -558,6 +559,7 @@ export default {
     failed: 'Échec de l\'envoi du signalement',
     disabled: 'Le signalement de bugs est désactivé',
     pageLabel: 'Page',
+    logsNote: '{count} log(s) console seront joints à ce signalement.',
   },
 
   // Media edit
