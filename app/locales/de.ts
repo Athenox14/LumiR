@@ -559,7 +559,7 @@ export default {
     failed: 'Bericht konnte nicht gesendet werden',
     disabled: 'Fehlermeldung ist deaktiviert',
     pageLabel: 'Seite',
-    logsNote: '{count} Konsolenprotokoll(e) werden diesem Bericht beigefügt.',
+    serverLogsNote: 'Aktuelle Server-Logs werden diesem Bericht automatisch beigefügt.',
   },
 
   // Media edit

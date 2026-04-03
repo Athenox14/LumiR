@@ -4,12 +4,7 @@ import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
 import { settings } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-
-const logEntrySchema = z.object({
-  level: z.enum(['error', 'warn']),
-  message: z.string(),
-  timestamp: z.string(),
-})
+import { serverLogs } from '../../utils/serverLogger'
 
 const clientInfoSchema = z.object({
   userAgent: z.string().optional(),
@@ -23,14 +18,15 @@ function truncate(str: string, max: number) {
   return str.length > max ? str.slice(0, max - 1) + '…' : str
 }
 
-function formatLogs(logs: z.infer<typeof logEntrySchema>[]): string {
-  if (!logs.length) return '_No logs captured_'
-  return logs
-    .slice(-15)
+function formatServerLogs(): string {
+  const recent = serverLogs.slice(-20)
+  if (!recent.length) return '_No server logs captured_'
+
+  const icons: Record<string, string> = { error: '🔴', warn: '🟡', log: '⚪' }
+  return recent
     .map((l) => {
       const time = l.timestamp.slice(11, 19) // HH:MM:SS
-      const tag = l.level === 'error' ? '🔴' : '🟡'
-      return `${tag} \`${time}\` ${l.message.slice(0, 200)}`
+      return `${icons[l.level] ?? '⚪'} \`${time}\` ${l.message.slice(0, 200)}`
     })
     .join('\n')
 }
@@ -56,7 +52,6 @@ export const bugReportRouter = router({
       page: z.string().optional(),
       errorStack: z.string().optional(),
       automatic: z.boolean().optional(),
-      logs: z.array(logEntrySchema).optional(),
       clientInfo: clientInfoSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -130,12 +125,11 @@ export const bugReportRouter = router({
         })
       }
 
-      if (input.logs && input.logs.length > 0) {
-        fields.push({
-          name: `Recent Logs (last ${Math.min(input.logs.length, 15)})`,
-          value: truncate(formatLogs(input.logs), 1024),
-        })
-      }
+      // Always include the last server logs
+      fields.push({
+        name: `Server Logs (last ${Math.min(serverLogs.length, 20)})`,
+        value: truncate(formatServerLogs(), 1024),
+      })
 
       // Build Discord embed
       const embed = {
