@@ -10,10 +10,10 @@
 
 import { execSync, spawn, type ChildProcess } from 'child_process'
 import { createReadStream, existsSync, statSync, readdirSync, unlinkSync, type ReadStream } from 'fs'
-import { mkdir, rm, readFile, readdir } from 'fs/promises'
-import { dirname, extname, join } from 'path'
+import { mkdir, rm } from 'fs/promises'
+import { basename, dirname, extname, join } from 'path'
 import { tmpdir } from 'os'
-import Ffmpeg from 'fluent-ffmpeg'
+import { watch, type FSWatcher } from 'chokidar'
 
 // ─── Binary resolution ───────────────────────────────────────────────────────
 
@@ -51,8 +51,6 @@ async function ensureBinaries() {
   if (_pathsReady) return
   _ffmpegPath = await resolveBinary('ffmpeg')
   _ffprobePath = await resolveBinary('ffprobe')
-  if (_ffmpegPath) Ffmpeg.setFfmpegPath(_ffmpegPath)
-  if (_ffprobePath) Ffmpeg.setFfprobePath(_ffprobePath)
   _pathsReady = true
   console.log(`[MediaEngine] Binaries: ffmpeg=${_ffmpegPath ? 'OK' : 'MISSING'}, ffprobe=${_ffprobePath ? 'OK' : 'MISSING'}`)
 }
@@ -61,6 +59,12 @@ async function getFfmpegPath(): Promise<string> {
   await ensureBinaries()
   if (!_ffmpegPath) throw new Error('ffmpeg binary not found — install ffmpeg-static or add ffmpeg to PATH')
   return _ffmpegPath
+}
+
+async function getFfprobePath(): Promise<string> {
+  await ensureBinaries()
+  if (!_ffprobePath) throw new Error('ffprobe binary not found — install ffprobe-static or add ffprobe to PATH')
+  return _ffprobePath
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -133,11 +137,39 @@ const HLS_COMPATIBLE_AUDIO = new Set(['aac', 'mp3'])
 
 // ─── Probe ───────────────────────────────────────────────────────────────────
 
-function rawProbe(filePath: string): Promise<Ffmpeg.FfprobeData | null> {
+async function rawProbe(filePath: string): Promise<Record<string, any> | null> {
+  const ffprobePath = await getFfprobePath().catch(() => null)
+  if (!ffprobePath) return null
+
   return new Promise((resolve) => {
-    Ffmpeg.ffprobe(filePath, (err, data) => {
-      if (err) { console.error(`[MediaEngine] Probe failed "${filePath}":`, err.message); resolve(null) }
-      else resolve(data)
+    const proc = spawn(ffprobePath, [
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_format',
+      '-show_streams',
+      filePath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] })
+
+    const chunks: Buffer[] = []
+    proc.stdout!.on('data', (d: Buffer) => chunks.push(d))
+
+    let stderr = ''
+    proc.stderr!.on('data', (d: Buffer) => { stderr += d.toString() })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString())) }
+        catch { console.error(`[MediaEngine] Probe parse failed "${filePath}"`); resolve(null) }
+      }
+      else {
+        console.error(`[MediaEngine] Probe failed "${filePath}": ${stderr.slice(-300)}`)
+        resolve(null)
+      }
+    })
+
+    proc.on('error', (err) => {
+      console.error(`[MediaEngine] Probe spawn error:`, err.message)
+      resolve(null)
     })
   })
 }
@@ -154,7 +186,6 @@ const SEGMENT_DURATION = 6
 const HLS_DIR = join(tmpdir(), 'lumir-hls')
 const DISPOSE_TIMEOUT = 2 * 60 * 1000 // 2 min idle → cleanup
 const SEGMENT_WAIT_TIMEOUT = 30_000    // 30s max wait for a segment
-const SEGMENT_POLL_INTERVAL = 200      // Check every 200ms
 const SEEK_THRESHOLD = 30              // Segments ahead → restart ffmpeg with -ss
 
 const sessions = new Map<string, FFmpegSession>()
@@ -175,6 +206,10 @@ class FFmpegSession {
   private pendingSeekSegment: number | null = null
   private pendingSeekTimer: ReturnType<typeof setTimeout> | null = null
   private pendingSeekResolvers: Array<() => void> = []
+  /** Chokidar watcher on outputDir — fires when a segment .ts file is fully written */
+  private watcher: FSWatcher | null = null
+  /** Promises waiting for a specific segment number to appear on disk */
+  private segmentWaiters = new Map<number, Array<() => void>>()
 
   constructor(
     public readonly filePath: string,
@@ -250,8 +285,9 @@ class FFmpegSession {
       if (cleaned > 0) console.log(`[MediaEngine] Cleaned ${cleaned} stale segments`)
     } catch {} // Directory might not exist yet
 
-    // Ensure output directory
+    // Ensure output directory and start the chokidar watcher (idempotent)
     await mkdir(this.outputDir, { recursive: true })
+    this.setupWatcher()
 
     const decision = this.decision!
     const probe = this.probe
@@ -279,6 +315,12 @@ class FFmpegSession {
       args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22')
       args.push('-profile:v', 'high', '-level', '4.1')
       args.push('-pix_fmt', 'yuv420p')
+      // Force keyframes at every segment boundary so segments are independently
+      // decodable and seeking lands cleanly without A/V desync.
+      args.push('-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_DURATION})`)
+      // Disable scene-cut detection — prevents unexpected keyframes between
+      // forced ones that would misalign segment boundaries.
+      args.push('-sc_threshold', '0')
     } else {
       args.push('-c:v', 'copy')
     }
@@ -286,14 +328,19 @@ class FFmpegSession {
     // Audio codec
     if (decision.audioAction === 'reencode' || !HLS_COMPATIBLE_AUDIO.has(probe.audio[0]?.codec || '')) {
       args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2')
+      // Resample with async correction — absorbs clock drift between audio
+      // and video streams (common after input-side -ss seeking).
+      args.push('-af', 'aresample=async=1000')
     } else {
       args.push('-c:a', 'copy')
     }
 
-    // Force A/V sync — prevents video rollbacks where audio continues
-    // but video jumps backward (common with -ss input seeking on AVI)
-    args.push('-max_muxing_queue_size', '1024')
+    // A/V sync safeguards
+    // Large muxing queue prevents "too many packets buffered" errors that
+    // cause video to stall or jump backward while audio continues.
+    args.push('-max_muxing_queue_size', '9999')
     if (startTime > 0) {
+      // Reset negative timestamps introduced by input-side keyframe snapping.
       args.push('-avoid_negative_ts', 'make_zero')
     }
 
@@ -322,28 +369,10 @@ class FFmpegSession {
     this.process = proc
     this.isStarting = false
 
-    // Track segment production from ffmpeg stderr.
-    // With temp_file flag, ffmpeg writes segment-N.ts.tmp then renames to
-    // segment-N.ts. When we see "Opening segment-N.ts.tmp", segment N-1
-    // is COMPLETE (renamed to its final name).
-    let lastOpenedSeg = -1
+    // Segment readiness is now tracked via chokidar 'add' events on .ts files.
+    // stderr is kept only for debugging unexpected exits.
     proc.stderr!.on('data', (chunk: Buffer) => {
-      const text = chunk.toString()
-      // Keep last 2KB of stderr for debugging
-      this.stderrLog = (this.stderrLog + text).slice(-2048)
-      // Detect segment opens (temp_file: *.ts.tmp)
-      const matches = text.matchAll(/Opening '.*segment-(\d+)\.ts/g)
-      for (const m of matches) {
-        const seg = parseInt(m[1]!, 10)
-        // When segment N is opened, segment N-1 is complete
-        if (lastOpenedSeg >= 0 && lastOpenedSeg > this.highestReady) {
-          this.highestReady = lastOpenedSeg
-        }
-        if (lastOpenedSeg < 0) {
-          console.log(`[MediaEngine] First segment started: ${seg} for ${this.clientId}`)
-        }
-        lastOpenedSeg = seg
-      }
+      this.stderrLog = (this.stderrLog + chunk.toString()).slice(-2048)
     })
 
     proc.on('exit', (code, signal) => {
@@ -448,28 +477,28 @@ class FFmpegSession {
     // eventually succeed as ffmpeg catches up.
     const isFarAhead = segmentNumber > this.highestReady + SEEK_THRESHOLD
       && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD
-    const timeout = isFarAhead ? 8_000 : SEGMENT_WAIT_TIMEOUT
-    const deadline = Date.now() + timeout
+    const totalTimeout = isFarAhead ? 8_000 : SEGMENT_WAIT_TIMEOUT
+    const deadline = Date.now() + totalTimeout
     let restartAttempts = 0
     const MAX_RESTART_ATTEMPTS = 2
+
     while (!existsSync(segPath)) {
-      if (signal?.aborted) {
-        throw new Error('Client disconnected')
-      }
+      if (signal?.aborted) throw new Error('Client disconnected')
       if (Date.now() > deadline) {
-        throw new Error(`Segment ${segmentNumber} not ready after ${timeout / 1000}s`)
+        throw new Error(`Segment ${segmentNumber} not ready after ${totalTimeout / 1000}s`)
       }
-      // Segments well behind ffmpeg (will never be produced): fast-fail.
+
+      // Segments well behind ffmpeg start (will never be produced): fast-fail.
       // Grace zone of 5 segments below startSeg for keyframe alignment.
       if (segmentNumber < this.currentStartSegment - 5) {
-        const abandonDeadline = Date.now() + 2_000
-        while (Date.now() < abandonDeadline) {
-          if (signal?.aborted) throw new Error('Client disconnected')
-          await abortableSleep(200, signal)
+        await abortableSleep(500, signal)
+        if (!existsSync(segPath)) {
+          throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
         }
-        throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
+        break
       }
-      // Restart ffmpeg if it died (not during seek transition)
+
+      // Restart ffmpeg if it died unexpectedly (not during a seek transition)
       if (!this.process && !this.isStarting) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
           throw new Error(`ffmpeg keeps dying, cannot produce segment ${segmentNumber}`)
@@ -478,16 +507,16 @@ class FFmpegSession {
         console.log(`[MediaEngine] ffmpeg not running while waiting for segment ${segmentNumber}, restart attempt ${restartAttempts}`)
         await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
       }
-      await abortableSleep(SEGMENT_POLL_INTERVAL, signal)
+
+      // Event-driven wait via chokidar — up to 5s per iteration before
+      // looping back to re-evaluate state (process died, seek restarted, etc.).
+      const remaining = deadline - Date.now()
+      await this.waitForSegment(segmentNumber, Math.min(5_000, remaining), signal).catch(() => {
+        // Timeout or no-op — outer loop will re-evaluate
+      })
     }
 
-    // With temp_file flag, the file only appears after atomic rename —
-    // no need to wait for flushing.
-
-    // Update highest ready
-    if (segmentNumber > this.highestReady) {
-      this.highestReady = segmentNumber
-    }
+    if (segmentNumber > this.highestReady) this.highestReady = segmentNumber
 
     const stat = statSync(segPath)
     return {
@@ -579,6 +608,12 @@ class FFmpegSession {
       this.pendingSeekResolvers.forEach((r) => r())
       this.pendingSeekResolvers = []
     }
+    // Close chokidar watcher and release all pending segment waiters
+    if (this.watcher) {
+      await this.watcher.close()
+      this.watcher = null
+    }
+    this.segmentWaiters.clear()
     sessions.delete(this.clientId)
     // Clean up temp files in background
     rm(this.outputDir, { recursive: true, force: true }).catch(() => {})
@@ -586,6 +621,70 @@ class FFmpegSession {
   }
 
   // ── Internal ──
+
+  /** Set up chokidar watcher on outputDir (idempotent — safe to call multiple times). */
+  private setupWatcher() {
+    if (this.watcher) return
+    this.watcher = watch(this.outputDir, {
+      ignoreInitial: true,
+      depth: 0,
+      persistent: false,
+      usePolling: false,
+    })
+    this.watcher.on('add', (filePath: string) => {
+      const m = basename(filePath).match(/^segment-(\d+)\.ts$/)
+      if (!m) return
+      const seg = parseInt(m[1]!, 10)
+      if (seg > this.highestReady) this.highestReady = seg
+      const waiters = this.segmentWaiters.get(seg)
+      if (waiters) {
+        this.segmentWaiters.delete(seg)
+        for (const fn of waiters) fn()
+      }
+    })
+  }
+
+  /**
+   * Event-driven wait for a specific segment file.
+   * Returns when the file exists on disk, or rejects on timeout / client abort.
+   * Uses chokidar 'add' events instead of polling.
+   */
+  private waitForSegment(segmentNumber: number, timeout: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const segPath = join(this.outputDir, `segment-${segmentNumber}.ts`)
+
+      // Already present? Resolve immediately.
+      if (existsSync(segPath)) { resolve(); return }
+
+      let settled = false
+      const settle = (err?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        signal?.removeEventListener('abort', onAbort)
+        const arr = this.segmentWaiters.get(segmentNumber)
+        if (arr) {
+          const i = arr.indexOf(onFile)
+          if (i >= 0) arr.splice(i, 1)
+          if (arr.length === 0) this.segmentWaiters.delete(segmentNumber)
+        }
+        err ? reject(err) : resolve()
+      }
+
+      const onFile = () => settle()
+      const onAbort = () => settle(new Error('Client disconnected'))
+      const timer = setTimeout(() => settle(new Error('timeout')), timeout)
+
+      signal?.addEventListener('abort', onAbort, { once: true })
+
+      if (!this.segmentWaiters.has(segmentNumber)) this.segmentWaiters.set(segmentNumber, [])
+      this.segmentWaiters.get(segmentNumber)!.push(onFile)
+
+      // TOCTOU guard: re-check after registering, in case the file appeared
+      // between our first existsSync and registering the listener.
+      if (existsSync(segPath)) settle()
+    })
+  }
 
   private killProcess() {
     if (this.process) {
