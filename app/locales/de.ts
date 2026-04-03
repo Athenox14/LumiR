@@ -550,6 +550,7 @@ export default {
   bugReport: {
     title: 'Fehler melden',
     description: 'Beschreibung',
+    descriptionLabel: 'Beschreibung',
     descriptionPlaceholder: 'Beschreiben Sie das Problem...',
     titleLabel: 'Titel',
     titlePlaceholder: 'Kurze Zusammenfassung des Problems',
@@ -558,6 +559,7 @@ export default {
     failed: 'Bericht konnte nicht gesendet werden',
     disabled: 'Fehlermeldung ist deaktiviert',
     pageLabel: 'Seite',
+    logsNote: '{count} Konsolenprotokoll(e) werden diesem Bericht beigefügt.',
   },
 
   // Media edit

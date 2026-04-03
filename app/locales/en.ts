@@ -550,6 +550,7 @@ export default {
   bugReport: {
     title: 'Report a bug',
     description: 'Description',
+    descriptionLabel: 'Description',
     descriptionPlaceholder: 'Describe the issue...',
     titleLabel: 'Title',
     titlePlaceholder: 'Brief summary of the issue',
@@ -558,6 +559,7 @@ export default {
     failed: 'Failed to send report',
     disabled: 'Bug reporting is disabled',
     pageLabel: 'Page',
+    logsNote: '{count} console log(s) will be attached to this report.',
   },
 
   // Media edit
