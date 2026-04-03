@@ -559,7 +559,7 @@ export default {
     failed: 'Échec de l\'envoi du signalement',
     disabled: 'Le signalement de bugs est désactivé',
     pageLabel: 'Page',
-    logsNote: '{count} log(s) console seront joints à ce signalement.',
+    serverLogsNote: 'Les logs serveur récents seront automatiquement joints à ce signalement.',
   },
 
   // Media edit
