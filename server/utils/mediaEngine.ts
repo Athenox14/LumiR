@@ -9,11 +9,10 @@
  */
 
 import { execSync, spawn, type ChildProcess } from 'child_process'
-import { createReadStream, existsSync, statSync, readdirSync, unlinkSync, type ReadStream } from 'fs'
+import { createReadStream, existsSync, statSync, readdirSync, unlinkSync, watch as fsWatch, type FSWatcher, type ReadStream } from 'fs'
 import { mkdir, rm } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import { tmpdir } from 'os'
-import { watch, type FSWatcher } from 'chokidar'
 
 // ─── Binary resolution ───────────────────────────────────────────────────────
 
@@ -285,7 +284,7 @@ class FFmpegSession {
       if (cleaned > 0) console.log(`[MediaEngine] Cleaned ${cleaned} stale segments`)
     } catch {} // Directory might not exist yet
 
-    // Ensure output directory and start the chokidar watcher (idempotent)
+    // Ensure output directory and start the fs watcher (idempotent)
     await mkdir(this.outputDir, { recursive: true })
     this.setupWatcher()
 
@@ -369,7 +368,7 @@ class FFmpegSession {
     this.process = proc
     this.isStarting = false
 
-    // Segment readiness is now tracked via chokidar 'add' events on .ts files.
+    // Segment readiness is tracked via fs.watch() events on .ts files.
     // stderr is kept only for debugging unexpected exits.
     proc.stderr!.on('data', (chunk: Buffer) => {
       this.stderrLog = (this.stderrLog + chunk.toString()).slice(-2048)
@@ -508,7 +507,7 @@ class FFmpegSession {
         await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
       }
 
-      // Event-driven wait via chokidar — up to 5s per iteration before
+      // Event-driven wait via fs.watch() — up to 5s per iteration before
       // looping back to re-evaluate state (process died, seek restarted, etc.).
       const remaining = deadline - Date.now()
       await this.waitForSegment(segmentNumber, Math.min(5_000, remaining), signal).catch(() => {
@@ -608,9 +607,9 @@ class FFmpegSession {
       this.pendingSeekResolvers.forEach((r) => r())
       this.pendingSeekResolvers = []
     }
-    // Close chokidar watcher and release all pending segment waiters
+    // Close fs watcher and release all pending segment waiters
     if (this.watcher) {
-      await this.watcher.close()
+      this.watcher.close()
       this.watcher = null
     }
     this.segmentWaiters.clear()
@@ -622,17 +621,17 @@ class FFmpegSession {
 
   // ── Internal ──
 
-  /** Set up chokidar watcher on outputDir (idempotent — safe to call multiple times). */
+  /**
+   * Set up a native fs.watch() listener on outputDir (idempotent).
+   * Uses Node.js inotify directly — avoids chokidar's rename-race bugs on Linux.
+   * Fires on the 'rename' event which covers both add and delete; we filter to
+   * segment-N.ts names (never .ts.tmp) so we only react to completed segments.
+   */
   private setupWatcher() {
     if (this.watcher) return
-    this.watcher = watch(this.outputDir, {
-      ignoreInitial: true,
-      depth: 0,
-      persistent: false,
-      usePolling: false,
-    })
-    this.watcher.on('add', (filePath: string) => {
-      const m = basename(filePath).match(/^segment-(\d+)\.ts$/)
+    this.watcher = fsWatch(this.outputDir, (eventType, filename) => {
+      if (eventType !== 'rename' || !filename) return
+      const m = (filename as string).match(/^segment-(\d+)\.ts$/)
       if (!m) return
       const seg = parseInt(m[1]!, 10)
       if (seg > this.highestReady) this.highestReady = seg
@@ -642,12 +641,15 @@ class FFmpegSession {
         for (const fn of waiters) fn()
       }
     })
+    this.watcher.on('error', (err: Error) => {
+      console.error(`[MediaEngine] Watcher error for ${this.clientId}:`, err.message)
+    })
   }
 
   /**
    * Event-driven wait for a specific segment file.
    * Returns when the file exists on disk, or rejects on timeout / client abort.
-   * Uses chokidar 'add' events instead of polling.
+   * Uses fs.watch() 'rename' events instead of polling.
    */
   private waitForSegment(segmentNumber: number, timeout: number, signal?: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
