@@ -559,7 +559,7 @@ export default {
     failed: 'Failed to send report',
     disabled: 'Bug reporting is disabled',
     pageLabel: 'Page',
-    logsNote: '{count} console log(s) will be attached to this report.',
+    serverLogsNote: 'Recent server logs will be automatically attached to this report.',
   },
 
   // Media edit

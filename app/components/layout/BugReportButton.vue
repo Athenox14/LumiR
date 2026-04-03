@@ -15,8 +15,7 @@ const { data: isEnabled } = useAsyncData('bug-report-enabled', () =>
 
 const enabled = computed(() => isEnabled.value?.enabled === true)
 
-const { submitReport, logs } = useBugReport()
-const logCount = computed(() => logs.length)
+const { submitReport } = useBugReport()
 
 function openModal() {
   title.value = ''
@@ -89,7 +88,7 @@ async function submitBugReport() {
       />
 
       <p class="text-xs text-text-muted">
-        {{ t('bugReport.logsNote', { count: logCount }) }}
+        {{ t('bugReport.serverLogsNote') }}
       </p>
     </form>
 

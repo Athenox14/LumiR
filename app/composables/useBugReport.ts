@@ -1,40 +1,9 @@
-export type LogEntry = {
-  level: 'error' | 'warn'
-  message: string
-  timestamp: string
-}
-
 export type ClientInfo = {
   userAgent: string
   viewport: string
   screen: string
   language: string
   onLine: boolean
-}
-
-const MAX_LOG_ENTRIES = 50
-
-// Module-level singleton shared across all composable calls
-export const bugReportLogs: LogEntry[] = []
-
-function formatArg(a: unknown): string {
-  if (a instanceof Error) {
-    return a.stack ? a.stack : `${a.name}: ${a.message}`
-  }
-  if (typeof a === 'object' && a !== null) {
-    try { return JSON.stringify(a) }
-    catch { return String(a) }
-  }
-  return String(a)
-}
-
-export function pushLog(level: 'error' | 'warn', args: unknown[]) {
-  bugReportLogs.push({
-    level,
-    message: args.map(formatArg).join(' '),
-    timestamp: new Date().toISOString(),
-  })
-  if (bugReportLogs.length > MAX_LOG_ENTRIES) bugReportLogs.shift()
 }
 
 export function getClientInfo(): ClientInfo | undefined {
@@ -60,10 +29,9 @@ export function useBugReport() {
   }) {
     return trpc.bugReport.submit.mutate({
       ...data,
-      logs: [...bugReportLogs],
       clientInfo: getClientInfo(),
     })
   }
 
-  return { submitReport, logs: bugReportLogs }
+  return { submitReport }
 }
