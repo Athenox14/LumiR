@@ -27,6 +27,13 @@ function push(level: ServerLogEntry['level'], args: unknown[]) {
   if (serverLogs.length > MAX_ENTRIES) serverLogs.shift()
 }
 
+export function formatAllLogs(): string {
+  if (!serverLogs.length) return '(no logs captured)\n'
+  return serverLogs
+    .map(l => `[${l.timestamp}] [${l.level.toUpperCase().padEnd(5)}] ${l.message}`)
+    .join('\n')
+}
+
 let interceptSetup = false
 
 export function setupServerLogging() {
