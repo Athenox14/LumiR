@@ -184,7 +184,7 @@ function getTag(tags: Record<string, any> | undefined, key: string): string | un
 const SEGMENT_DURATION = 6
 const HLS_DIR = join(tmpdir(), 'lumir-hls')
 const DISPOSE_TIMEOUT = 2 * 60 * 1000 // 2 min idle → cleanup
-const SEGMENT_WAIT_TIMEOUT = 30_000    // 30s max wait for a segment
+const SEGMENT_WAIT_TIMEOUT = 120_000   // 120s — covers far-ahead requests at ~3x transcode speed
 const SEEK_THRESHOLD = 30              // Segments ahead → restart ffmpeg with -ss
 
 const sessions = new Map<string, FFmpegSession>()
@@ -470,13 +470,12 @@ class FFmpegSession {
       await this.start({ audioTrack: this.audioTrackIndex, startSegment: Math.max(0, segmentNumber - 2) })
     }
 
-    // Adaptive timeout: segments near ffmpeg's position get the full 30s.
-    // Far-ahead speculative segments (HLS.js probing) get 8s — short enough
-    // to free the connection quickly, long enough for HLS.js retries to
-    // eventually succeed as ffmpeg catches up.
-    const isFarAhead = segmentNumber > this.highestReady + SEEK_THRESHOLD
-      && segmentNumber > this.currentStartSegment + SEEK_THRESHOLD
-    const totalTimeout = isFarAhead ? 8_000 : SEGMENT_WAIT_TIMEOUT
+    // All segments use the same timeout. With fs.watch() event-driven delivery,
+    // holding a connection costs nothing — the request resolves the instant the
+    // segment is written. Far-ahead requests (player prefetch / VOD end-probe)
+    // used to get an 8s fast-fail that caused a 504 retry storm; now they just
+    // wait until ffmpeg catches up (or the client disconnects via AbortSignal).
+    const totalTimeout = SEGMENT_WAIT_TIMEOUT
     const deadline = Date.now() + totalTimeout
     let restartAttempts = 0
     const MAX_RESTART_ATTEMPTS = 2
