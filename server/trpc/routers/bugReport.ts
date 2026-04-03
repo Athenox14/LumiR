@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
 import { settings } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { serverLogs } from '../../utils/serverLogger'
+import { serverLogs, formatAllLogs } from '../../utils/serverLogger'
 
 const clientInfoSchema = z.object({
   userAgent: z.string().optional(),
@@ -140,13 +140,16 @@ export const bugReportRouter = router({
         timestamp: new Date().toISOString(),
       }
 
-      // Send to Discord webhook
-      await $fetch(webhookUrl, {
-        method: 'POST',
-        body: {
-          embeds: [embed],
-        },
-      })
+      // Send to Discord webhook with full log file attached
+      const formData = new FormData()
+      formData.append('payload_json', JSON.stringify({ embeds: [embed] }))
+      formData.append(
+        'files[0]',
+        new Blob([formatAllLogs()], { type: 'text/plain' }),
+        'server-logs.txt',
+      )
+
+      await $fetch(webhookUrl, { method: 'POST', body: formData })
 
       return { success: true }
     }),
