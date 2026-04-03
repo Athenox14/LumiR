@@ -5,6 +5,36 @@ import { db } from '../../db'
 import { settings } from '../../db/schema'
 import { eq } from 'drizzle-orm'
 
+const logEntrySchema = z.object({
+  level: z.enum(['error', 'warn']),
+  message: z.string(),
+  timestamp: z.string(),
+})
+
+const clientInfoSchema = z.object({
+  userAgent: z.string().optional(),
+  viewport: z.string().optional(),
+  screen: z.string().optional(),
+  language: z.string().optional(),
+  onLine: z.boolean().optional(),
+})
+
+function truncate(str: string, max: number) {
+  return str.length > max ? str.slice(0, max - 1) + '…' : str
+}
+
+function formatLogs(logs: z.infer<typeof logEntrySchema>[]): string {
+  if (!logs.length) return '_No logs captured_'
+  return logs
+    .slice(-15)
+    .map((l) => {
+      const time = l.timestamp.slice(11, 19) // HH:MM:SS
+      const tag = l.level === 'error' ? '🔴' : '🟡'
+      return `${tag} \`${time}\` ${l.message.slice(0, 200)}`
+    })
+    .join('\n')
+}
+
 export const bugReportRouter = router({
   // Check if bug reports are enabled
   isEnabled: protectedProcedure
@@ -24,6 +54,10 @@ export const bugReportRouter = router({
       title: z.string().min(1),
       description: z.string().min(1),
       page: z.string().optional(),
+      errorStack: z.string().optional(),
+      automatic: z.boolean().optional(),
+      logs: z.array(logEntrySchema).optional(),
+      clientInfo: clientInfoSchema.optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       // Check if bug reports are enabled
@@ -55,23 +89,60 @@ export const bugReportRouter = router({
         })
       }
 
+      const isAuto = input.automatic === true
+
+      // Build description
+      const descriptionPrefix = isAuto
+        ? '> ⚙️ **This report was submitted automatically by the error handler.**\n\n'
+        : ''
+      const fullDescription = truncate(descriptionPrefix + input.description, 4096)
+
+      // Build fields
+      const fields: Array<{ name: string; value: string; inline?: boolean }> = [
+        {
+          name: 'Reported by',
+          value: `${ctx.user.displayName} (${ctx.user.email})`,
+          inline: true,
+        },
+      ]
+
+      if (input.page) {
+        fields.push({ name: 'Page', value: truncate(input.page, 1024), inline: true })
+      }
+
+      if (input.clientInfo) {
+        const ci = input.clientInfo
+        const parts: string[] = []
+        if (ci.userAgent) parts.push(`**UA:** ${ci.userAgent}`)
+        if (ci.viewport) parts.push(`**Viewport:** ${ci.viewport}`)
+        if (ci.screen) parts.push(`**Screen:** ${ci.screen}`)
+        if (ci.language) parts.push(`**Lang:** ${ci.language}`)
+        if (ci.onLine !== undefined) parts.push(`**Online:** ${ci.onLine ? 'yes' : 'no'}`)
+        if (parts.length) {
+          fields.push({ name: 'Browser / Environment', value: truncate(parts.join('\n'), 1024) })
+        }
+      }
+
+      if (input.errorStack) {
+        fields.push({
+          name: 'Stack Trace',
+          value: '```\n' + truncate(input.errorStack, 990) + '\n```',
+        })
+      }
+
+      if (input.logs && input.logs.length > 0) {
+        fields.push({
+          name: `Recent Logs (last ${Math.min(input.logs.length, 15)})`,
+          value: truncate(formatLogs(input.logs), 1024),
+        })
+      }
+
       // Build Discord embed
       const embed = {
-        title: `Bug Report: ${input.title}`,
-        description: input.description,
-        color: 0xff4444,
-        fields: [
-          {
-            name: 'Reported by',
-            value: `${ctx.user.displayName} (${ctx.user.email})`,
-            inline: true,
-          },
-          ...(input.page ? [{
-            name: 'Page',
-            value: input.page,
-            inline: true,
-          }] : []),
-        ],
+        title: truncate(`${isAuto ? '⚙️ Auto Report' : '🐛 Bug Report'}: ${input.title}`, 256),
+        description: fullDescription,
+        color: isAuto ? 0xff8c00 : 0xff4444,
+        fields,
         timestamp: new Date().toISOString(),
       }
 
