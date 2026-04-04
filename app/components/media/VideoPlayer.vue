@@ -220,13 +220,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       })
 
       // CRITICAL: Block HLS.js's VOD binary search probe.
-      // After a seek, HLS.js loads the target fragment then a fragment
-      // ~150 segments ahead (binary search). We intercept FRAG_LOADING
-      // and cancel+restart when the fragment is too far from the intended position.
-      // Uses hlsTargetSeg (our own tracking) rather than player.currentTime,
-      // which can snap to old buffered content after a seek.
+      // After a seek, HLS.js loads the target fragment then probes a fragment
+      // far ahead (binary search). We intercept FRAG_LOADING and seek the player
+      // back to the intended position, which clears the SourceBuffer and forces
+      // HLS.js to load sequentially from the correct position.
+      // NOTE: we use player.currentTime (not hls.startLoad) because startLoad does
+      // NOT clear the SourceBuffer, causing video.currentTime to snap to stale
+      // buffered data and HLS.js to pick the wrong next fragment.
       let lastBlockedSn = -1
       let blockCount = 0
+      let lastFarAheadSeek = 0
       hls.on(hls.constructor.Events.FRAG_LOADING, (_event: any, data: any) => {
         const fragSn = data.frag?.sn
         if (typeof fragSn !== 'number') return
@@ -241,7 +244,18 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           }
           console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (target: ${hlsTargetSeg})`)
           hls.stopLoad()
-          setTimeout(() => hls.startLoad(hlsTargetSeg * 6), 50)
+          // Seek the player (not hls.startLoad) to clear stale SourceBuffer data
+          // and reset video.currentTime to the intended position. Rate-limited to
+          // avoid spamming seeks from rapid FRAG_LOADING events.
+          const now = Date.now()
+          if (now - lastFarAheadSeek > 300) {
+            lastFarAheadSeek = now
+            const targetPos = hlsTargetSeg * 6
+            setTimeout(() => {
+              const player = playerRef.value
+              if (player) player.currentTime = targetPos
+            }, 50)
+          }
         } else {
           // Reset block counter when loading a nearby fragment
           lastBlockedSn = -1
@@ -250,8 +264,8 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       })
 
       // Recover from fatal errors with circuit breaker.
-      // If the same fragment keeps failing, skip it and restart
-      // sequential loading from the intended seek target.
+      // Uses player.currentTime (not hls.startLoad) for recovery to ensure
+      // the SourceBuffer is cleared and video.currentTime is at the right position.
       let networkRetries = 0
       let mediaRetries = 0
       let lastErrorFrag = -1
@@ -260,8 +274,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       const MAX_MEDIA_RETRIES = 3
       const recoveryTimers: ReturnType<typeof setTimeout>[] = []
 
+      const seekToTarget = (delayMs: number) => {
+        const targetPos = hlsTargetSeg * 6
+        recoveryTimers.push(setTimeout(() => {
+          const player = playerRef.value
+          if (player) player.currentTime = targetPos
+        }, delayMs))
+      }
+
       // On successful fragment load:
-      // 1. Cancel any stale recovery timers (prevents double-startLoad).
+      // 1. Cancel any stale recovery timers (prevents double-seek).
       // 2. Advance hlsTargetSeg so far-ahead blocking uses current playback position.
       hls.on(hls.constructor.Events.FRAG_BUFFERED, (_event: any, data: any) => {
         while (recoveryTimers.length) clearTimeout(recoveryTimers.pop()!)
@@ -275,8 +297,8 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           const fragSn = data.frag?.sn ?? -1
 
           // Fast path: stale segment (behind our seek target) — the server
-          // cleaned it when ffmpeg restarted. No point retrying; restart from
-          // the seek target immediately instead of waiting for circuit breaker.
+          // cleaned it when ffmpeg restarted. Seek the player to the target
+          // position to clear stale SourceBuffer data and resume from target.
           if (fragSn >= 0 && fragSn < hlsTargetSeg) {
             console.warn('[HLS] Stale segment', fragSn, '(seek target:', hlsTargetSeg, ') — restarting from target')
             while (recoveryTimers.length) clearTimeout(recoveryTimers.pop()!)
@@ -284,7 +306,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
             mediaRetries = 0
             lastErrorFrag = -1
             sameFragErrors = 0
-            setTimeout(() => hls.startLoad(hlsTargetSeg * 6), 100)
+            seekToTarget(100)
             return
           }
 
@@ -299,7 +321,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
               networkRetries = 0
               mediaRetries = 0
               hls.recoverMediaError()
-              setTimeout(() => hls.startLoad(hlsTargetSeg * 6), 200)
+              seekToTarget(200)
               return
             }
           } else {
@@ -310,7 +332,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           console.warn('[HLS] Fatal error, recovery from target', hlsTargetSeg * 6, 's:', data.type, data.details, 'frag:', fragSn)
           if (data.type === 'networkError' && networkRetries < MAX_NETWORK_RETRIES) {
             networkRetries++
-            recoveryTimers.push(setTimeout(() => hls.startLoad(hlsTargetSeg * 6), 500))
+            seekToTarget(500)
           } else if (data.type === 'mediaError' && mediaRetries < MAX_MEDIA_RETRIES) {
             mediaRetries++
             hls.recoverMediaError()
