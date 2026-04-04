@@ -238,6 +238,10 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           // by the time startLoad() calls its first tick — causing HLS.js to load
           // from the stale position instead of targetPos.
           if (hls.media) hls.media.currentTime = targetPos
+          // stopLoad() cancels any in-flight fragment requests and clears HLS.js's
+          // internal retry queue. Without this, HLS.js keeps retrying the stale
+          // fragment even after startLoad() is called, perpetuating the error loop.
+          hls.stopLoad()
           hls.startLoad(targetPos)
         }, delayMs))
       }
