@@ -219,51 +219,6 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         }
       })
 
-      // CRITICAL: Block HLS.js's VOD binary search probe.
-      // After a seek, HLS.js loads the target fragment then probes a fragment
-      // far ahead (binary search). We intercept FRAG_LOADING and seek the player
-      // back to the intended position, which clears the SourceBuffer and forces
-      // HLS.js to load sequentially from the correct position.
-      // NOTE: we use player.currentTime (not hls.startLoad) because startLoad does
-      // NOT clear the SourceBuffer, causing video.currentTime to snap to stale
-      // buffered data and HLS.js to pick the wrong next fragment.
-      let lastBlockedSn = -1
-      let blockCount = 0
-      let lastFarAheadSeek = 0
-      hls.on(hls.constructor.Events.FRAG_LOADING, (_event: any, data: any) => {
-        const fragSn = data.frag?.sn
-        if (typeof fragSn !== 'number') return
-        if (fragSn > hlsTargetSeg + 25) {
-          // Prevent infinite loop: if same fragment blocked >3 times, let it through
-          if (fragSn === lastBlockedSn) {
-            blockCount++
-            if (blockCount > 3) return
-          } else {
-            lastBlockedSn = fragSn
-            blockCount = 0
-          }
-          console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (target: ${hlsTargetSeg})`)
-          hls.stopLoad()
-          // Rate-limited redirect to the actual seek target.
-          // Use hls.media.currentTime (raw HTMLVideoElement) directly — HLS.js
-          // reads this in getLoadPosition(). player.currentTime goes via Vidstack
-          // and may not be synchronised to hls.media before startLoad ticks.
-          const now = Date.now()
-          if (now - lastFarAheadSeek > 300) {
-            lastFarAheadSeek = now
-            const targetPos = hlsTargetSeg * 6
-            setTimeout(() => {
-              if (hls.media) hls.media.currentTime = targetPos
-              hls.startLoad(targetPos)
-            }, 50)
-          }
-        } else {
-          // Reset block counter when loading a nearby fragment
-          lastBlockedSn = -1
-          blockCount = 0
-        }
-      })
-
       // Recover from fatal errors with circuit breaker.
       let networkRetries = 0
       let mediaRetries = 0
