@@ -486,14 +486,10 @@ class FFmpegSession {
         throw new Error(`Segment ${segmentNumber} not ready after ${totalTimeout / 1000}s`)
       }
 
-      // Segments well behind ffmpeg start (will never be produced): fast-fail.
+      // Segments well behind ffmpeg start (will never be produced): fail immediately.
       // Grace zone of 5 segments below startSeg for keyframe alignment.
       if (segmentNumber < this.currentStartSegment - 5) {
-        await abortableSleep(500, signal)
-        if (!existsSync(segPath)) {
-          throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
-        }
-        break
+        throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
       }
 
       // Restart ffmpeg if it died unexpectedly (not during a seek transition)
@@ -634,6 +630,12 @@ class FFmpegSession {
       if (eventType !== 'rename' || !filename) return
       const m = (filename as string).match(/^segment-(\d+)\.ts$/)
       if (!m) return
+      // inotify fires 'rename' for both creation (atomic .ts.tmp→.ts) and
+      // deletion (unlinkSync in start() cleanup). Only react to creations —
+      // deletions must not bump highestReady or resolve waiters with a
+      // non-existent file.
+      const segPath = join(this.outputDir, filename as string)
+      if (!existsSync(segPath)) return
       const seg = parseInt(m[1]!, 10)
       if (seg > this.highestReady) this.highestReady = seg
       const waiters = this.segmentWaiters.get(seg)
