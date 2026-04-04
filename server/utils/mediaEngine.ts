@@ -571,9 +571,11 @@ class FFmpegSession {
    */
   async preheatSeek(positionSec: number, force = false) {
     const targetSeg = Math.floor(positionSec / SEGMENT_DURATION)
-    // Start a few segments before the target — HLS.js often requests
-    // segments before the seek position for keyframe alignment.
-    const startSeg = Math.max(0, targetSeg - 10)
+    // Transcode mode forces keyframes at every segment boundary, so minimal
+    // pre-roll is needed. Remux/copy mode relies on source keyframes which
+    // can be far before the seek point — keep larger pre-roll for alignment.
+    const preRoll = this.decision?.mode === 'transcode' ? 2 : 10
+    const startSeg = Math.max(0, targetSeg - preRoll)
     const segPath = join(this.outputDir, `segment-${targetSeg}.ts`)
 
     // Already cached
