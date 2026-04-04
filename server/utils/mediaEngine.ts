@@ -339,8 +339,16 @@ class FFmpegSession {
     // cause video to stall or jump backward while audio continues.
     args.push('-max_muxing_queue_size', '9999')
     if (startTime > 0) {
-      // Reset negative timestamps introduced by input-side keyframe snapping.
-      args.push('-avoid_negative_ts', 'make_zero')
+      if (decision.videoAction === 'copy') {
+        // Remux: preserve source timestamps so the HLS muxer sees correct PTS values.
+        // avoid_negative_ts make_zero resets all timestamps to 0, which causes a
+        // mismatch with -start_number N>0 and can make ffmpeg exit immediately (code=255
+        // treated as 0) when independent_segments can't find a keyframe boundary.
+        args.push('-copyts', '-start_at_zero')
+      } else {
+        // Transcode: reset negative timestamps introduced by input-side keyframe snapping.
+        args.push('-avoid_negative_ts', 'make_zero')
+      }
     }
 
     // HLS output
@@ -379,7 +387,10 @@ class FFmpegSession {
       // condition where an old process's exit handler fires after a new one
       // has been spawned during seek/restart).
       const isCurrentProcess = this.process === proc
-      const killedByUs = code === 255 || signal === 'SIGKILL' || signal === 'SIGTERM'
+      // Note: do NOT treat code=255 as "killed by us". ffmpeg uses exit(-1) which
+      // Node.js reports as code=255 — this is an ffmpeg error, not a graceful kill.
+      // Treating it as killedByUs silently discards the stderrLog, hiding the cause.
+      const killedByUs = signal === 'SIGKILL' || signal === 'SIGTERM'
       if (code !== 0 && !killedByUs) {
         console.error(`[MediaEngine] ffmpeg exited unexpectedly: code=${code} signal=${signal} for ${this.clientId}`)
         if (this.stderrLog) {
