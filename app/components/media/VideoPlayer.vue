@@ -52,6 +52,9 @@ const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let hlsInstance: HlsJS | null = null
+// Track our own seek target — player.currentTime is unreliable during HLS.js
+// error recovery (may be 0 or stale). Updated in onSeeking and onProviderChange.
+let hlsTargetSeg = 0
 // Suppress onSeeking during initial load — HLS.js fires seeking events
 // as it positions the player, which would trigger spurious preheat-seeks
 let playerReady = false
@@ -138,6 +141,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
   const provider = event.detail
   if (isHLSProvider(provider)) {
     const startPos = pendingSeekPosition.value ?? props.initialPosition
+    hlsTargetSeg = Math.floor(startPos / 6)
     provider.config = {
       startPosition: startPos,
       maxBufferLength: 15,
@@ -219,15 +223,18 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       // After a seek, HLS.js loads the target fragment then a fragment
       // ~150 segments ahead (binary search). We intercept FRAG_LOADING
       // and cancel+restart when the fragment is too far from playback.
-      // On restart (startLoad from IDLE), HLS.js loads sequentially.
+      // Uses hlsTargetSeg (our own tracking) instead of player.currentTime,
+      // which is unreliable during HLS.js error recovery.
       let lastBlockedSn = -1
       let blockCount = 0
       hls.on(hls.constructor.Events.FRAG_LOADING, (_event: any, data: any) => {
         const fragSn = data.frag?.sn
         if (typeof fragSn !== 'number') return
         const player = playerRef.value
-        const currentSeg = Math.floor((player?.currentTime || startPos || 0) / 6)
-        if (fragSn > currentSeg + 25) {
+        // Use the max of our tracked target and the actual player position to
+        // avoid false-positive blocking when currentTime is stale (e.g. 0 during recovery).
+        const refSeg = Math.max(hlsTargetSeg, Math.floor((player?.currentTime || 0) / 6))
+        if (fragSn > refSeg + 25) {
           // Prevent infinite loop: if same fragment blocked >3 times, let it through
           if (fragSn === lastBlockedSn) {
             blockCount++
@@ -236,9 +243,9 @@ function onProviderChange(event: MediaProviderChangeEvent) {
             lastBlockedSn = fragSn
             blockCount = 0
           }
-          console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (current: ${currentSeg})`)
+          console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (current: ${refSeg})`)
           hls.stopLoad()
-          const pos = player?.currentTime || startPos || 0
+          const pos = Math.max(player?.currentTime || 0, startPos, hlsTargetSeg * 6)
           setTimeout(() => hls.startLoad(pos), 50)
         } else {
           // Reset block counter when loading a nearby fragment
@@ -254,23 +261,46 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       let mediaRetries = 0
       let lastErrorFrag = -1
       let sameFragErrors = 0
-      const MAX_NETWORK_RETRIES = 3
+      const MAX_NETWORK_RETRIES = 2
       const MAX_MEDIA_RETRIES = 3
+      const recoveryTimers: ReturnType<typeof setTimeout>[] = []
+
+      // Cancel stale recovery timers when a fragment loads successfully.
+      // Prevents a pending retry from stomping on loading that already recovered.
+      hls.on(hls.constructor.Events.FRAG_BUFFERED, () => {
+        while (recoveryTimers.length) clearTimeout(recoveryTimers.pop()!)
+        networkRetries = 0
+      })
+
       hls.on(hls.constructor.Events.ERROR, (_event: any, data: any) => {
         if (data.fatal) {
           const fragSn = data.frag?.sn ?? -1
+
+          // Fast path: stale segment (behind our seek target) — the server
+          // cleaned it when ffmpeg restarted. No point retrying; restart from
+          // the seek target immediately instead of waiting for circuit breaker.
+          if (fragSn >= 0 && fragSn < hlsTargetSeg) {
+            console.warn('[HLS] Stale segment', fragSn, '(seek target:', hlsTargetSeg, ') — restarting from target')
+            while (recoveryTimers.length) clearTimeout(recoveryTimers.pop()!)
+            networkRetries = 0
+            mediaRetries = 0
+            lastErrorFrag = -1
+            sameFragErrors = 0
+            setTimeout(() => hls.startLoad(hlsTargetSeg * 6), 100)
+            return
+          }
+
           // Circuit breaker: detect same fragment failing repeatedly
           if (fragSn === lastErrorFrag) {
             sameFragErrors++
             if (sameFragErrors > 2) {
               console.warn('[HLS] Circuit breaker: skipping fragment', fragSn, '→ restarting from current pos')
-              // Reset state and restart sequential loading
+              while (recoveryTimers.length) clearTimeout(recoveryTimers.pop()!)
               sameFragErrors = 0
               lastErrorFrag = -1
               networkRetries = 0
               mediaRetries = 0
-              const pos = playerRef.value?.currentTime || startPos || 0
-              // recoverMediaError resets the transmuxer state
+              const pos = Math.max(playerRef.value?.currentTime || 0, startPos, hlsTargetSeg * 6)
               hls.recoverMediaError()
               setTimeout(() => hls.startLoad(pos), 200)
               return
@@ -280,11 +310,11 @@ function onProviderChange(event: MediaProviderChangeEvent) {
             sameFragErrors = 0
           }
 
-          const resumePos = playerRef.value?.currentTime || startPos || 0
+          const resumePos = Math.max(playerRef.value?.currentTime || 0, startPos, hlsTargetSeg * 6)
           console.warn('[HLS] Fatal error, recovery from', resumePos, 's:', data.type, data.details, 'frag:', fragSn)
           if (data.type === 'networkError' && networkRetries < MAX_NETWORK_RETRIES) {
             networkRetries++
-            setTimeout(() => hls.startLoad(resumePos), 1000)
+            recoveryTimers.push(setTimeout(() => hls.startLoad(resumePos), 500))
           } else if (data.type === 'mediaError' && mediaRetries < MAX_MEDIA_RETRIES) {
             mediaRetries++
             hls.recoverMediaError()
@@ -318,6 +348,7 @@ function onSeeking() {
   const player = playerRef.value
   if (!player || !props.src.includes('.m3u8')) return
   if (!playerReady) return
+  hlsTargetSeg = Math.floor(player.currentTime / 6)
   preheatSeek(player.currentTime, true)
 }
 
