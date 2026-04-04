@@ -244,16 +244,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           }
           console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (target: ${hlsTargetSeg})`)
           hls.stopLoad()
-          // Rate-limited redirect to the actual seek target. We call both
-          // player.currentTime (clears stale SourceBuffer / resets video.currentTime)
-          // AND hls.startLoad (wakes HLS.js even if currentTime is already correct).
+          // Rate-limited redirect to the actual seek target.
+          // Use hls.media.currentTime (raw HTMLVideoElement) directly — HLS.js
+          // reads this in getLoadPosition(). player.currentTime goes via Vidstack
+          // and may not be synchronised to hls.media before startLoad ticks.
           const now = Date.now()
           if (now - lastFarAheadSeek > 300) {
             lastFarAheadSeek = now
             const targetPos = hlsTargetSeg * 6
             setTimeout(() => {
-              const player = playerRef.value
-              if (player) player.currentTime = targetPos
+              if (hls.media) hls.media.currentTime = targetPos
               hls.startLoad(targetPos)
             }, 50)
           }
@@ -265,8 +265,6 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       })
 
       // Recover from fatal errors with circuit breaker.
-      // Uses player.currentTime (not hls.startLoad) for recovery to ensure
-      // the SourceBuffer is cleared and video.currentTime is at the right position.
       let networkRetries = 0
       let mediaRetries = 0
       let lastErrorFrag = -1
@@ -279,12 +277,12 @@ function onProviderChange(event: MediaProviderChangeEvent) {
         recoveryTimers.push(setTimeout(() => {
           // Read latest hlsTargetSeg at fire time (handles rapid seeks correctly).
           const targetPos = hlsTargetSeg * 6
-          const player = playerRef.value
-          // 1. Fix stale video.currentTime: if it's snapped to old buffered content,
-          //    setting currentTime triggers a proper seek with SourceBuffer clearing.
-          if (player) player.currentTime = targetPos
-          // 2. Restart HLS.js loading regardless: if video.currentTime was already
-          //    at targetPos (seek is a no-op), HLS.js stays IDLE without this call.
+          // Set currentTime on the raw HTMLVideoElement that HLS.js reads directly
+          // in getLoadPosition(). player.currentTime (Vidstack) goes through an
+          // internal event pipeline and may not be reflected in hls.media.currentTime
+          // by the time startLoad() calls its first tick — causing HLS.js to load
+          // from the stale position instead of targetPos.
+          if (hls.media) hls.media.currentTime = targetPos
           hls.startLoad(targetPos)
         }, delayMs))
       }
