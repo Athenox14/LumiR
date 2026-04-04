@@ -244,9 +244,9 @@ function onProviderChange(event: MediaProviderChangeEvent) {
           }
           console.log(`[HLS] Blocking far-ahead fragment ${fragSn} (target: ${hlsTargetSeg})`)
           hls.stopLoad()
-          // Seek the player (not hls.startLoad) to clear stale SourceBuffer data
-          // and reset video.currentTime to the intended position. Rate-limited to
-          // avoid spamming seeks from rapid FRAG_LOADING events.
+          // Rate-limited redirect to the actual seek target. We call both
+          // player.currentTime (clears stale SourceBuffer / resets video.currentTime)
+          // AND hls.startLoad (wakes HLS.js even if currentTime is already correct).
           const now = Date.now()
           if (now - lastFarAheadSeek > 300) {
             lastFarAheadSeek = now
@@ -254,6 +254,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
             setTimeout(() => {
               const player = playerRef.value
               if (player) player.currentTime = targetPos
+              hls.startLoad(targetPos)
             }, 50)
           }
         } else {
@@ -275,10 +276,16 @@ function onProviderChange(event: MediaProviderChangeEvent) {
       const recoveryTimers: ReturnType<typeof setTimeout>[] = []
 
       const seekToTarget = (delayMs: number) => {
-        const targetPos = hlsTargetSeg * 6
         recoveryTimers.push(setTimeout(() => {
+          // Read latest hlsTargetSeg at fire time (handles rapid seeks correctly).
+          const targetPos = hlsTargetSeg * 6
           const player = playerRef.value
+          // 1. Fix stale video.currentTime: if it's snapped to old buffered content,
+          //    setting currentTime triggers a proper seek with SourceBuffer clearing.
           if (player) player.currentTime = targetPos
+          // 2. Restart HLS.js loading regardless: if video.currentTime was already
+          //    at targetPos (seek is a no-op), HLS.js stays IDLE without this call.
+          hls.startLoad(targetPos)
         }, delayMs))
       }
 
