@@ -492,6 +492,14 @@ class FFmpegSession {
         throw new Error(`Segment ${segmentNumber} abandoned: behind start ${this.currentStartSegment}`)
       }
 
+      // Segments very far ahead of what ffmpeg has generated: fail immediately.
+      // HLS.js aggressively pre-buffers (up to maxMaxBufferLength=600s), so requests
+      // ~100 segments ahead are normal. Beyond that, the 120s timeout would fire
+      // anyway and far-ahead requests should never be served on the current session.
+      if (this.process && this.highestReady >= 0 && segmentNumber > this.highestReady + 100) {
+        throw new Error(`Segment ${segmentNumber} too far ahead (highest: ${this.highestReady})`)
+      }
+
       // Restart ffmpeg if it died unexpectedly (not during a seek transition)
       if (!this.process && !this.isStarting) {
         if (restartAttempts >= MAX_RESTART_ATTEMPTS) {
