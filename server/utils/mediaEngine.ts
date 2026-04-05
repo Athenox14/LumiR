@@ -186,10 +186,12 @@ const HLS_DIR = join(tmpdir(), 'lumir-hls')
 const DISPOSE_TIMEOUT = 2 * 60 * 1000 // 2 min idle → cleanup
 const SEGMENT_WAIT_TIMEOUT = 120_000   // 120s — covers far-ahead requests at ~3x transcode speed
 const SEEK_THRESHOLD = 30              // Segments ahead → restart ffmpeg with -ss
-// Sliding window: delete segments older than this many segments behind highestReady.
-// Bounds disk usage to ~60 segments × ~1.5MB = ~90MB per session regardless of
-// how long a session runs. 60 segments = 360s = 6 min of backward seek range.
-const SEGMENT_KEEP_BEHIND = 60
+// Sliding window: delete segments older than this many segments behind the
+// last-SERVED segment (not highestReady). This prevents deleting segments
+// the player hasn't consumed yet: ffmpeg generates segments ~10-20x faster
+// than playback, so a window based on highestReady would delete segments
+// the player still needs. KEEP_BEHIND covers backward seeks (200 segs = 20 min).
+const SEGMENT_KEEP_BEHIND = 200
 
 const sessions = new Map<string, FFmpegSession>()
 
@@ -198,6 +200,8 @@ class FFmpegSession {
   private outputDir: string
   private totalSegments: number
   highestReady = -1
+  /** Highest segment number actually served via HTTP — used for sliding window cleanup. */
+  private lastServedSegment = -1
   private disposeTimer: ReturnType<typeof setTimeout> | null = null
   currentStartSegment = 0
   private decision: PlaybackDecision | null = null
@@ -268,6 +272,7 @@ class FFmpegSession {
     const startSeg = opts?.startSegment ?? 0
     this.currentStartSegment = startSeg
     this.highestReady = startSeg - 1
+    this.lastServedSegment = startSeg - 1
     const startTime = startSeg * SEGMENT_DURATION
 
     // Kill any existing process FIRST, but mark that we're starting a new
@@ -470,6 +475,16 @@ class FFmpegSession {
     // With temp_file flag, the file only exists once fully written.
     if (existsSync(segPath)) {
       if (segmentNumber > this.highestReady) this.highestReady = segmentNumber
+      // Sliding window: delete old segments based on what the client has SERVED,
+      // not what ffmpeg has generated. ffmpeg runs ~10-20x faster than playback,
+      // so using highestReady would delete segments the player still needs.
+      if (segmentNumber > this.lastServedSegment) {
+        this.lastServedSegment = segmentNumber
+        const toDelete = segmentNumber - SEGMENT_KEEP_BEHIND
+        if (toDelete >= this.currentStartSegment) {
+          try { unlinkSync(join(this.outputDir, `segment-${toDelete}.ts`)) } catch {}
+        }
+      }
       const stat = statSync(segPath)
       return { stream: createReadStream(segPath), size: stat.size }
     }
@@ -660,16 +675,7 @@ class FFmpegSession {
       const segPath = join(this.outputDir, filename as string)
       if (!existsSync(segPath)) return
       const seg = parseInt(m[1]!, 10)
-      if (seg > this.highestReady) {
-        this.highestReady = seg
-        // Sliding window: delete the segment that just fell out of the keep window.
-        // This bounds disk usage to SEGMENT_KEEP_BEHIND segments per session (~90MB)
-        // regardless of how long the session runs.
-        const toDelete = seg - SEGMENT_KEEP_BEHIND
-        if (toDelete >= this.currentStartSegment) {
-          try { unlinkSync(join(this.outputDir, `segment-${toDelete}.ts`)) } catch {}
-        }
-      }
+      if (seg > this.highestReady) this.highestReady = seg
       const waiters = this.segmentWaiters.get(seg)
       if (waiters) {
         this.segmentWaiters.delete(seg)
