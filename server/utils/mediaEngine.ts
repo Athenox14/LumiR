@@ -186,10 +186,6 @@ const HLS_DIR = join(tmpdir(), 'lumir-hls')
 const DISPOSE_TIMEOUT = 2 * 60 * 1000 // 2 min idle → cleanup
 const SEGMENT_WAIT_TIMEOUT = 120_000   // 120s — covers far-ahead requests at ~3x transcode speed
 const SEEK_THRESHOLD = 30              // Segments ahead → restart ffmpeg with -ss
-// Sliding window: delete segments older than this many segments behind highestReady.
-// Bounds disk usage to ~60 segments × ~1.5MB = ~90MB per session regardless of
-// how long a session runs. 60 segments = 360s = 6 min of backward seek range.
-const SEGMENT_KEEP_BEHIND = 60
 
 const sessions = new Map<string, FFmpegSession>()
 
@@ -660,16 +656,7 @@ class FFmpegSession {
       const segPath = join(this.outputDir, filename as string)
       if (!existsSync(segPath)) return
       const seg = parseInt(m[1]!, 10)
-      if (seg > this.highestReady) {
-        this.highestReady = seg
-        // Sliding window: delete the segment that just fell out of the keep window.
-        // This bounds disk usage to SEGMENT_KEEP_BEHIND segments per session (~90MB)
-        // regardless of how long the session runs.
-        const toDelete = seg - SEGMENT_KEEP_BEHIND
-        if (toDelete >= this.currentStartSegment) {
-          try { unlinkSync(join(this.outputDir, `segment-${toDelete}.ts`)) } catch {}
-        }
-      }
+      if (seg > this.highestReady) this.highestReady = seg
       const waiters = this.segmentWaiters.get(seg)
       if (waiters) {
         this.segmentWaiters.delete(seg)
