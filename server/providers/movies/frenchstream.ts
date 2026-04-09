@@ -30,6 +30,11 @@ let cachedBaseUrl: string | null = null
 let cacheTimestamp = 0
 const CACHE_TTL = 1000 * 60 * 30 // 30 minutes
 
+function invalidateDomainCache(): void {
+  cachedBaseUrl = null
+  cacheTimestamp = 0
+}
+
 async function resolveCurrentDomain(): Promise<string> {
   // Return cached URL if still valid
   if (cachedBaseUrl && Date.now() - cacheTimestamp < CACHE_TTL) {
@@ -64,7 +69,6 @@ async function resolveCurrentDomain(): Promise<string> {
 
 class FrenchStream extends MovieParser {
   protected baseUrl = 'https://french-stream.pink'
-  private domainResolved = false
 
   constructor() {
     super()
@@ -74,30 +78,12 @@ class FrenchStream extends MovieParser {
   }
 
   private async ensureDomain(): Promise<void> {
-    if (this.domainResolved) return
-
-    // Quick check: try current baseUrl
-    try {
-      const { status } = await this.client.get(this.baseUrl, {
-        timeout: 5000,
-        validateStatus: () => true,
-        maxRedirects: 3,
-      })
-      if (status < 400) {
-        this.domainResolved = true
-        return
-      }
-    } catch {
-      // Domain unreachable
-    }
-
-    // Current domain failed, resolve from fstream.net
+    // Always resolve from cache/fstream.net to stay up to date
     const resolved = await resolveCurrentDomain()
     if (resolved !== this.baseUrl) {
       console.log(`[FrenchStream] Switching domain: ${this.baseUrl} → ${resolved}`)
       this.baseUrl = resolved
     }
-    this.domainResolved = true
   }
 
   private mapQuality(text: string): string {
@@ -120,10 +106,28 @@ class FrenchStream extends MovieParser {
 
   override search = async (query: string, page: number = 1): Promise<ISearch<IMovieResult>> => {
     await this.ensureDomain()
+    const emptyResults: ISearch<IMovieResult> = { currentPage: page, hasNextPage: false, results: [] }
+    let data: string
     try {
-      const { data } = await this.client.get(
-        `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query)}`
+      const response = await this.client.get(
+        `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query)}`,
+        {
+          headers: { Referer: this.baseUrl + '/' },
+          validateStatus: (status) => status < 500,
+        }
       )
+      if (response.status >= 400) {
+        console.warn(`[FrenchStream] Search returned HTTP ${response.status} for "${query}" — skipping`)
+        invalidateDomainCache()
+        return emptyResults
+      }
+      data = response.data
+    } catch (err) {
+      console.warn(`[FrenchStream] Search request failed for "${query}": ${(err as Error).message}`)
+      invalidateDomainCache()
+      return emptyResults
+    }
+    try {
       const $ = load(data)
 
       const results: ISearch<IMovieResult> = {
@@ -159,7 +163,8 @@ class FrenchStream extends MovieParser {
 
       return results
     } catch (err) {
-      throw new Error((err as Error).message)
+      console.warn(`[FrenchStream] Failed to parse search results for "${query}": ${(err as Error).message}`)
+      return emptyResults
     }
   }
 
