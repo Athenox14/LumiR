@@ -1,75 +1,78 @@
-# Nuxt Minimal Starter
+# LumiR
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+A self-hosted media server for your personal movie and TV library. Browse, stream, and manage your local media collection with a clean interface, TMDB metadata, and built-in online streaming search.
 
-## Setup
+## Features
 
-Make sure to install dependencies:
+- **Local library** — Auto-scans your folders, fetches posters, descriptions, ratings, and cast from TMDB
+- **HLS streaming** — FFmpeg-powered remux/transcode to HLS, playable on any device
+- **Online streaming search** — Searches FrenchStream and FlixHQ when a title isn't in your local library
+- **Multi-user** — Accounts with role-based access (admin / user), watch progress tracking
+- **Downloads management** — Queue and track downloads
+- **AI descriptions** — Optional Groq integration for enriched summaries
+- **Lightweight** — ~40 MB RAM at runtime
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Full-stack framework | Nuxt 4 + Nitro |
+| Frontend | Vue 3, Tailwind CSS, Vidstack |
+| API | tRPC |
+| Database | SQLite (Drizzle ORM) |
+| Media processing | FFmpeg |
+| Metadata | TMDB API |
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 22+
+- FFmpeg installed on the host
+- A [TMDB API key](https://www.themoviedb.org/settings/api)
+
+### Installation
 
 ```bash
-# npm
+git clone https://github.com/Athenox14/LumiR.git
+cd LumiR
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
+### Configuration
 
-Start the development server on `http://localhost:3000`:
+Create a `.env` file at the root:
+
+```env
+TMDB_API_KEY=your_tmdb_api_key
+NUXT_SESSION_PASSWORD=a_random_32char_secret
+```
+
+### Run
 
 ```bash
-# npm
+# Development
 npm run dev
 
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
-```
-
-## Production
-
-Build the application for production:
-
-```bash
-# npm
+# Production build
 npm run build
-
-# pnpm
-pnpm build
-
-# yarn
-yarn build
-
-# bun
-bun run build
+node .output/server/index.mjs
 ```
 
-Locally preview production build:
+The app starts on `https://localhost:3000`. On first launch, a setup wizard lets you create the admin account and configure your media folders.
 
-```bash
-# npm
-npm run preview
+## Project structure
 
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
+```
+app/          # Vue 3 frontend (pages, components, composables)
+server/
+  api/        # REST endpoints (stream, images, admin)
+  trpc/       # tRPC routers
+  db/         # Drizzle schema (SQLite)
+  providers/  # Streaming providers (FrenchStream, FlixHQ) + pipeline
+  utils/      # FFmpeg engine, TMDB client, media scanner
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## License
+
+MIT
