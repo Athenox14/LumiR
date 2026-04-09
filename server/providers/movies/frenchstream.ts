@@ -109,10 +109,15 @@ class FrenchStream extends MovieParser {
     const emptyResults: ISearch<IMovieResult> = { currentPage: page, hasNextPage: false, results: [] }
     let data: string
     try {
-      const response = await this.client.get(
-        `${this.baseUrl}/index.php?do=search&subaction=search&story=${encodeURIComponent(query)}`,
+      const response = await this.client.post(
+        `${this.baseUrl}/engine/ajax/search.php`,
+        `query=${encodeURIComponent(query)}&page=${page}`,
         {
-          headers: { Referer: this.baseUrl + '/' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Referer': this.baseUrl + '/',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
           validateStatus: (status) => status < 500,
         }
       )
@@ -136,27 +141,29 @@ class FrenchStream extends MovieParser {
         results: [],
       }
 
-      $('div#dle-content > div.short').each((_, el) => {
+      $('div.search-item').each((_, el) => {
         const $el = $(el)
-        const posterEl = $el.find('a.short-poster')
-        const href = posterEl.attr('href') ?? ''
-        const imgSrc = posterEl.find('img').attr('src') ?? ''
-        const title = $el.find('div.short-title').text().trim()
-        const qualityText = $el.find('span.film-ripz > a').text().trim()
-        const epsText = $el.find('span.mli-eps').text().trim()
-        const isVf = $el.find('span.film-verz').text().toUpperCase().includes('VF')
+        const onclick = $el.attr('onclick') ?? ''
+        const slugMatch = /location\.href='([^']+)'/.exec(onclick)
+        if (!slugMatch) return
 
-        if (!href || !title) return
+        const slug = slugMatch[1] // e.g. /155-lucky-luke-film-streaming-complet-vf.html
+        const imgSrc = $el.find('img').attr('src') ?? ''
+        const rawTitle = $el.find('div.search-title').text().trim()
 
-        const isSeries = epsText.toLowerCase().includes('eps')
+        // Strip year from title: "Lucky Luke (2009)" → "Lucky Luke"
+        const title = rawTitle.replace(/\s*\(\d{4}\)\s*(-\s*Saison\s*\d+)?$/, '').trim()
+
+        const isSeries = /serie|saison/i.test(slug) || /saison/i.test(rawTitle)
+        const isVf = /[-_]vf([-_.]|$)/i.test(slug)
 
         results.results.push({
-          id: href.replace(this.baseUrl, '').replace(/^\//, ''),
+          id: slug.replace(/^\//, ''),
           title,
-          url: href.startsWith('http') ? href : `${this.baseUrl}${href}`,
-          image: imgSrc.startsWith('http') ? imgSrc : `${this.baseUrl}${imgSrc}`,
+          url: `${this.baseUrl}${slug}`,
+          image: imgSrc,
           type: isSeries ? TvType.TVSERIES : TvType.MOVIE,
-          quality: this.mapQuality(qualityText),
+          quality: '',
           dubStatus: isVf ? 'VF' : 'VOSTFR',
         })
       })
@@ -172,12 +179,16 @@ class FrenchStream extends MovieParser {
     await this.ensureDomain()
     const url = mediaId.startsWith('http') ? mediaId : `${this.baseUrl}/${mediaId}`
 
+    // Extract newsId from slug prefix: "155-lucky-luke-film.html" → "155"
+    const slugFile = url.split('/').pop() ?? ''
+    const newsIdFromSlug = /^(\d+)-/.exec(slugFile)?.[1] ?? ''
+
     try {
       const { data } = await this.client.get(url)
       const $ = load(data)
 
       const filmData = $('div#film-data')
-      const newsId = filmData.attr('data-newsid') ?? ''
+      const newsId = filmData.attr('data-newsid') ?? newsIdFromSlug
 
       const rawTitle = $('h1#s-title').clone().children().remove().end().text().trim()
       const title = rawTitle || $('h1#s-title').text().replace(/\s*-\s*\d{4}\s*$/, '').trim()
