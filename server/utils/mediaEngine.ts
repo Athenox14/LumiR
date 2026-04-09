@@ -130,7 +130,7 @@ export interface SegmentStream {
 
 const BROWSER_VIDEO_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1'])
 const BROWSER_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac'])
-const BROWSER_NATIVE_CONTAINERS = new Set(['.mp4', '.webm', '.m4v'])
+const BROWSER_NATIVE_CONTAINERS = new Set(['.webm'])
 const HLS_COMPATIBLE_VIDEO = new Set(['h264'])
 const HLS_COMPATIBLE_AUDIO = new Set(['aac', 'mp3'])
 
