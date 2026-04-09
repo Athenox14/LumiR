@@ -51,7 +51,7 @@ const emit = defineEmits<{
 const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
-let hlsInstance: HlsJS | null = null
+let _hlsInstance: HlsJS | null = null
 // Track our own seek target — player.currentTime is unreliable during HLS.js
 // error recovery (may be 0 or stale). Updated in onSeeking and onProviderChange.
 let hlsTargetSeg = 0
@@ -195,7 +195,7 @@ function onProviderChange(event: MediaProviderChangeEvent) {
 
     // Keep a reference to hls.js instance for error recovery
     provider.onInstance((hls) => {
-      hlsInstance = hls
+      _hlsInstance = hls
 
       // Force original quality and ensure correct start position.
       // Only run ONCE — MANIFEST_PARSED can fire multiple times (e.g.
