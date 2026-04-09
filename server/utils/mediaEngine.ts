@@ -11,7 +11,7 @@
 import { execSync, spawn, type ChildProcess } from 'child_process'
 import { createReadStream, existsSync, statSync, readdirSync, unlinkSync, watch as fsWatch, type FSWatcher, type ReadStream } from 'fs'
 import { mkdir, rm } from 'fs/promises'
-import { basename, dirname, extname, join } from 'path'
+import { dirname, extname, join } from 'path'
 import { tmpdir } from 'os'
 
 // ─── Binary resolution ───────────────────────────────────────────────────────
@@ -692,7 +692,7 @@ class FFmpegSession {
           if (i >= 0) arr.splice(i, 1)
           if (arr.length === 0) this.segmentWaiters.delete(segmentNumber)
         }
-        err ? reject(err) : resolve()
+        if (err) { reject(err) } else { resolve() }
       }
 
       const onFile = () => settle()
@@ -731,15 +731,6 @@ class FFmpegSession {
       this.disposeTimer = null
     }
   }
-}
-
-/** Sleep that resolves early if the signal aborts */
-function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) { resolve(); return }
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve() }, { once: true })
-  })
 }
 
 // ─── Session factory ─────────────────────────────────────────────────────────

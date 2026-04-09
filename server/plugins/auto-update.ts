@@ -1,11 +1,10 @@
-import { readFileSync } from 'fs'
+import { readFileSync, mkdirSync, createWriteStream, writeFileSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
 import { db } from '../db'
 import { settings } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { getActiveUserCount } from '../utils/activityTracker'
 import { execSync } from 'child_process'
-import { mkdirSync, createWriteStream, writeFileSync, existsSync, renameSync, rmSync } from 'fs'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 
@@ -18,7 +17,7 @@ interface UpdateInfo {
 }
 
 let pendingUpdate: UpdateInfo | null = null
-let checkTimer: ReturnType<typeof setInterval> | null = null
+let _checkTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * Fetch the latest release info from GitHub (same logic as check-update.get.ts).
@@ -212,7 +211,7 @@ export default defineNitroPlugin(() => {
   }, 10000) // 10s delay to let DB initialize
 
   // Periodic check every 5 minutes
-  checkTimer = setInterval(async () => {
+  _checkTimer = setInterval(async () => {
     try {
       await periodicCheck()
     } catch (e) {
