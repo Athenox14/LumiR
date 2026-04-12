@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db } from '../../db'
-import { media, audioTracks, subtitleTracks, settings, scanHistory } from '../../db/schema'
+import { media, audioTracks, subtitleTracks, settings, scanHistory, downloads } from '../../db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { promises as fs } from 'fs'
@@ -526,7 +526,8 @@ async function scanLibrary(scanId: string, mediaPath: string) {
       try {
         await fs.access(item.filePath)
       } catch {
-        // File no longer exists — remove from DB (cascade deletes tracks, progress, ratings)
+        // File no longer exists — detach download links, then remove media
+        await db.update(downloads).set({ mediaId: null }).where(eq(downloads.mediaId, item.id))
         await db.delete(media).where(eq(media.id, item.id))
         removedFiles++
         console.log(`[Scan] Removed missing file: ${item.filePath}`)
@@ -615,4 +616,3 @@ export async function triggerAutoScan(): Promise<boolean> {
   scanLibrary(scanId, mediaPath).catch(console.error)
   return true
 }
-
