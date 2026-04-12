@@ -3,7 +3,7 @@ import os from 'os'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
-import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings } from '../../db/schema'
+import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downloads } from '../../db/schema'
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
@@ -521,6 +521,9 @@ export const mediaRouter = router({
   delete: adminProcedure
     .input(z.string())
     .mutation(async ({ input }) => {
+      // downloads.media_id has a FK to media.id without ON DELETE action.
+      // Nullify references first to avoid SQLITE_CONSTRAINT on old rows.
+      await db.update(downloads).set({ mediaId: null }).where(eq(downloads.mediaId, input))
       await db.delete(media).where(eq(media.id, input))
 
       // Clean up subtitle cache directory
