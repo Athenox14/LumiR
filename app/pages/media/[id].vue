@@ -7,6 +7,7 @@ const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
 const { isAdmin } = useAuth()
+const { track } = useAnalytics()
 
 const mediaId = computed(() => route.params.id as string)
 
@@ -290,6 +291,14 @@ async function saveMediaInfo() {
 }
 
 const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"%3E%3Crect fill="%230a0a0a" width="1920" height="1080"/%3E%3C/svg%3E'
+
+watch(media, (value) => {
+  if (!value) return
+  track('MEDIA_VIEW', value.id, {
+    mediaType: value.mediaType,
+    title: value.title,
+  })
+}, { once: true })
 </script>
 
 <template>

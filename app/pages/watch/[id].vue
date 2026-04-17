@@ -7,6 +7,7 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
+const { track } = useAnalytics()
 
 const mediaId = computed(() => route.params.id as string)
 
@@ -25,6 +26,7 @@ const { data: streamInfo, pending: streamPending } = useAsyncData(
 
 // Track current playback position (for resuming after audio track switch)
 const currentPosition = ref(0)
+let lastTrackedWatchBucket = -1
 
 // Audio track selection (absolute stream index from ffprobe)
 const selectedAudioTrack = ref<number | undefined>(undefined)
@@ -94,6 +96,16 @@ const displayTitle = computed(() => {
 
 async function handleProgress(position: number, duration: number) {
   currentPosition.value = position
+
+  const watchBucket = Math.floor(position / 120)
+  if (watchBucket > lastTrackedWatchBucket) {
+    lastTrackedWatchBucket = watchBucket
+    track('WATCH_PROGRESS', mediaId.value, {
+      position: Math.floor(position),
+      duration: Math.floor(duration),
+    })
+  }
+
   try {
     await trpc.media.updateProgress.mutate({
       mediaId: mediaId.value,
@@ -129,6 +141,11 @@ async function handleEnded() {
     })
     return
   }
+
+  track('WATCH_COMPLETE', mediaId.value, {
+    position: Math.floor(currentPosition.value),
+    duration: Math.floor(duration),
+  })
 
   // For TV shows, try to auto-play next episode
   if (media.value?.mediaType === 'tv') {
