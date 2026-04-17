@@ -52,6 +52,15 @@ const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let _hlsInstance: HlsJS | null = null
+
+// ─── Player State ────────────────────────────────────────────────────────────
+// Note: useMediaStore must be called in setup, not inside a function.
+const { canGoogleCast, canAirPlay } = useMediaStore(playerRef)
+
+watch([canGoogleCast, canAirPlay], ([cast, airplay]) => {
+  console.log(`[Player] Cast Support: Google=${cast}, AirPlay=${airplay}`)
+})
+
 // Track our own seek target — player.currentTime is unreliable during HLS.js
 // error recovery (may be 0 or stale). Updated in onSeeking and onProviderChange.
 let hlsTargetSeg = 0
@@ -401,6 +410,10 @@ onUnmounted(() => {
         key-target="player"
         class="vds-player"
         :style="{ width: '100%', height: '100%' }"
+        :google-cast="{
+          receiverApplicationId: 'CC1AD845',
+          autoJoinPolicy: 'origin_scoped',
+        }"
         @provider-change="onProviderChange"
         @can-play="onCanPlay"
         @seeking="onSeeking"
