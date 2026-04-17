@@ -3,6 +3,7 @@ const { user, logout } = useAuth()
 const { t, locale, setLocale } = useI18n()
 const trpc = useTrpc()
 const route = useRoute()
+const { track } = useAnalytics()
 
 const searchQuery = ref('')
 const showUserMenu = ref(false)
@@ -11,6 +12,10 @@ const showSearchResults = ref(false)
 const searchResults = ref<any[]>([])
 const searchLoading = ref(false)
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchStartedAt = ref<number | null>(null)
+const lastExecutedQuery = ref('')
+const searchQueriesBeforeSelection = ref(0)
+const lastSearchResultCount = ref(0)
 
 // Sync search query from URL when on search page
 watch(() => route.query.q, (q) => {
@@ -26,20 +31,45 @@ watch(searchQuery, (value) => {
   if (searchTimeout) clearTimeout(searchTimeout)
 
   if (!value.trim()) {
+    if (lastExecutedQuery.value) {
+      track('SEARCH_ABANDON', null, {
+        source: 'navbar',
+        query: lastExecutedQuery.value,
+        clientAt: new Date().toISOString(),
+      })
+    }
     searchResults.value = []
     showSearchResults.value = false
+    lastExecutedQuery.value = ''
     return
+  }
+
+  if (!searchStartedAt.value) {
+    searchStartedAt.value = Date.now()
   }
 
   searchTimeout = setTimeout(async () => {
     searchLoading.value = true
     try {
+      const refinedFrom = lastExecutedQuery.value && lastExecutedQuery.value !== value.trim()
+        ? lastExecutedQuery.value
+        : undefined
       const result = await trpc.media.list.query({
         search: value,
         limit: 8,
       })
       searchResults.value = result.items || []
       showSearchResults.value = true
+      lastSearchResultCount.value = searchResults.value.length
+      searchQueriesBeforeSelection.value += 1
+      track('SEARCH_QUERY', null, {
+        source: 'navbar',
+        query: value.trim(),
+        refinedFrom,
+        resultCount: searchResults.value.length,
+        clientAt: new Date().toISOString(),
+      })
+      lastExecutedQuery.value = value.trim()
     } catch {
       searchResults.value = []
     } finally {
@@ -50,13 +80,31 @@ watch(searchQuery, (value) => {
 
 function handleSearch() {
   if (searchQuery.value.trim()) {
+    track('SEARCH_SUBMIT', null, {
+      source: 'navbar',
+      query: searchQuery.value.trim(),
+      resultCount: lastSearchResultCount.value,
+      clientAt: new Date().toISOString(),
+    })
     showSearchResults.value = false
     navigateTo(`/search?q=${encodeURIComponent(searchQuery.value)}`)
   }
 }
 
-function goToMedia(item: any) {
+function goToMedia(item: any, index: number) {
+  track('SEARCH_CLICK', item.id, {
+    source: 'navbar',
+    query: searchQuery.value.trim(),
+    position: index + 1,
+    resultCount: lastSearchResultCount.value,
+    latencyMs: searchStartedAt.value ? Date.now() - searchStartedAt.value : null,
+    searchesBeforeSelection: searchQueriesBeforeSelection.value,
+    clientAt: new Date().toISOString(),
+  })
   showSearchResults.value = false
+  lastExecutedQuery.value = ''
+  searchStartedAt.value = null
+  searchQueriesBeforeSelection.value = 0
   searchQuery.value = ''
   navigateTo(`/media/${item.id}`)
 }
@@ -148,11 +196,11 @@ onMounted(() => {
           <!-- Results -->
           <template v-else-if="searchResults.length > 0">
             <button
-              v-for="item in searchResults"
+              v-for="(item, index) in searchResults"
               :key="item.id"
               type="button"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-secondary transition-colors text-left"
-              @click="goToMedia(item)"
+              @click="goToMedia(item, index)"
             >
               <div class="w-10 h-14 rounded bg-surface-secondary flex-shrink-0 overflow-hidden">
                 <img

@@ -7,9 +7,15 @@ const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
 const { isAdmin } = useAuth()
-const { track } = useAnalytics()
+const { track: analyticsTrack } = useAnalytics()
 
 const mediaId = computed(() => route.params.id as string)
+const pageOpenedAt = Date.now()
+const maxScrollDepth = ref(0)
+const seenSections = ref(new Set<string>())
+const overviewSectionRef = ref<HTMLElement | null>(null)
+const castSectionRef = ref<HTMLElement | null>(null)
+const metadataSectionRef = ref<HTMLElement | null>(null)
 
 const { data: media, pending, error } = useAsyncData(
   `media-${mediaId.value}`,
@@ -118,6 +124,12 @@ async function handleRate(rating: 1 | -1) {
     if (oldRating === -1) dislikesCount.value--
     if (result.rating === 1) likesCount.value++
     if (result.rating === -1) dislikesCount.value++
+    if (result.rating) {
+      analyticsTrack(result.rating === 1 ? 'MEDIA_LIKE' : 'MEDIA_DISLIKE', mediaId.value, {
+        previousRating: oldRating,
+        clientAt: new Date().toISOString(),
+      })
+    }
   } catch (e) {
     console.error('Failed to rate:', e)
   } finally {
@@ -216,7 +228,9 @@ async function reidentifyMedia(tmdbId: number) {
 
 // Pre-heat transcode session so playback starts faster when user clicks Play
 // Skip if coming back from the watch page (user already watched, no need to preheat)
-const cameFromWatch = !!(window?.history?.state?.back as string)?.startsWith('/watch/')
+const cameFromWatch = import.meta.client
+  ? !!(window.history?.state?.back as string | undefined)?.startsWith('/watch/')
+  : false
 const preheated = ref(false)
 watch(media, (m) => {
   if (!m?.filePath || cameFromWatch) return
@@ -293,12 +307,72 @@ async function saveMediaInfo() {
 const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"%3E%3Crect fill="%230a0a0a" width="1920" height="1080"/%3E%3C/svg%3E'
 
 watch(media, (value) => {
-  if (!value) return
-  track('MEDIA_VIEW', value.id, {
+  if (!value || !import.meta.client) return
+  const visitsKey = `pipouflix:media-visits:${value.id}`
+  const previousVisits = Number(localStorage.getItem(visitsKey) || '0')
+  localStorage.setItem(visitsKey, String(previousVisits + 1))
+  analyticsTrack('MEDIA_VIEW', value.id, {
     mediaType: value.mediaType,
     title: value.title,
+    repeatVisit: previousVisits > 0,
+    clientAt: new Date().toISOString(),
   })
 }, { once: true })
+
+function updateScrollDepth() {
+  const scrollable = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1)
+  maxScrollDepth.value = Math.max(maxScrollDepth.value, window.scrollY / scrollable)
+}
+
+function trackSectionView(section: string) {
+  if (!media.value || seenSections.value.has(section)) return
+  seenSections.value.add(section)
+  analyticsTrack('MEDIA_SECTION_VIEW', media.value.id, {
+    section,
+    clientAt: new Date().toISOString(),
+  })
+}
+
+function handlePlayIntent() {
+  if (!media.value) return
+  analyticsTrack('MEDIA_PLAY_INTENT', media.value.id, {
+    delayFromOpenMs: Date.now() - pageOpenedAt,
+    mediaType: media.value.mediaType,
+    clientAt: new Date().toISOString(),
+  })
+}
+
+onMounted(() => {
+  updateScrollDepth()
+  window.addEventListener('scroll', updateScrollDepth, { passive: true })
+
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      if (entry.target === overviewSectionRef.value) trackSectionView('synopsis')
+      if (entry.target === castSectionRef.value) trackSectionView('cast')
+      if (entry.target === metadataSectionRef.value) trackSectionView('metadata')
+    }
+  }, { threshold: 0.35 })
+
+  if (overviewSectionRef.value) observer.observe(overviewSectionRef.value)
+  if (castSectionRef.value) observer.observe(castSectionRef.value)
+  if (metadataSectionRef.value) observer.observe(metadataSectionRef.value)
+
+  onUnmounted(() => {
+    observer.disconnect()
+    window.removeEventListener('scroll', updateScrollDepth)
+    if (!media.value) return
+    const timeOnPageMs = Date.now() - pageOpenedAt
+    analyticsTrack('MEDIA_DETAIL_ENGAGEMENT', media.value.id, {
+      timeOnPageMs,
+      scrollDepth: Math.round(maxScrollDepth.value * 100),
+      immediateExit: timeOnPageMs < 4000,
+      sectionsSeen: Array.from(seenSections.value),
+      clientAt: new Date().toISOString(),
+    })
+  })
+})
 </script>
 
 <template>
@@ -428,6 +502,7 @@ watch(media, (value) => {
               <NuxtLink
                 :to="`/watch/${media.id}`"
                 class="inline-flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary-hover text-white font-medium rounded-xl transition-colors"
+                @click="handlePlayIntent"
               >
                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
@@ -488,14 +563,16 @@ watch(media, (value) => {
 
         <!-- Overview -->
         <div v-if="media.overview" class="mb-8">
+          <div ref="overviewSectionRef">
           <h2 class="text-lg font-semibold text-text-primary mb-2">{{ t('media.overview') }}</h2>
           <p class="text-text-secondary leading-relaxed">
             {{ media.overview }}
           </p>
+          </div>
         </div>
 
         <!-- Cast -->
-        <div v-if="normalizedCast.length" class="mb-8">
+        <div v-if="normalizedCast.length" ref="castSectionRef" class="mb-8">
           <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('media.casting') }}</h2>
           <div class="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
             <NuxtLink
@@ -525,7 +602,7 @@ watch(media, (value) => {
         </div>
 
         <!-- Technical info -->
-        <div class="grid md:grid-cols-2 gap-6">
+        <div ref="metadataSectionRef" class="grid md:grid-cols-2 gap-6">
           <!-- Audio tracks -->
           <div v-if="media.audioTracks?.length">
             <h3 class="text-sm font-medium text-text-muted uppercase tracking-wider mb-3">
@@ -533,8 +610,8 @@ watch(media, (value) => {
             </h3>
             <div class="space-y-2">
               <div
-                v-for="track in media.audioTracks"
-                :key="track.id"
+                v-for="audioTrack in media.audioTracks"
+                :key="audioTrack.id"
                 class="flex items-center gap-3 p-3 bg-surface rounded-lg"
               >
                 <svg class="w-5 h-5 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -542,10 +619,10 @@ watch(media, (value) => {
                 </svg>
                 <div>
                   <p class="text-sm text-text-primary">
-                    {{ track.title || track.language || t('common.unknown') }}
+                    {{ audioTrack.title || audioTrack.language || t('common.unknown') }}
                   </p>
                   <p class="text-xs text-text-muted">
-                    {{ track.codec }} {{ track.channels ? `(${track.channels}ch)` : '' }}
+                    {{ audioTrack.codec }} {{ audioTrack.channels ? `(${audioTrack.channels}ch)` : '' }}
                   </p>
                 </div>
               </div>
@@ -559,8 +636,8 @@ watch(media, (value) => {
             </h3>
             <div class="space-y-2">
               <div
-                v-for="track in media.subtitleTracks"
-                :key="track.id"
+                v-for="subtitleTrack in media.subtitleTracks"
+                :key="subtitleTrack.id"
                 class="flex items-center gap-3 p-3 bg-surface rounded-lg"
               >
                 <svg class="w-5 h-5 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -568,11 +645,11 @@ watch(media, (value) => {
                 </svg>
                 <div>
                   <p class="text-sm text-text-primary">
-                    {{ track.title || track.language || t('common.unknown') }}
+                    {{ subtitleTrack.title || subtitleTrack.language || t('common.unknown') }}
                   </p>
                   <p class="text-xs text-text-muted">
-                    {{ track.codec }}
-                    {{ track.isForced ? `(${t('media.forced')})` : '' }}
+                    {{ subtitleTrack.codec }}
+                    {{ subtitleTrack.isForced ? `(${t('media.forced')})` : '' }}
                   </p>
                 </div>
               </div>

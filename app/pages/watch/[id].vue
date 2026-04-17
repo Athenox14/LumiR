@@ -7,9 +7,13 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
-const { track } = useAnalytics()
+const { track: analyticsTrack } = useAnalytics()
 
 const mediaId = computed(() => route.params.id as string)
+const watchOpenedAt = Date.now()
+const watchStarted = ref(false)
+const watchCompleted = ref(false)
+const watchPaused = ref(false)
 
 const { data: media, pending, error } = useAsyncData(
   `watch-${mediaId.value}`,
@@ -100,9 +104,12 @@ async function handleProgress(position: number, duration: number) {
   const watchBucket = Math.floor(position / 120)
   if (watchBucket > lastTrackedWatchBucket) {
     lastTrackedWatchBucket = watchBucket
-    track('WATCH_PROGRESS', mediaId.value, {
+    analyticsTrack('WATCH_PROGRESS', mediaId.value, {
       position: Math.floor(position),
       duration: Math.floor(duration),
+      deltaSeconds: 120,
+      completionRate: duration > 0 ? position / duration : 0,
+      clientAt: new Date().toISOString(),
     })
   }
 
@@ -119,10 +126,71 @@ async function handleProgress(position: number, duration: number) {
 
 function handleAudioTrackChange(trackIndex: number) {
   selectedAudioTrack.value = trackIndex
+  const selectedTrack = media.value?.audioTracks?.find(track => track.trackIndex === trackIndex)
+  analyticsTrack('WATCH_AUDIO_CHANGE', mediaId.value, {
+    trackIndex,
+    language: selectedTrack?.language || null,
+    label: selectedTrack?.title || null,
+    clientAt: new Date().toISOString(),
+  })
 }
 
 function handleBurnInSubtitleChange(trackIndex: number | undefined) {
   selectedBurnInSubtitle.value = trackIndex
+  const selectedTrack = media.value?.subtitleTracks?.find(track => track.trackIndex === trackIndex)
+  analyticsTrack('WATCH_SUBTITLE_CHANGE', mediaId.value, {
+    trackIndex,
+    mode: trackIndex == null ? 'off' : 'burn-in',
+    language: selectedTrack?.language || null,
+    label: selectedTrack?.title || null,
+    clientAt: new Date().toISOString(),
+  })
+}
+
+function handlePlay(position: number) {
+  const now = new Date().toISOString()
+  if (!watchStarted.value) {
+    watchStarted.value = true
+    analyticsTrack('WATCH_START', mediaId.value, {
+      position: Math.floor(position),
+      resume: (media.value?.watchProgress?.position || 0) > 0,
+      delayFromOpenMs: Date.now() - watchOpenedAt,
+      clientAt: now,
+    })
+    return
+  }
+  if (watchPaused.value) {
+    watchPaused.value = false
+    analyticsTrack('WATCH_RESUME', mediaId.value, {
+      position: Math.floor(position),
+      clientAt: now,
+    })
+  }
+}
+
+function handlePause(position: number) {
+  watchPaused.value = true
+  analyticsTrack('WATCH_PAUSE', mediaId.value, {
+    position: Math.floor(position),
+    clientAt: new Date().toISOString(),
+  })
+}
+
+function handleSeek(from: number, to: number) {
+  analyticsTrack('WATCH_SEEK', mediaId.value, {
+    from: Math.floor(from),
+    to: Math.floor(to),
+    delta: Math.floor(to - from),
+    direction: to >= from ? 'forward' : 'backward',
+    clientAt: new Date().toISOString(),
+  })
+}
+
+function handleFullscreenChange(fullscreen: boolean) {
+  analyticsTrack('WATCH_FULLSCREEN_CHANGE', mediaId.value, {
+    fullscreen,
+    clientAt: new Date().toISOString(),
+  })
 }
 
 async function handleEnded() {
@@ -142,9 +210,12 @@ async function handleEnded() {
     return
   }
 
-  track('WATCH_COMPLETE', mediaId.value, {
+  watchCompleted.value = true
+  analyticsTrack('WATCH_COMPLETE', mediaId.value, {
     position: Math.floor(currentPosition.value),
     duration: Math.floor(duration),
+    positionRatio: duration > 0 ? currentPosition.value / duration : 1,
+    clientAt: new Date().toISOString(),
   })
 
   // For TV shows, try to auto-play next episode
@@ -162,6 +233,20 @@ async function handleEnded() {
   // Fallback: go back to media/show page
   navigateTo(backUrl.value)
 }
+
+onUnmounted(() => {
+  const duration = streamInfo.value?.duration || (media.value?.runtime ? media.value.runtime * 60 : 0)
+  if (!watchStarted.value || watchCompleted.value || !media.value) return
+  analyticsTrack('WATCH_STOP', mediaId.value, {
+    position: Math.floor(currentPosition.value),
+    duration: Math.floor(duration),
+    positionRatio: duration > 0 ? currentPosition.value / duration : 0,
+    quickAbandon: currentPosition.value < 300,
+    reason: watchPaused.value ? 'paused-exit' : 'left-player',
+    timeSinceOpenMs: Date.now() - watchOpenedAt,
+    clientAt: new Date().toISOString(),
+  })
+})
 </script>
 
 <template>
@@ -193,8 +278,12 @@ async function handleEnded() {
       autoplay
       @progress="handleProgress"
       @ended="handleEnded"
+      @play="handlePlay"
+      @pause="handlePause"
+      @seek="handleSeek"
       @change-audio-track="handleAudioTrackChange"
       @change-burn-in-subtitle="handleBurnInSubtitleChange"
+      @fullscreen-change="handleFullscreenChange"
     />
   </div>
 </template>

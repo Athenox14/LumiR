@@ -11,7 +11,7 @@ export const analyticsRouter = router({
     .input(z.object({
       type: z.string(),
       mediaId: z.string().optional().nullable(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await db.insert(userEvents).values({
@@ -31,6 +31,7 @@ export const analyticsRouter = router({
       userId: userProfiles.userId,
       email: users.email,
       scores: userProfiles.scores,
+      profileData: userProfiles.profileData,
     })
     .from(userProfiles)
     .leftJoin(users, eq(userProfiles.userId, users.id))
@@ -43,7 +44,21 @@ export const analyticsRouter = router({
       if (!profile) throw new Error('Profile not found')
       const scores = profile.scores || {}
       scores[input.genre] = input.score
-      await db.update(userProfiles).set({ scores }).where(eq(userProfiles.userId, input.userId))
+      const profileData = (profile.profileData && typeof profile.profileData === 'object') ? profile.profileData as Record<string, any> : {}
+      const preferenceGenres = (profileData.preferences?.genreScores && typeof profileData.preferences.genreScores === 'object')
+        ? profileData.preferences.genreScores
+        : {}
+      preferenceGenres[input.genre] = input.score
+      await db.update(userProfiles).set({
+        scores,
+        profileData: {
+          ...profileData,
+          preferences: {
+            ...(profileData.preferences || {}),
+            genreScores: preferenceGenres,
+          },
+        },
+      }).where(eq(userProfiles.userId, input.userId))
       return { success: true }
     }),
 

@@ -23,6 +23,10 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   showProgress: true,
 })
+const { track } = useAnalytics()
+const hoverStartedAt = ref<number | null>(null)
+const lastHoverMs = ref(0)
+const lastClickAt = ref(0)
 
 const progressPercent = computed(() => {
   if (!props.media.watchProgress?.duration) return 0
@@ -30,12 +34,47 @@ const progressPercent = computed(() => {
 })
 
 const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"%3E%3Crect fill="%231a1a1a" width="300" height="450"/%3E%3Ctext fill="%23404040" font-family="sans-serif" font-size="24" text-anchor="middle" x="150" y="225"%3ENo Poster%3C/text%3E%3C/svg%3E'
+
+function startHover() {
+  hoverStartedAt.value = Date.now()
+}
+
+function endHover(clickedAfterHover = false) {
+  if (!hoverStartedAt.value) return
+  const hoverMs = Date.now() - hoverStartedAt.value
+  lastHoverMs.value = hoverMs
+  hoverStartedAt.value = null
+  track('HOVER', props.media.id, {
+    source: 'library-card',
+    hoverMs,
+    clickedAfterHover,
+    hesitation: hoverMs >= 1500,
+    mediaType: props.media.mediaType,
+    clientAt: new Date().toISOString(),
+  })
+}
+
+function handleClick() {
+  endHover(true)
+  const now = Date.now()
+  track('CARD_CLICK', props.media.id, {
+    source: 'library-card',
+    hoverMs: lastHoverMs.value,
+    mediaType: props.media.mediaType,
+    clickBurst: now - lastClickAt.value < 500,
+    clientAt: new Date().toISOString(),
+  })
+  lastClickAt.value = now
+}
 </script>
 
 <template>
   <NuxtLink
     :to="`/media/${media.id}`"
     class="group block"
+    @mouseenter="startHover"
+    @mouseleave="endHover()"
+    @click="handleClick"
   >
     <div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-surface card-hover">
       <!-- Poster -->
