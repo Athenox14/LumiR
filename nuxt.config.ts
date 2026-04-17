@@ -51,6 +51,9 @@ export default defineNuxtConfig({
       ],
       script: [
         {
+          src: 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1',
+        },
+        {
           src: '//instant.page/5.2.0',
           type: 'module',
           integrity: 'sha384-jnZyxPjiipYXnSU0ygqeac2q7CVYMbh84q0uHVRRxEtvFPiQYbXWUorga2aqZJ0z',

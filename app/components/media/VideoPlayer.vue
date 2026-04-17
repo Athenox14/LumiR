@@ -418,6 +418,11 @@ onUnmounted(() => {
             :data-type="sub.url.endsWith('.srt') ? 'srt' : 'vtt'"
           >
         </media-provider>
+
+        <!-- Cast & AirPlay Providers -->
+        <media-google-cast />
+        <media-airplay />
+
         <media-video-layout
           color-scheme="dark"
           :no-gestures="false"
