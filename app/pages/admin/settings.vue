@@ -11,6 +11,10 @@ useHead({ title: computed(() => t('admin.settings')) })
 const loading = ref(false)
 const success = ref(false)
 const error = ref('')
+const analyticsModalOpen = ref(false)
+const analyticsTab = ref<'sessions' | 'profiles'>('sessions')
+const analyticsLoading = ref(false)
+const analyticsError = ref('')
 
 // Form data
 const appNameInput = ref('')
@@ -42,6 +46,8 @@ const { data: announcements, refresh: refreshAnnouncements } = useAsyncData(
   'settings-announcements',
   () => trpc.announcements.getAll.query()
 )
+const sessions = ref<Array<{ userId: string, email: string, currentPage: string, lastActive: number }>>([])
+const profiles = ref<Array<{ userId: string, email: string | null, scores: Record<string, number> | null }>>([])
 
 function openCreateAnnouncement() {
   editingAnnouncementId.value = null
@@ -118,6 +124,75 @@ function getAnnouncementBadgeClass(type: string) {
     case 'success': return 'bg-green-500/10 text-green-500'
     case 'error': return 'bg-red-500/10 text-red-500'
     default: return 'bg-gray-500/10 text-gray-400'
+  }
+}
+
+function formatRelativeDate(value: number) {
+  const diffMs = Date.now() - value
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000))
+
+  if (diffSec < 10) return 'a l’instant'
+  if (diffSec < 60) return `il y a ${diffSec}s`
+
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `il y a ${diffMin} min`
+
+  const diffHours = Math.floor(diffMin / 60)
+  if (diffHours < 24) return `il y a ${diffHours}h`
+
+  const diffDays = Math.floor(diffHours / 24)
+  return `il y a ${diffDays}j`
+}
+
+async function openAnalyticsModal(tab: 'sessions' | 'profiles' = 'sessions') {
+  analyticsModalOpen.value = true
+  analyticsTab.value = tab
+  analyticsLoading.value = true
+  analyticsError.value = ''
+
+  try {
+    const [sessionsData, profilesData] = await Promise.all([
+      trpc.analytics.getActiveSessions.query(),
+      trpc.analytics.getProfiles.query(),
+    ])
+    sessions.value = sessionsData
+    profiles.value = profilesData
+  } catch (e: any) {
+    analyticsError.value = e.message || 'Impossible de charger les analytiques.'
+  } finally {
+    analyticsLoading.value = false
+  }
+}
+
+async function refreshAnalytics() {
+  await openAnalyticsModal(analyticsTab.value)
+}
+
+async function suppressSession(userId: string) {
+  try {
+    await trpc.analytics.suppressSession.mutate({ userId })
+    sessions.value = sessions.value.filter(session => session.userId !== userId)
+    useToast().success('Session ignoree pour le prochain check.')
+  } catch (e: any) {
+    useToast().error(e.message || 'Impossible d’ignorer cette session.')
+  }
+}
+
+async function adjustScore(userId: string, genre: string, currentScore: number) {
+  const nextValue = window.prompt(`Nouveau score pour ${genre}:`, String(currentScore))
+  if (nextValue === null) return
+
+  const score = Number.parseInt(nextValue, 10)
+  if (Number.isNaN(score)) {
+    useToast().error('Le score doit etre un nombre entier.')
+    return
+  }
+
+  try {
+    await trpc.analytics.updateProfileScore.mutate({ userId, genre, score })
+    await refreshAnalytics()
+  } catch (e: any) {
+    useToast().error(e.message || 'Impossible de mettre a jour le score.')
   }
 }
 
@@ -342,7 +417,7 @@ async function saveSettings() {
         </div>
       </div>
 
-      <!-- Bug Reports + Announcements -->
+      <!-- Bug Reports + Presence -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <!-- Bug Reports -->
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
@@ -377,7 +452,50 @@ async function saveSettings() {
           </UiInput>
         </div>
 
-        <!-- Announcements -->
+        <!-- Presence & Analytics -->
+        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h3 class="font-semibold text-text-primary">Presence & analytiques</h3>
+              <p class="text-xs text-text-muted mt-1">
+                Sessions detectees par l’auto-update et scores comportementaux des profils.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+              @click="openAnalyticsModal('sessions')"
+            >
+              Ouvrir
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              class="p-3 text-left rounded-lg border border-border bg-background hover:border-primary/40 transition-colors"
+              @click="openAnalyticsModal('sessions')"
+            >
+              <p class="text-xs uppercase tracking-wide text-text-muted">Sessions</p>
+              <p class="text-2xl font-bold text-text-primary mt-1">{{ sessions.length }}</p>
+              <p class="text-xs text-text-muted mt-1">Utilisateurs visibles au prochain check</p>
+            </button>
+
+            <button
+              type="button"
+              class="p-3 text-left rounded-lg border border-border bg-background hover:border-primary/40 transition-colors"
+              @click="openAnalyticsModal('profiles')"
+            >
+              <p class="text-xs uppercase tracking-wide text-text-muted">Profils</p>
+              <p class="text-2xl font-bold text-text-primary mt-1">{{ profiles.length }}</p>
+              <p class="text-xs text-text-muted mt-1">Profils comportementaux en base</p>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Announcements -->
+      <div class="grid grid-cols-1 gap-6 mb-6">
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
         <div class="flex items-center justify-between">
           <h3 class="font-semibold text-text-primary">{{ t('announcements.title') }}</h3>
@@ -543,5 +661,106 @@ async function saveSettings() {
         </UiButton>
       </div>
     </form>
+
+    <UiModal v-model="analyticsModalOpen" title="Presence & analytiques" size="xl">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex gap-1 bg-background rounded-lg p-1">
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+              :class="analyticsTab === 'sessions' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
+              @click="analyticsTab = 'sessions'"
+            >
+              Sessions actives
+            </button>
+            <button
+              type="button"
+              class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors"
+              :class="analyticsTab === 'profiles' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
+              @click="analyticsTab = 'profiles'"
+            >
+              Profils
+            </button>
+          </div>
+
+          <button
+            type="button"
+            class="px-3 py-1.5 text-xs font-medium text-text-primary bg-surface-secondary hover:bg-surface-secondary/80 rounded-lg transition-colors"
+            @click="refreshAnalytics"
+          >
+            Actualiser
+          </button>
+        </div>
+
+        <div v-if="analyticsError" class="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-500">
+          {{ analyticsError }}
+        </div>
+
+        <div v-else-if="analyticsLoading" class="space-y-3">
+          <UiSkeleton height="4rem" />
+          <UiSkeleton height="4rem" />
+          <UiSkeleton height="4rem" />
+        </div>
+
+        <div v-else-if="analyticsTab === 'sessions'" class="space-y-3">
+          <div v-if="!sessions.length" class="p-6 text-center text-sm text-text-muted bg-background border border-border rounded-xl">
+            Aucun utilisateur visible pour le prochain check automatique.
+          </div>
+
+          <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto">
+            <div
+              v-for="session in sessions"
+              :key="session.userId"
+              class="p-4 bg-background border border-border rounded-xl flex items-start justify-between gap-4"
+            >
+              <div class="min-w-0">
+                <p class="text-sm font-semibold text-text-primary truncate">{{ session.email }}</p>
+                <p class="text-xs text-text-muted mt-1">Page actuelle: {{ session.currentPage }}</p>
+                <p class="text-xs text-text-muted mt-1">Derniere activite: {{ formatRelativeDate(session.lastActive) }}</p>
+              </div>
+
+              <button
+                type="button"
+                class="px-3 py-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition-colors whitespace-nowrap"
+                @click="suppressSession(session.userId)"
+              >
+                Ignorer au prochain check
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto">
+          <div v-if="!profiles.length" class="p-6 text-center text-sm text-text-muted bg-background border border-border rounded-xl">
+            Aucun profil analytique enregistre.
+          </div>
+
+          <div
+            v-for="profile in profiles"
+            :key="profile.userId"
+            class="p-4 bg-background border border-border rounded-xl"
+          >
+            <p class="text-sm font-semibold text-text-primary">{{ profile.email || 'Utilisateur inconnu' }}</p>
+
+            <div v-if="profile.scores && Object.keys(profile.scores).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+              <button
+                v-for="(score, genre) in profile.scores"
+                :key="genre"
+                type="button"
+                class="flex items-center justify-between gap-3 p-3 bg-surface border border-border rounded-lg hover:border-primary/40 transition-colors text-left"
+                @click="adjustScore(profile.userId, genre, score)"
+              >
+                <span class="text-sm text-text-primary truncate">{{ genre }}</span>
+                <span class="text-xs font-semibold text-primary">{{ score }}</span>
+              </button>
+            </div>
+            <div v-else class="mt-3 text-xs text-text-muted">
+              Aucun score disponible.
+            </div>
+          </div>
+        </div>
+      </div>
+    </UiModal>
   </div>
 </template>

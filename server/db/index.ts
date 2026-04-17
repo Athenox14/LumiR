@@ -208,6 +208,25 @@ export function initializeDatabase() {
       created_at INTEGER,
       updated_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS user_profiles (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      scores TEXT DEFAULT '{}',
+      recent_genres TEXT DEFAULT '[]',
+      updated_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS user_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      media_id TEXT,
+      metadata TEXT,
+      created_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_events_user_id ON user_events(user_id);
+    CREATE INDEX IF NOT EXISTS idx_user_events_created_at ON user_events(created_at);
   `)
 
   // Add columns for existing databases (safe to fail if already exist)

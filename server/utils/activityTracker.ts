@@ -1,38 +1,83 @@
 /**
- * Tracks active users by maintaining a lastActivity timestamp per user.
- * A user is considered "active" if their last activity was within 5 minutes.
+ * Tracks active users for admin visibility and auto-update deferral.
+ * A user is considered active if their last activity was within 5 minutes.
  */
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
-const lastActivity = new Map<string, number>()
-
-/**
- * Record activity for a user (call on each API request).
- */
-export function recordUserActivity(userId: string) {
-  lastActivity.set(userId, Date.now())
+interface ActivityState {
+  lastActive: number
+  currentPage: string | null
+  skipNextCheck: boolean
 }
 
-/**
- * Returns a list of users whose last activity was within the active threshold.
- */
-export function getActiveUsers(): Array<{ userId: string, lastActive: number }> {
-  const now = Date.now()
-  const active: Array<{ userId: string, lastActive: number }> = []
-  for (const [userId, timestamp] of lastActivity) {
-    if (now - timestamp <= ACTIVE_THRESHOLD_MS) {
-      active.push({ userId, lastActive: timestamp })
-    } else {
-      lastActivity.delete(userId)
-    }
+const activity = new Map<string, ActivityState>()
+
+export function recordUserActivity(userId: string, currentPage?: string | null) {
+  const existing = activity.get(userId)
+  activity.set(userId, {
+    lastActive: Date.now(),
+    currentPage: currentPage ?? existing?.currentPage ?? null,
+    skipNextCheck: existing?.skipNextCheck ?? false,
+  })
+}
+
+export function updateUserCurrentPage(userId: string, currentPage: string | null) {
+  const existing = activity.get(userId)
+  activity.set(userId, {
+    lastActive: existing?.lastActive ?? Date.now(),
+    currentPage,
+    skipNextCheck: existing?.skipNextCheck ?? false,
+  })
+}
+
+export function suppressUserForNextCheck(userId: string) {
+  const existing = activity.get(userId)
+  if (!existing) {
+    activity.set(userId, {
+      lastActive: Date.now(),
+      currentPage: null,
+      skipNextCheck: true,
+    })
+    return
   }
+
+  activity.set(userId, {
+    ...existing,
+    skipNextCheck: true,
+  })
+}
+
+export function getActiveUsers(options?: { consumeSkip?: boolean }): Array<{ userId: string, lastActive: number, currentPage: string | null }> {
+  const now = Date.now()
+  const active: Array<{ userId: string, lastActive: number, currentPage: string | null }> = []
+
+  for (const [userId, state] of activity) {
+    if (now - state.lastActive > ACTIVE_THRESHOLD_MS) {
+      activity.delete(userId)
+      continue
+    }
+
+    if (state.skipNextCheck) {
+      if (options?.consumeSkip) {
+        activity.set(userId, {
+          ...state,
+          skipNextCheck: false,
+        })
+      }
+      continue
+    }
+
+    active.push({
+      userId,
+      lastActive: state.lastActive,
+      currentPage: state.currentPage,
+    })
+  }
+
   return active
 }
 
-/**
- * Returns the number of users whose last activity was within the active threshold.
- */
-export function getActiveUserCount(): number {
-  return getActiveUsers().length
+export function getActiveUserCount(options?: { consumeSkip?: boolean }): number {
+  return getActiveUsers(options).length
 }

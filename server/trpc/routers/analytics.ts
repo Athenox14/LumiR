@@ -4,7 +4,7 @@ import { db } from '../../db'
 import { userEvents, userProfiles, users } from '../../db/schema'
 import { processEvent } from '../../utils/analyticsEngine'
 import { eq } from 'drizzle-orm'
-import { getActiveUsers } from '../../utils/activityTracker'
+import { getActiveUsers, recordUserActivity, suppressUserForNextCheck } from '../../utils/activityTracker'
 
 export const analyticsRouter = router({
   logEvent: protectedProcedure
@@ -19,6 +19,9 @@ export const analyticsRouter = router({
         ...input,
         mediaId: input.mediaId || null,
       })
+      if (input.type === 'PAGE_VIEW') {
+        recordUserActivity(ctx.user.id, typeof input.metadata?.path === 'string' ? input.metadata.path : null)
+      }
       processEvent(ctx.user.id, input).catch(console.error)
       return { success: true }
     }),
@@ -49,16 +52,18 @@ export const analyticsRouter = router({
     return await Promise.all(active.map(async (a) => {
       const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, a.userId))
       return {
-        sessionId: a.userId,
+        userId: a.userId,
         email: u?.email || 'Unknown',
-        currentPage: 'N/A'
+        currentPage: a.currentPage || 'Page inconnue',
+        lastActive: a.lastActive,
       }
     }))
   }),
 
-  killSession: adminProcedure
-    .input(z.object({ sessionId: z.string() }))
+  suppressSession: adminProcedure
+    .input(z.object({ userId: z.string() }))
     .mutation(async ({ input }) => {
+      suppressUserForNextCheck(input.userId)
       return { success: true }
     }),
 })
