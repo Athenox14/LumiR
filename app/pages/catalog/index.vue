@@ -6,6 +6,7 @@ definePageMeta({
 const { t } = useI18n()
 const trpc = useTrpc()
 const { catalogEnabled } = useFeatureFlags()
+const { track } = useAnalytics()
 
 useHead({ title: computed(() => t('nav.catalog')) })
 
@@ -16,6 +17,15 @@ watch(catalogEnabled, (val) => {
 const searchQuery = ref('')
 const activeTab = ref<'movie' | 'tv'>('movie')
 const isSearching = ref(false)
+const searchStartedAt = ref<number | null>(null)
+const lastQuery = ref('')
+const browseStartedAt = Date.now()
+const maxScrollDepth = ref(0)
+const scrollDistance = ref(0)
+const lastScrollY = ref(0)
+const seenWithoutClick = ref(new Set<number | string>())
+const lastClickedItemId = ref<number | string | null>(null)
+const mostVisibleMediaId = ref<number | string | null>(null)
 
 // Offline detection via real connectivity check
 const isOffline = ref(false)
@@ -65,18 +75,36 @@ let searchTimeout: NodeJS.Timeout | null = null
 watch(searchQuery, (val) => {
   if (searchTimeout) clearTimeout(searchTimeout)
   if (!val.trim()) {
+    if (lastQuery.value) {
+      track('SEARCH_ABANDON', null, {
+        source: 'catalog',
+        query: lastQuery.value,
+        clientAt: new Date().toISOString(),
+      })
+    }
     searchResults.value = []
     isSearching.value = false
+    lastQuery.value = ''
     return
   }
   isSearching.value = true
   searchLoading.value = true
+  if (!searchStartedAt.value) searchStartedAt.value = Date.now()
   searchTimeout = setTimeout(async () => {
     try {
       searchResults.value = await trpc.catalog.search.query({
         query: val.trim(),
         type: activeTab.value,
       })
+      track('SEARCH_QUERY', null, {
+        source: 'catalog',
+        query: val.trim(),
+        refinedFrom: lastQuery.value && lastQuery.value !== val.trim() ? lastQuery.value : undefined,
+        resultCount: searchResults.value.length,
+        mediaType: activeTab.value,
+        clientAt: new Date().toISOString(),
+      })
+      lastQuery.value = val.trim()
     } catch (e) {
       console.error('Search error:', e)
       searchResults.value = []
@@ -121,6 +149,53 @@ function getDetailUrl(item: any): string {
 }
 
 const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"%3E%3Crect fill="%231a1a1a" width="300" height="450"/%3E%3Ctext fill="%23404040" font-family="sans-serif" font-size="24" text-anchor="middle" x="150" y="225"%3ENo Poster%3C/text%3E%3C/svg%3E'
+
+function updateBrowseMetrics() {
+  const y = window.scrollY
+  scrollDistance.value += Math.abs(y - lastScrollY.value)
+  lastScrollY.value = y
+  const scrollable = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1)
+  maxScrollDepth.value = Math.max(maxScrollDepth.value, y / scrollable)
+}
+
+function markVisible(itemId: string | number) {
+  if (lastClickedItemId.value === itemId) return
+  seenWithoutClick.value.add(itemId)
+  mostVisibleMediaId.value = itemId
+}
+
+function handleItemClick(item: any, index: number) {
+  lastClickedItemId.value = item.id
+  seenWithoutClick.value.delete(item.id)
+  track('CATALOG_ITEM_CLICK', String(item.id), {
+    source: isSearching.value ? 'catalog-search' : 'catalog-trending',
+    query: isSearching.value ? searchQuery.value.trim() : null,
+    position: index + 1,
+    resultCount: displayItems.value.length,
+    latencyMs: searchStartedAt.value ? Date.now() - searchStartedAt.value : null,
+    mediaType: activeTab.value,
+    clientAt: new Date().toISOString(),
+  })
+}
+
+onMounted(() => {
+  updateBrowseMetrics()
+  window.addEventListener('scroll', updateBrowseMetrics, { passive: true })
+
+  onUnmounted(() => {
+    window.removeEventListener('scroll', updateBrowseMetrics)
+    track('CATALOG_BROWSE', null, {
+      mediaType: activeTab.value,
+      scrollDistance: Math.round(scrollDistance.value),
+      scrollDepth: Math.round(maxScrollDepth.value * 100),
+      seenWithoutClick: seenWithoutClick.value.size,
+      noClickBrowseMs: lastClickedItemId.value ? 0 : Date.now() - browseStartedAt,
+      hesitationScore: seenWithoutClick.value.size > 8 ? 2 : 0,
+      mostVisibleMediaId: mostVisibleMediaId.value ? String(mostVisibleMediaId.value) : null,
+      clientAt: new Date().toISOString(),
+    })
+  })
+})
 </script>
 
 <template>
@@ -211,10 +286,13 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
     <!-- Grid -->
     <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
       <NuxtLink
-        v-for="item in displayItems"
+        v-for="(item, index) in displayItems"
         :key="item.id"
         :to="getDetailUrl(item)"
         class="group block"
+        @mouseenter="markVisible(item.id)"
+        @focus="markVisible(item.id)"
+        @click="handleItemClick(item, index)"
       >
         <div class="relative aspect-[2/3] rounded-xl overflow-hidden bg-surface card-hover">
           <img

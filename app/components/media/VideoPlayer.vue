@@ -44,14 +44,19 @@ const emit = defineEmits<{
   progress: [position: number, duration: number]
   ended: []
   error: []
+  play: [position: number]
+  pause: [position: number]
+  seek: [from: number, to: number]
   changeAudioTrack: [trackIndex: number]
   changeBurnInSubtitle: [trackIndex: number | undefined]
+  fullscreenChange: [fullscreen: boolean]
 }>()
 
 const playerRef = ref<MediaPlayerElement>()
 const usedFallback = ref(false)
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let _hlsInstance: HlsJS | null = null
+let lastKnownTime = 0
 
 // Track our own seek target — player.currentTime is unreliable during HLS.js
 // error recovery (may be 0 or stale). Updated in onSeeking and onProviderChange.
@@ -327,8 +332,10 @@ function onSeeking() {
   const player = playerRef.value
   if (!player || !props.src.includes('.m3u8')) return
   if (!playerReady) return
+  emit('seek', lastKnownTime, player.currentTime)
   hlsTargetSeg = Math.floor(player.currentTime / 6)
   preheatSeek(player.currentTime, true)
+  lastKnownTime = player.currentTime
 }
 
 function onError() {
@@ -355,6 +362,7 @@ onMounted(() => {
   progressInterval = setInterval(() => {
     const player = playerRef.value
     if (player && !player.paused && player.currentTime > 0) {
+      lastKnownTime = player.currentTime
       emit('progress', player.currentTime, effectiveDuration.value)
     }
   }, 10000)
@@ -410,6 +418,9 @@ onUnmounted(() => {
         @can-play="onCanPlay"
         @seeking="onSeeking"
         @error="onError"
+        @play="emit('play', playerRef?.currentTime || 0)"
+        @pause="emit('pause', playerRef?.currentTime || 0)"
+        @fullscreen-change="emit('fullscreenChange', $event.detail)"
         @ended="$emit('ended')"
       >
         <media-provider>

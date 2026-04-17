@@ -213,6 +213,7 @@ export function initializeDatabase() {
       user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       scores TEXT DEFAULT '{}',
       recent_genres TEXT DEFAULT '[]',
+      profile_data TEXT DEFAULT '{}',
       updated_at INTEGER
     );
 
@@ -246,6 +247,7 @@ export function initializeDatabase() {
     'ALTER TABLE users ADD COLUMN show_liked_films INTEGER DEFAULT 0',
     // Pre-extracted subtitle content
     'ALTER TABLE subtitle_tracks ADD COLUMN content TEXT',
+    'ALTER TABLE user_profiles ADD COLUMN profile_data TEXT DEFAULT \'{}\'',
   ]
   for (const migration of migrations) {
     try { sqlite.exec(migration) } catch { /* column already exists */ }

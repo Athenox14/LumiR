@@ -47,7 +47,17 @@ const { data: announcements, refresh: refreshAnnouncements } = useAsyncData(
   () => trpc.announcements.getAll.query()
 )
 const sessions = ref<Array<{ userId: string, email: string, currentPage: string, lastActive: number }>>([])
-const profiles = ref<Array<{ userId: string, email: string | null, scores: Record<string, number> | null }>>([])
+const profiles = ref<Array<{
+  userId: string
+  email: string | null
+  scores: Record<string, number> | null
+  profileData: Record<string, any> | null
+}>>([])
+
+function sortEntries(record: Record<string, number> | null | undefined, limit = 6) {
+  if (!record) return []
+  return Object.entries(record).sort((a, b) => b[1] - a[1]).slice(0, limit)
+}
 
 function openCreateAnnouncement() {
   editingAnnouncementId.value = null
@@ -751,6 +761,40 @@ async function saveSettings() {
           >
             <p class="text-sm font-semibold text-text-primary">{{ profile.email || t('adminSettings.analyticsUnknownUser') }}</p>
 
+            <div v-if="profile.profileData" class="mt-3 space-y-3">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div class="p-2 rounded-lg bg-surface border border-border">
+                  <p class="text-[11px] uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsStarts') }}</p>
+                  <p class="text-sm font-semibold text-text-primary mt-1">{{ profile.profileData.playback?.starts || 0 }}</p>
+                </div>
+                <div class="p-2 rounded-lg bg-surface border border-border">
+                  <p class="text-[11px] uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsCompletions') }}</p>
+                  <p class="text-sm font-semibold text-text-primary mt-1">{{ profile.profileData.playback?.completes || 0 }}</p>
+                </div>
+                <div class="p-2 rounded-lg bg-surface border border-border">
+                  <p class="text-[11px] uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsSearches') }}</p>
+                  <p class="text-sm font-semibold text-text-primary mt-1">{{ profile.profileData.search?.totalQueries || 0 }}</p>
+                </div>
+                <div class="p-2 rounded-lg bg-surface border border-border">
+                  <p class="text-[11px] uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsHesitations') }}</p>
+                  <p class="text-sm font-semibold text-text-primary mt-1">{{ profile.profileData.browsing?.hesitationSignals || 0 }}</p>
+                </div>
+              </div>
+
+              <div v-if="sortEntries(profile.profileData.preferences?.tags).length" class="space-y-2">
+                <p class="text-xs font-medium text-text-muted uppercase tracking-wide">{{ t('adminSettings.analyticsDetectedTags') }}</p>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    v-for="[tag, score] in sortEntries(profile.profileData.preferences?.tags)"
+                    :key="tag"
+                    class="px-2.5 py-1 rounded-full text-xs bg-primary/10 text-primary"
+                  >
+                    {{ tag }} · {{ score }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div v-if="profile.scores && Object.keys(profile.scores).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
               <button
                 v-for="(score, genre) in profile.scores"
@@ -765,6 +809,33 @@ async function saveSettings() {
             </div>
             <div v-else class="mt-3 text-xs text-text-muted">
               {{ t('adminSettings.analyticsNoScores') }}
+            </div>
+
+            <div v-if="sortEntries(profile.profileData?.preferences?.actorScores, 5).length" class="mt-3">
+              <p class="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">{{ t('adminSettings.analyticsAffinityActors') }}</p>
+              <div class="flex flex-wrap gap-2">
+                <span
+                  v-for="[actor, score] in sortEntries(profile.profileData?.preferences?.actorScores, 5)"
+                  :key="actor"
+                  class="px-2.5 py-1 rounded-full text-xs bg-surface border border-border text-text-primary"
+                >
+                  {{ actor }} · {{ score }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="profile.profileData?.recentSignals?.length" class="mt-3">
+              <p class="text-xs font-medium text-text-muted uppercase tracking-wide mb-2">{{ t('adminSettings.analyticsRecentSignals') }}</p>
+              <div class="space-y-2">
+                <div
+                  v-for="signal in profile.profileData.recentSignals.slice(0, 4)"
+                  :key="`${signal.createdAt}-${signal.type}`"
+                  class="p-2 rounded-lg bg-surface border border-border"
+                >
+                  <p class="text-sm text-text-primary">{{ signal.summary }}</p>
+                  <p class="text-xs text-text-muted mt-1">{{ formatRelativeDate(new Date(signal.createdAt).getTime()) }}</p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

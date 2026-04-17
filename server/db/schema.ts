@@ -165,6 +165,7 @@ export const userProfiles = sqliteTable('user_profiles', {
   userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   scores: text('scores', { mode: 'json' }).$type<Record<string, number>>().default('{}'),
   recentGenres: text('recent_genres', { mode: 'json' }).$type<string[]>().default('[]'),
+  profileData: text('profile_data', { mode: 'json' }).$type<Record<string, any>>().default('{}'),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
