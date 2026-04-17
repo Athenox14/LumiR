@@ -20,6 +20,11 @@ const { data: recentlyAdded, pending: recentLoading } = useAsyncData(
   () => trpc.media.recentlyAdded.query({ limit: 12 })
 )
 
+const { data: youMightAlsoLike, pending: recommendationsLoading } = useAsyncData(
+  'home-you-might-also-like',
+  () => trpc.media.youMightAlsoLike.query({ limit: 12, mediaType: 'movie' })
+)
+
 const { data: stats } = useAsyncData(
   'stats',
   () => trpc.media.stats.query()
@@ -71,6 +76,22 @@ const { data: stats } = useAsyncData(
       :items="continueWatching || []"
       :loading="continueLoading"
     />
+
+    <div v-if="youMightAlsoLike?.length">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold text-text-primary">{{ t('common.youMightAlsoLike') }}</h2>
+        <NuxtLink
+          to="/movies"
+          class="text-sm text-primary hover:underline"
+        >
+          {{ t('common.viewAll') }}
+        </NuxtLink>
+      </div>
+      <MediaGrid
+        :items="youMightAlsoLike || []"
+        :loading="recommendationsLoading"
+      />
+    </div>
 
     <!-- Recently Added -->
     <div>
