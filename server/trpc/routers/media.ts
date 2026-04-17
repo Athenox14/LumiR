@@ -3,7 +3,7 @@ import os from 'os'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
-import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downloads } from '../../db/schema'
+import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downloads, userProfiles } from '../../db/schema'
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
@@ -26,6 +26,126 @@ function getCpuPercent(): number {
   prevTime = now
   const cpuCount = os.cpus().length || 1
   return Math.min(100, Math.round(((userDelta + sysDelta) / elapsedMs / cpuCount) * 100))
+}
+
+function getMaxMapValue(record?: Record<string, number> | null) {
+  if (!record) return 0
+  const values = Object.values(record).filter(value => Number.isFinite(value))
+  return values.length ? Math.max(...values) : 0
+}
+
+function normalizeScore(record: Record<string, number> | null | undefined, key: string | null | undefined, scale: number) {
+  if (!record || !key) return 0
+  const max = getMaxMapValue(record)
+  if (max <= 0) return 0
+  return ((record[key] || 0) / max) * scale
+}
+
+function getRuntimeBucket(runtime: number | null | undefined) {
+  if (!runtime) return null
+  if (runtime < 60) return 'short'
+  if (runtime < 100) return 'standard'
+  if (runtime < 140) return 'long'
+  return 'epic'
+}
+
+function getRecencyBucket(year: number | null | undefined) {
+  if (!year) return null
+  const delta = new Date().getFullYear() - year
+  if (delta <= 2) return 'recent'
+  if (delta <= 10) return 'modern'
+  return 'classic'
+}
+
+function getDecadeKey(year: number | null | undefined) {
+  if (!year) return null
+  return `${Math.floor(year / 10) * 10}s`
+}
+
+function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeof calculateUserPreferences>, profileData: Record<string, any> | null | undefined) {
+  const genres = candidate.genres ? JSON.parse(candidate.genres) : []
+  const baseScore = preferences ? calculateMatchScore(genres, candidate.year, candidate.rating, preferences) : 0
+  const profile = profileData || {}
+  const preferenceProfile = profile.preferences || {}
+  const playback = profile.playback || {}
+  const search = profile.search || {}
+  const browsing = profile.browsing || {}
+  const details = profile.details || {}
+  const navigation = profile.navigation || {}
+  const temporal = profile.temporal || {}
+  const device = profile.device || {}
+  const tags = preferenceProfile.tags || {}
+
+  let score = baseScore
+
+  for (const genre of genres) {
+    score += normalizeScore(preferenceProfile.genreScores, genre, 16)
+  }
+
+  const castEntries = Array.isArray(candidate.cast) ? candidate.cast : []
+  const actorNames = castEntries
+    .map((actor: any) => typeof actor === 'string' ? actor : actor?.name)
+    .filter(Boolean)
+  for (const actorName of actorNames.slice(0, 5)) {
+    score += normalizeScore(preferenceProfile.actorScores, actorName, 10)
+  }
+
+  score += normalizeScore(preferenceProfile.decadeScores, getDecadeKey(candidate.year), 8)
+  score += normalizeScore(preferenceProfile.runtimeScores, getRuntimeBucket(candidate.runtime), 8)
+  score += normalizeScore(preferenceProfile.recencyScores, getRecencyBucket(candidate.year), 7)
+
+  if (Array.isArray(preferenceProfile.lastGenres)) {
+    const overlap = genres.filter((genre: string) => preferenceProfile.lastGenres.includes(genre)).length
+    score += Math.min(8, overlap * 2.5)
+  }
+
+  if (Array.isArray(preferenceProfile.lastMediaIds) && preferenceProfile.lastMediaIds.includes(candidate.id)) {
+    score -= 6
+  }
+
+  if ((search.clicks || 0) > 0) score += 1
+  if ((search.refinements || 0) > 2) score += 1
+  if ((search.abandonments || 0) > 0) score += 0.5
+  if ((search.repeatedQueries && Object.keys(search.repeatedQueries).length) > 0) {
+    score += Math.min(3, Object.keys(search.repeatedQueries).length * 0.4)
+  }
+
+  if ((browsing.hesitationSignals || 0) > 3) score += 1.5
+  if ((browsing.longHovers || 0) > 0) score += 0.5
+  if ((browsing.noClickBrowseMs || 0) > 10000) score += 1
+
+  if ((details.repeatVisits || 0) > 0) score += 1
+  if ((details.playIntentCount || 0) > 0) score += 1
+  if ((details.immediateExits || 0) > 2) score -= 1
+
+  if ((playback.completes || 0) > 0) score += 1.5
+  if ((playback.quickAbandons || 0) > 0) score -= 1
+  if ((playback.rewatches || 0) > 0 && genres.some((genre: string) => (preferenceProfile.genreScores?.[genre] || 0) > 0)) {
+    score += 2
+  }
+
+  if ((navigation.sessions || 0) > 0) score += 0.5
+  if ((navigation.backtracks || 0) > 0) score += 0.5
+
+  const hourBuckets = temporal.hourBuckets || {}
+  const currentHour = String(new Date().getHours())
+  if ((hourBuckets[currentHour] || 0) > 0) score += 1
+
+  const deviceTypes = device.types || {}
+  const prefersMobile = (deviceTypes.mobile || 0) > (deviceTypes.desktop || 0)
+  if (prefersMobile && getRuntimeBucket(candidate.runtime) === 'short') score += 2
+  if (prefersMobile && getRuntimeBucket(candidate.runtime) === 'epic') score -= 1.5
+
+  if ((tags['navbar-search'] || 0) > 0 && genres.length > 0) score += 1.5
+  if ((tags['refined-search'] || 0) > 0 && (candidate.rating || 0) >= 7) score += 1.5
+  if ((tags['catalog-fatigue'] || 0) > 0 && (candidate.rating || 0) >= 7.5) score += 1
+  if ((tags['recent-abandon'] || 0) > 0 && getRuntimeBucket(candidate.runtime) === 'standard') score += 1
+  if ((tags['quick-abandon'] || 0) > 0 && getRuntimeBucket(candidate.runtime) === 'short') score += 1.5
+  if ((tags['completion-positive'] || 0) > 0 && genres.some((genre: string) => (preferenceProfile.genreScores?.[genre] || 0) > 0)) {
+    score += 2
+  }
+
+  return Math.round(score)
 }
 
 export const mediaRouter = router({
@@ -960,8 +1080,20 @@ export const mediaRouter = router({
     .query(async ({ input, ctx }) => {
       const params = input || { limit: 12, mediaType: 'movie' as const }
       const preferences = calculateUserPreferences(ctx.user.id)
+      const [profile] = await db
+        .select({ profileData: userProfiles.profileData })
+        .from(userProfiles)
+        .where(eq(userProfiles.userId, ctx.user.id))
+        .limit(1)
 
-      if (!preferences || preferences.topGenres.length === 0) {
+      const profileData = profile?.profileData as Record<string, any> | null | undefined
+      const topGenresFromPreferences = preferences?.topGenres || []
+      const topGenresFromProfile = Object.entries((profileData?.preferences?.genreScores || {}) as Record<string, number>)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([genre]) => genre)
+
+      if ((!preferences || preferences.topGenres.length === 0) && topGenresFromProfile.length === 0) {
         return []
       }
 
@@ -982,7 +1114,10 @@ export const mediaRouter = router({
         if (row.rating === -1) excludedIds.add(row.media_id)
       }
 
-      const topGenres = preferences.topGenres.slice(0, 4).map(entry => entry.genre)
+      const topGenres = [...new Set([
+        ...topGenresFromPreferences.slice(0, 4).map(entry => entry.genre),
+        ...topGenresFromProfile,
+      ])].slice(0, 6)
       const genreFilter = topGenres
         .map(genre => `m.genres LIKE '%${genre.replace(/'/g, "''")}%'`)
         .join(' OR ')
@@ -1005,7 +1140,9 @@ export const mediaRouter = router({
           m.media_type as mediaType,
           m.season,
           m.episode,
-          m.genres
+          m.genres,
+          m.runtime,
+          m.cast
         FROM media m
         WHERE (${genreFilter}) ${typeFilter}
         GROUP BY COALESCE(m.tmdb_id, m.title)
@@ -1016,8 +1153,7 @@ export const mediaRouter = router({
       const scored = candidates
         .filter(candidate => !excludedIds.has(candidate.id))
         .map((candidate) => {
-          const genres = candidate.genres ? JSON.parse(candidate.genres) : []
-          const matchScore = calculateMatchScore(genres, candidate.year, candidate.rating, preferences)
+          const matchScore = scoreCandidateWithProfile(candidate, preferences, profileData)
           return {
             id: candidate.id,
             title: candidate.title,
@@ -1030,7 +1166,7 @@ export const mediaRouter = router({
             matchScore,
           }
         })
-        .filter(candidate => candidate.matchScore >= 35)
+        .filter(candidate => candidate.matchScore >= 30)
         .sort((a, b) => {
           if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore
           return (b.rating || 0) - (a.rating || 0)
