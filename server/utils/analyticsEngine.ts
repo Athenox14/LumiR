@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 
 // Système de poids (on peut ajuster ces valeurs)
 const WEIGHTS = {
+  MEDIA_VIEW: 1,
   WATCH_COMPLETE: 10,
   WATCH_PROGRESS: 2,   // par tranche de visionnage
   SEARCH_CLICK: 5,

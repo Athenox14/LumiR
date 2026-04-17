@@ -131,22 +131,20 @@ function formatRelativeDate(value: number) {
   const diffMs = Date.now() - value
   const diffSec = Math.max(0, Math.floor(diffMs / 1000))
 
-  if (diffSec < 10) return 'a l’instant'
-  if (diffSec < 60) return `il y a ${diffSec}s`
+  if (diffSec < 10) return t('adminSettings.analyticsJustNow')
+  if (diffSec < 60) return t('adminSettings.analyticsSecondsAgo', { count: diffSec })
 
   const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `il y a ${diffMin} min`
+  if (diffMin < 60) return t('adminSettings.analyticsMinutesAgo', { count: diffMin })
 
   const diffHours = Math.floor(diffMin / 60)
-  if (diffHours < 24) return `il y a ${diffHours}h`
+  if (diffHours < 24) return t('adminSettings.analyticsHoursAgo', { count: diffHours })
 
   const diffDays = Math.floor(diffHours / 24)
-  return `il y a ${diffDays}j`
+  return t('adminSettings.analyticsDaysAgo', { count: diffDays })
 }
 
-async function openAnalyticsModal(tab: 'sessions' | 'profiles' = 'sessions') {
-  analyticsModalOpen.value = true
-  analyticsTab.value = tab
+async function loadAnalyticsData() {
   analyticsLoading.value = true
   analyticsError.value = ''
 
@@ -158,23 +156,29 @@ async function openAnalyticsModal(tab: 'sessions' | 'profiles' = 'sessions') {
     sessions.value = sessionsData
     profiles.value = profilesData
   } catch (e: any) {
-    analyticsError.value = e.message || 'Impossible de charger les analytiques.'
+    analyticsError.value = e.message || t('adminSettings.analyticsLoadError')
   } finally {
     analyticsLoading.value = false
   }
 }
 
+async function openAnalyticsModal(tab: 'sessions' | 'profiles' = 'sessions') {
+  analyticsModalOpen.value = true
+  analyticsTab.value = tab
+  await loadAnalyticsData()
+}
+
 async function refreshAnalytics() {
-  await openAnalyticsModal(analyticsTab.value)
+  await loadAnalyticsData()
 }
 
 async function suppressSession(userId: string) {
   try {
     await trpc.analytics.suppressSession.mutate({ userId })
     sessions.value = sessions.value.filter(session => session.userId !== userId)
-    useToast().success('Session ignoree pour le prochain check.')
+    useToast().success(t('adminSettings.analyticsIgnoreSuccess'))
   } catch (e: any) {
-    useToast().error(e.message || 'Impossible d’ignorer cette session.')
+    useToast().error(e.message || t('adminSettings.analyticsIgnoreError'))
   }
 }
 
@@ -184,7 +188,7 @@ async function adjustScore(userId: string, genre: string, currentScore: number) 
 
   const score = Number.parseInt(nextValue, 10)
   if (Number.isNaN(score)) {
-    useToast().error('Le score doit etre un nombre entier.')
+    useToast().error(t('adminSettings.analyticsScoreInteger'))
     return
   }
 
@@ -192,9 +196,13 @@ async function adjustScore(userId: string, genre: string, currentScore: number) 
     await trpc.analytics.updateProfileScore.mutate({ userId, genre, score })
     await refreshAnalytics()
   } catch (e: any) {
-    useToast().error(e.message || 'Impossible de mettre a jour le score.')
+    useToast().error(e.message || t('adminSettings.analyticsScoreUpdateError'))
   }
 }
+
+onMounted(() => {
+  loadAnalyticsData().catch(() => {})
+})
 
 // Load settings
 const { data: settings, pending } = useAsyncData('settings', async () => {
@@ -456,9 +464,9 @@ async function saveSettings() {
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <h3 class="font-semibold text-text-primary">Presence & analytiques</h3>
+              <h3 class="font-semibold text-text-primary">{{ t('adminSettings.analyticsTitle') }}</h3>
               <p class="text-xs text-text-muted mt-1">
-                Sessions detectees par l’auto-update et scores comportementaux des profils.
+                {{ t('adminSettings.analyticsDescription') }}
               </p>
             </div>
             <button
@@ -466,7 +474,7 @@ async function saveSettings() {
               class="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
               @click="openAnalyticsModal('sessions')"
             >
-              Ouvrir
+              {{ t('adminSettings.analyticsOpen') }}
             </button>
           </div>
 
@@ -476,9 +484,9 @@ async function saveSettings() {
               class="p-3 text-left rounded-lg border border-border bg-background hover:border-primary/40 transition-colors"
               @click="openAnalyticsModal('sessions')"
             >
-              <p class="text-xs uppercase tracking-wide text-text-muted">Sessions</p>
+              <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsSessions') }}</p>
               <p class="text-2xl font-bold text-text-primary mt-1">{{ sessions.length }}</p>
-              <p class="text-xs text-text-muted mt-1">Utilisateurs visibles au prochain check</p>
+              <p class="text-xs text-text-muted mt-1">{{ t('adminSettings.analyticsSessionsHint') }}</p>
             </button>
 
             <button
@@ -486,9 +494,9 @@ async function saveSettings() {
               class="p-3 text-left rounded-lg border border-border bg-background hover:border-primary/40 transition-colors"
               @click="openAnalyticsModal('profiles')"
             >
-              <p class="text-xs uppercase tracking-wide text-text-muted">Profils</p>
+              <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('adminSettings.analyticsProfiles') }}</p>
               <p class="text-2xl font-bold text-text-primary mt-1">{{ profiles.length }}</p>
-              <p class="text-xs text-text-muted mt-1">Profils comportementaux en base</p>
+              <p class="text-xs text-text-muted mt-1">{{ t('adminSettings.analyticsProfilesHint') }}</p>
             </button>
           </div>
         </div>
@@ -662,7 +670,7 @@ async function saveSettings() {
       </div>
     </form>
 
-    <UiModal v-model="analyticsModalOpen" title="Presence & analytiques" size="xl">
+    <UiModal v-model="analyticsModalOpen" :title="t('adminSettings.analyticsTitle')" size="xl">
       <div class="space-y-4">
         <div class="flex items-center justify-between gap-3">
           <div class="flex gap-1 bg-background rounded-lg p-1">
@@ -672,7 +680,7 @@ async function saveSettings() {
               :class="analyticsTab === 'sessions' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
               @click="analyticsTab = 'sessions'"
             >
-              Sessions actives
+              {{ t('adminSettings.analyticsActiveSessions') }}
             </button>
             <button
               type="button"
@@ -680,7 +688,7 @@ async function saveSettings() {
               :class="analyticsTab === 'profiles' ? 'bg-primary text-white' : 'text-text-muted hover:text-text-primary'"
               @click="analyticsTab = 'profiles'"
             >
-              Profils
+              {{ t('adminSettings.analyticsProfiles') }}
             </button>
           </div>
 
@@ -689,7 +697,7 @@ async function saveSettings() {
             class="px-3 py-1.5 text-xs font-medium text-text-primary bg-surface-secondary hover:bg-surface-secondary/80 rounded-lg transition-colors"
             @click="refreshAnalytics"
           >
-            Actualiser
+            {{ t('adminSettings.analyticsRefresh') }}
           </button>
         </div>
 
@@ -705,7 +713,7 @@ async function saveSettings() {
 
         <div v-else-if="analyticsTab === 'sessions'" class="space-y-3">
           <div v-if="!sessions.length" class="p-6 text-center text-sm text-text-muted bg-background border border-border rounded-xl">
-            Aucun utilisateur visible pour le prochain check automatique.
+            {{ t('adminSettings.analyticsNoVisibleUsers') }}
           </div>
 
           <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto">
@@ -716,8 +724,8 @@ async function saveSettings() {
             >
               <div class="min-w-0">
                 <p class="text-sm font-semibold text-text-primary truncate">{{ session.email }}</p>
-                <p class="text-xs text-text-muted mt-1">Page actuelle: {{ session.currentPage }}</p>
-                <p class="text-xs text-text-muted mt-1">Derniere activite: {{ formatRelativeDate(session.lastActive) }}</p>
+                <p class="text-xs text-text-muted mt-1">{{ t('adminSettings.analyticsCurrentPage', { page: session.currentPage }) }}</p>
+                <p class="text-xs text-text-muted mt-1">{{ t('adminSettings.analyticsLastActivity', { value: formatRelativeDate(session.lastActive) }) }}</p>
               </div>
 
               <button
@@ -725,7 +733,7 @@ async function saveSettings() {
                 class="px-3 py-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg transition-colors whitespace-nowrap"
                 @click="suppressSession(session.userId)"
               >
-                Ignorer au prochain check
+                {{ t('adminSettings.analyticsIgnoreNextCheck') }}
               </button>
             </div>
           </div>
@@ -733,7 +741,7 @@ async function saveSettings() {
 
         <div v-else class="space-y-3 max-h-[60vh] overflow-y-auto">
           <div v-if="!profiles.length" class="p-6 text-center text-sm text-text-muted bg-background border border-border rounded-xl">
-            Aucun profil analytique enregistre.
+            {{ t('adminSettings.analyticsNoProfiles') }}
           </div>
 
           <div
@@ -741,7 +749,7 @@ async function saveSettings() {
             :key="profile.userId"
             class="p-4 bg-background border border-border rounded-xl"
           >
-            <p class="text-sm font-semibold text-text-primary">{{ profile.email || 'Utilisateur inconnu' }}</p>
+            <p class="text-sm font-semibold text-text-primary">{{ profile.email || t('adminSettings.analyticsUnknownUser') }}</p>
 
             <div v-if="profile.scores && Object.keys(profile.scores).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
               <button
@@ -756,7 +764,7 @@ async function saveSettings() {
               </button>
             </div>
             <div v-else class="mt-3 text-xs text-text-muted">
-              Aucun score disponible.
+              {{ t('adminSettings.analyticsNoScores') }}
             </div>
           </div>
         </div>
