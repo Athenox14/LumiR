@@ -1,0 +1,115 @@
+ordre de navigation
+allers-retours entre pages
+historique de consultation court
+cycle de vie de la session
+requêtes tapées dans la recherche, notamment celle de la navbar
+temps entre la saisie et le clic sur un résultat
+résultat finalement cliqué
+position du résultat cliqué
+recherches modifiées ou raffinées
+aller-retour entre recherche et catalogue / accueil
+ouverture d’une fiche film / média
+temps passé sur la fiche
+scroll depth sur la fiche
+lecture potentielle du synopsis
+retour plusieurs fois sur la même fiche
+consultation des métadonnées présentes sur la fiche
+vitesse de défilement
+distance de scroll
+nombre de médias vus sans clic
+temps passé à parcourir le catalogue sans interaction
+“fatigue” du catalogue
+hésitation / indécision
+passage devant des films sans jamais cliquer dessus
+exclusions implicites via non-clic répété
+hover sur une affiche / carte média
+durée du hover
+position de la souris
+dernier passage avant clic
+mouvements pouvant signaler hésitation ou intention
+clics frénétiques ou impatience perçue
+démarrage de lecture
+arrêt de lecture
+durée de visionnage
+progression
+taux de complétion
+point d’abandon précis
+abandon rapide
+visionnage complet ou quasi complet
+historique des derniers films vus / arrêtés
+reprise éventuelle d’une lecture
+genres aimés
+genres rejetés
+réalisateurs appréciés
+acteurs / cast appréciés
+ancienneté des films préférés
+préférence pour films récents vs anciens
+préférence possible par durée
+historique récent de genres consommés
+exclusions volontaires ou implicites
+heure de la journée
+jour de la semaine
+distinction semaine / week-end
+éventuellement saisonnalité
+habitudes selon créneau horaire
+habitudes selon période de l’année
+type d’appareil
+desktop / mobile / TV
+état de la fenêtre
+plein écran ou fenêtré
+résolution / ratio d’écran
+niveau d’immersion supposé
+langue choisie
+sous-titres choisis
+changements de piste audio
+changements de sous-titres
+éventuelle préférence VOSTFR / VF / autre
+tags favoris détectés
+scores par genre
+scores par réalisateur
+scores par acteur
+scores par période / décennie
+scores contextuels
+derniers événements ayant influencé le profil
+historique récent des signaux positifs et négatifs
+nombre de recherches avant sélection d’un média
+abandon de recherche sans clic
+recherche d’un même titre à plusieurs sessions différentes
+requête vide puis navigation ensuite
+média resté le plus longtemps à l’écran
+pourcentage de la fiche effectivement vu
+si l’utilisateur remonte la page après lecture du bas
+temps passé sur cast, synopsis, metadata si ces zones sont séparables
+sortie immédiate de la fiche
+Ajouts utiles côté lecture
+pause / reprise
+nombre de pauses
+seek avant / arrière
+moments souvent sautés
+moments souvent revus
+abandon après buffering ou après erreur
+temps entre ouverture de fiche et lancement réel
+relance d’un film abandonné plus tard
+sessions multi-épisodes/multi-films (films de la même saga par exemple)
+tolérance au contenu en fonction de sa durée
+réceptivité à la nouveauté vs rewatch
+Ajouts utiles côté contexte
+temps depuis la dernière session
+fréquence d’usage
+sessions courtes vs longues
+heure habituelle de démarrage
+comportement différent selon le moment de la semaine/année
+like / dislike
+reprendre plus tard
+recherche navbar (très très fort signal)
+clic sur résultat de recherche
+retour sur une fiche déjà vue
+ouverture d’une fiche
+temps sur fiche (> quelques secondes)
+scroll lent sur fiche
+focus visuel (hover long sur une carte)
+derniers films consultés
+derniers genres vus
+dernier film presque lancé
+aller-retour entre 2–3 films
+abandon récent d’un film (remplacement probable)
