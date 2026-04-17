@@ -171,7 +171,7 @@ async function installUpdate(downloadUrl: string, version: string): Promise<bool
 async function tryAutoInstall() {
   if (!pendingUpdate || !pendingUpdate.hasUpdate || !pendingUpdate.downloadUrl) return
 
-  const activeUsers = getActiveUserCount()
+  const activeUsers = getActiveUserCount({ consumeSkip: true })
   if (activeUsers > 0) {
     console.log(`[AutoUpdate] Update ${pendingUpdate.latestVersion} available but ${activeUsers} user(s) active, deferring`)
     return
