@@ -160,8 +160,26 @@ export const announcements = sqliteTable('announcements', {
   updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
+// User Behavioral Analytics
+export const userProfiles = sqliteTable('user_profiles', {
+  userId: text('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  scores: text('scores', { mode: 'json' }).$type<Record<string, number>>().default('{}'),
+  recentGenres: text('recent_genres', { mode: 'json' }).$type<string[]>().default('[]'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+export const userEvents = sqliteTable('user_events', {
+  id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  mediaId: text('media_id'),
+  metadata: text('metadata', { mode: 'json' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
 // Type exports
 export type User = typeof users.$inferSelect
+
 export type NewUser = typeof users.$inferInsert
 export type Media = typeof media.$inferSelect
 export type NewMedia = typeof media.$inferInsert
