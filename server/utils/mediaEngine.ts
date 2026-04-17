@@ -313,7 +313,9 @@ class FFmpegSession {
     if (decision.videoAction === 'reencode') {
       args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '22')
       args.push('-profile:v', 'high', '-level', '4.1')
-      args.push('-pix_fmt', 'yuv420p')
+      // Force 8-bit YUV output even if source is 10-bit HEVC.
+      // Using -vf format is more reliable than -pix_fmt for complex source formats.
+      args.push('-vf', 'format=yuv420p')
       // Force keyframes at every segment boundary so segments are independently
       // decodable and seeking lands cleanly without A/V desync.
       args.push('-force_key_frames', `expr:gte(t,n_forced*${SEGMENT_DURATION})`)
