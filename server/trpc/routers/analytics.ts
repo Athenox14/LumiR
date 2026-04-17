@@ -6,6 +6,15 @@ import { processEvent } from '../../utils/analyticsEngine'
 import { eq } from 'drizzle-orm'
 import { getActiveUsers, recordUserActivity, suppressUserForNextCheck } from '../../utils/activityTracker'
 
+const jsonValueSchema: z.ZodTypeAny = z.lazy(() => z.union([
+  z.string(),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+  z.array(jsonValueSchema),
+  z.record(z.string(), jsonValueSchema),
+]))
+
 export const analyticsRouter = router({
   logEvent: protectedProcedure
     .input(z.object({
@@ -59,6 +68,49 @@ export const analyticsRouter = router({
           },
         },
       }).where(eq(userProfiles.userId, input.userId))
+      return { success: true }
+    }),
+
+  updateProfileData: adminProcedure
+    .input(z.object({
+      userId: z.string(),
+      scores: z.record(z.string(), z.number().finite()).optional(),
+      profileData: z.record(z.string(), jsonValueSchema).optional(),
+    }).refine(input => input.scores !== undefined || input.profileData !== undefined, {
+      message: 'No profile payload provided',
+    }))
+    .mutation(async ({ input }) => {
+      const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, input.userId))
+      if (!profile) throw new Error('Profile not found')
+
+      const nextScores = input.scores ?? (profile.scores || {})
+      const nextProfileData = input.profileData ?? ((profile.profileData as Record<string, any> | null) || {})
+
+      const payloadSize = JSON.stringify({ scores: nextScores, profileData: nextProfileData }).length
+      if (payloadSize > 200_000) {
+        throw new Error('Profile payload too large')
+      }
+
+      await db.update(userProfiles).set({
+        scores: nextScores,
+        profileData: nextProfileData,
+        updatedAt: new Date(),
+      }).where(eq(userProfiles.userId, input.userId))
+
+      return { success: true }
+    }),
+
+  resetProfile: adminProcedure
+    .input(z.object({ userId: z.string() }))
+    .mutation(async ({ input }) => {
+      await db.update(userProfiles).set({
+        scores: {},
+        recentGenres: [],
+        profileData: {},
+        updatedAt: new Date(),
+      }).where(eq(userProfiles.userId, input.userId))
+
+      await db.delete(userEvents).where(eq(userEvents.userId, input.userId))
       return { success: true }
     }),
 

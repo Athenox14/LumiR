@@ -15,6 +15,12 @@ const analyticsModalOpen = ref(false)
 const analyticsTab = ref<'sessions' | 'profiles'>('sessions')
 const analyticsLoading = ref(false)
 const analyticsError = ref('')
+const analyticsEditorOpen = ref(false)
+const analyticsEditorLoading = ref(false)
+const analyticsEditorUserId = ref('')
+const analyticsEditorUserLabel = ref('')
+const analyticsEditorScores = ref('{}')
+const analyticsEditorProfileData = ref('{}')
 
 // Form data
 const appNameInput = ref('')
@@ -57,6 +63,65 @@ const profiles = ref<Array<{
 function sortEntries(record: Record<string, number> | null | undefined, limit = 6) {
   if (!record) return []
   return Object.entries(record).sort((a, b) => b[1] - a[1]).slice(0, limit)
+}
+
+function openProfileEditor(profile: {
+  userId: string
+  email: string | null
+  scores: Record<string, number> | null
+  profileData: Record<string, any> | null
+}) {
+  analyticsEditorUserId.value = profile.userId
+  analyticsEditorUserLabel.value = profile.email || t('adminSettings.analyticsUnknownUser')
+  analyticsEditorScores.value = JSON.stringify(profile.scores || {}, null, 2)
+  analyticsEditorProfileData.value = JSON.stringify(profile.profileData || {}, null, 2)
+  analyticsEditorOpen.value = true
+}
+
+async function saveProfileEditor() {
+  analyticsEditorLoading.value = true
+  try {
+    const parsedScores = JSON.parse(analyticsEditorScores.value)
+    const parsedProfileData = JSON.parse(analyticsEditorProfileData.value)
+
+    if (!parsedScores || typeof parsedScores !== 'object' || Array.isArray(parsedScores)) {
+      throw new Error(t('adminSettings.analyticsScoresObjectRequired'))
+    }
+    if (!parsedProfileData || typeof parsedProfileData !== 'object' || Array.isArray(parsedProfileData)) {
+      throw new Error(t('adminSettings.analyticsProfileObjectRequired'))
+    }
+
+    for (const value of Object.values(parsedScores)) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new Error(t('adminSettings.analyticsScoresNumbersOnly'))
+      }
+    }
+
+    await trpc.analytics.updateProfileData.mutate({
+      userId: analyticsEditorUserId.value,
+      scores: parsedScores as Record<string, number>,
+      profileData: parsedProfileData as Record<string, unknown>,
+    })
+
+    analyticsEditorOpen.value = false
+    useToast().success(t('adminSettings.analyticsProfileSaved'))
+    await refreshAnalytics()
+  } catch (e: any) {
+    useToast().error(e.message || t('adminSettings.analyticsProfileSaveError'))
+  } finally {
+    analyticsEditorLoading.value = false
+  }
+}
+
+async function resetProfile(userId: string) {
+  if (!window.confirm(t('adminSettings.analyticsResetConfirm'))) return
+  try {
+    await trpc.analytics.resetProfile.mutate({ userId })
+    useToast().success(t('adminSettings.analyticsResetSuccess'))
+    await refreshAnalytics()
+  } catch (e: any) {
+    useToast().error(e.message || t('adminSettings.analyticsResetError'))
+  }
 }
 
 function openCreateAnnouncement() {
@@ -759,7 +824,25 @@ async function saveSettings() {
             :key="profile.userId"
             class="p-4 bg-background border border-border rounded-xl"
           >
-            <p class="text-sm font-semibold text-text-primary">{{ profile.email || t('adminSettings.analyticsUnknownUser') }}</p>
+            <div class="flex items-start justify-between gap-3">
+              <p class="text-sm font-semibold text-text-primary">{{ profile.email || t('adminSettings.analyticsUnknownUser') }}</p>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors"
+                  @click="openProfileEditor(profile)"
+                >
+                  {{ t('adminSettings.analyticsEditRawProfile') }}
+                </button>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 text-xs font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-colors"
+                  @click="resetProfile(profile.userId)"
+                >
+                  {{ t('adminSettings.analyticsResetProfile') }}
+                </button>
+              </div>
+            </div>
 
             <div v-if="profile.profileData" class="mt-3 space-y-3">
               <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -840,6 +923,45 @@ async function saveSettings() {
           </div>
         </div>
       </div>
+    </UiModal>
+
+    <UiModal v-model="analyticsEditorOpen" :title="t('adminSettings.analyticsRawEditorTitle', { user: analyticsEditorUserLabel })" size="xl">
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-text-primary mb-2">
+            {{ t('adminSettings.analyticsRawScores') }}
+          </label>
+          <textarea
+            v-model="analyticsEditorScores"
+            rows="10"
+            class="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-text-primary mb-2">
+            {{ t('adminSettings.analyticsRawProfileData') }}
+          </label>
+          <textarea
+            v-model="analyticsEditorProfileData"
+            rows="18"
+            class="w-full px-4 py-3 bg-background border border-border rounded-xl text-text-primary text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary resize-y"
+          />
+        </div>
+      </div>
+
+      <template #footer>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm text-text-muted hover:text-text-primary transition-colors"
+          @click="analyticsEditorOpen = false"
+        >
+          {{ t('common.cancel') }}
+        </button>
+        <UiButton :loading="analyticsEditorLoading" @click="saveProfileEditor">
+          {{ t('common.save') }}
+        </UiButton>
+      </template>
     </UiModal>
   </div>
 </template>
