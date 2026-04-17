@@ -29,3 +29,10 @@ export function getActiveUsers(): Array<{ userId: string, lastActive: number }> 
   }
   return active
 }
+
+/**
+ * Returns the number of users whose last activity was within the active threshold.
+ */
+export function getActiveUserCount(): number {
+  return getActiveUsers().length
+}
