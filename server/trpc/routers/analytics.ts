@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { z } from 'zod'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { db } from '../../db'
 import { userEvents, userProfiles, users } from '../../db/schema'
@@ -64,6 +63,3 @@ export const analyticsRouter = router({
     }),
 })
 
-      return { success: true }
-    }),
-})
