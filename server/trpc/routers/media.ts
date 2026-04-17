@@ -952,6 +952,94 @@ export const mediaRouter = router({
       return { sections }
     }),
 
+  youMightAlsoLike: protectedProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(24).default(12),
+      mediaType: z.enum(['movie', 'tv', 'all']).default('movie'),
+    }).optional())
+    .query(async ({ input, ctx }) => {
+      const params = input || { limit: 12, mediaType: 'movie' as const }
+      const preferences = calculateUserPreferences(ctx.user.id)
+
+      if (!preferences || preferences.topGenres.length === 0) {
+        return []
+      }
+
+      const watchedRows = sqlite.prepare(`
+        SELECT media_id
+        FROM watch_progress
+        WHERE user_id = ? AND completed = 1
+      `).all(ctx.user.id) as Array<{ media_id: string }>
+
+      const ratedRows = sqlite.prepare(`
+        SELECT media_id, rating
+        FROM media_ratings
+        WHERE user_id = ?
+      `).all(ctx.user.id) as Array<{ media_id: string, rating: number }>
+
+      const excludedIds = new Set<string>(watchedRows.map(row => row.media_id))
+      for (const row of ratedRows) {
+        if (row.rating === -1) excludedIds.add(row.media_id)
+      }
+
+      const topGenres = preferences.topGenres.slice(0, 4).map(entry => entry.genre)
+      const genreFilter = topGenres
+        .map(genre => `m.genres LIKE '%${genre.replace(/'/g, "''")}%'`)
+        .join(' OR ')
+
+      if (!genreFilter) {
+        return []
+      }
+
+      const typeFilter = params.mediaType === 'all'
+        ? ''
+        : `AND m.media_type = '${params.mediaType}'`
+
+      const candidates = sqlite.prepare(`
+        SELECT
+          m.id,
+          m.title,
+          m.poster_path as posterPath,
+          m.year,
+          m.rating,
+          m.media_type as mediaType,
+          m.season,
+          m.episode,
+          m.genres
+        FROM media m
+        WHERE (${genreFilter}) ${typeFilter}
+        GROUP BY COALESCE(m.tmdb_id, m.title)
+        ORDER BY m.rating DESC NULLS LAST, m.added_at DESC
+        LIMIT 150
+      `).all() as any[]
+
+      const scored = candidates
+        .filter(candidate => !excludedIds.has(candidate.id))
+        .map((candidate) => {
+          const genres = candidate.genres ? JSON.parse(candidate.genres) : []
+          const matchScore = calculateMatchScore(genres, candidate.year, candidate.rating, preferences)
+          return {
+            id: candidate.id,
+            title: candidate.title,
+            posterPath: candidate.posterPath,
+            year: candidate.year,
+            rating: candidate.rating,
+            mediaType: candidate.mediaType,
+            season: candidate.season,
+            episode: candidate.episode,
+            matchScore,
+          }
+        })
+        .filter(candidate => candidate.matchScore >= 35)
+        .sort((a, b) => {
+          if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore
+          return (b.rating || 0) - (a.rating || 0)
+        })
+        .slice(0, params.limit)
+
+      return scored
+    }),
+
   // Get media without TMDB ID (admin)
   noTmdbMedia: adminProcedure
     .input(z.object({

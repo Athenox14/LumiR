@@ -13,6 +13,7 @@ export default {
     success: 'Erfolg',
     search: 'Suchen',
     viewAll: 'Alle anzeigen',
+    youMightAlsoLike: 'Das könnte dir auch gefallen',
     retry: 'Erneut versuchen',
     refresh: 'Aktualisieren',
     play: 'Abspielen',

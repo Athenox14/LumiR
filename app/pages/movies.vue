@@ -43,6 +43,10 @@ watch([sortBy, sortOrder, selectedGenre, selectedYear, pageSize], saveFilters)
 // Fetch genres and years for filters
 const { data: genres } = useAsyncData('genres', () => trpc.media.genres.query())
 const { data: years } = useAsyncData('years', () => trpc.media.years.query())
+const { data: youMightAlsoLike, pending: recommendationsLoading } = useAsyncData(
+  'movies-you-might-also-like',
+  () => trpc.media.youMightAlsoLike.query({ limit: 12, mediaType: 'movie' })
+)
 
 // Personalized sections — fetched separately via $fetch to avoid tRPC batching
 const personalizedData = ref<{ sections: any[] } | null>(null)
@@ -301,6 +305,16 @@ function canScrollRight(idx: number) {
           <option :value="0">{{ t('movies.all') }}</option>
         </select>
       </div>
+    </div>
+
+    <div v-if="youMightAlsoLike?.length" class="mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold text-text-primary">{{ t('common.youMightAlsoLike') }}</h2>
+      </div>
+      <MediaGrid
+        :items="youMightAlsoLike || []"
+        :loading="recommendationsLoading"
+      />
     </div>
 
     <!-- Media Grid -->
