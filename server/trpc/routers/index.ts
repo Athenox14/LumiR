@@ -7,6 +7,7 @@ import { libraryRouter } from './library'
 import { catalogRouter } from './catalog'
 import { announcementsRouter } from './announcements'
 import { bugReportRouter } from './bugReport'
+import { analyticsRouter } from './analytics'
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   catalog: catalogRouter,
   announcements: announcementsRouter,
   bugReport: bugReportRouter,
+  analytics: analyticsRouter,
 })
 
 export type AppRouter = typeof appRouter
