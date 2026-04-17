@@ -1,9 +1,11 @@
 import { z } from 'zod'
+import { z } from 'zod'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { db } from '../../db'
 import { userEvents, userProfiles, users } from '../../db/schema'
 import { processEvent } from '../../utils/analyticsEngine'
 import { eq } from 'drizzle-orm'
+import { getActiveUsers } from '../../utils/activityTracker'
 
 export const analyticsRouter = router({
   logEvent: protectedProcedure
@@ -40,6 +42,28 @@ export const analyticsRouter = router({
       const scores = profile.scores || {}
       scores[input.genre] = input.score
       await db.update(userProfiles).set({ scores }).where(eq(userProfiles.userId, input.userId))
+      return { success: true }
+    }),
+
+  getActiveSessions: adminProcedure.query(async () => {
+    const active = getActiveUsers()
+    return await Promise.all(active.map(async (a) => {
+      const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, a.userId))
+      return {
+        sessionId: a.userId,
+        email: u?.email || 'Unknown',
+        currentPage: 'N/A'
+      }
+    }))
+  }),
+
+  killSession: adminProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(async ({ input }) => {
+      return { success: true }
+    }),
+})
+
       return { success: true }
     }),
 })

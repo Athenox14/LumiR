@@ -15,18 +15,17 @@ export function recordUserActivity(userId: string) {
 }
 
 /**
- * Returns the number of users whose last activity was within the active threshold.
+ * Returns a list of users whose last activity was within the active threshold.
  */
-export function getActiveUserCount(): number {
+export function getActiveUsers(): Array<{ userId: string, lastActive: number }> {
   const now = Date.now()
-  let count = 0
+  const active: Array<{ userId: string, lastActive: number }> = []
   for (const [userId, timestamp] of lastActivity) {
     if (now - timestamp <= ACTIVE_THRESHOLD_MS) {
-      count++
+      active.push({ userId, lastActive: timestamp })
     } else {
-      // Clean up stale entries
       lastActivity.delete(userId)
     }
   }
-  return count
+  return active
 }
