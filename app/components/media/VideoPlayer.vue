@@ -402,10 +402,10 @@ onUnmounted(() => {
         key-target="player"
         class="vds-player"
         :style="{ width: '100%', height: '100%' }"
-        :google-cast="{
+        :google-cast="JSON.stringify({
           receiverApplicationId: 'CC1AD845',
           autoJoinPolicy: 'origin_scoped',
-        }"
+        })"
         @provider-change="onProviderChange"
         @can-play="onCanPlay"
         @seeking="onSeeking"
@@ -432,13 +432,13 @@ onUnmounted(() => {
           color-scheme="dark"
           :no-gestures="false"
           :seek-step="10"
-          :translations="{
+          :translations="JSON.stringify({
             Audio: t('player.audio'),
             Quality: t('player.quality'),
             Auto: t('player.auto'),
             'Closed-Captions Off': t('player.subtitlesOff'),
             Cast: t('player.cast'),
-          }"
+          })"
         />
       </media-player>
     </ClientOnly>
