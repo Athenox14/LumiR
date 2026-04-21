@@ -575,10 +575,9 @@ onMounted(() => {
         <div v-if="normalizedCast.length" ref="castSectionRef" class="mb-8">
           <h2 class="text-lg font-semibold text-text-primary mb-4">{{ t('media.casting') }}</h2>
           <div class="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
-            <NuxtLink
+            <div
               v-for="actor in normalizedCast"
               :key="actor.name"
-              :to="actor.id ? `/p/remote-media/person/${actor.id}` : '#'"
               class="flex-shrink-0 w-28 text-center group"
             >
               <div class="w-28 h-28 rounded-full overflow-hidden bg-surface mx-auto mb-2 ring-2 ring-transparent group-hover:ring-primary transition-all">
@@ -597,7 +596,7 @@ onMounted(() => {
               </div>
               <p class="text-sm font-medium text-text-primary truncate group-hover:text-primary transition-colors">{{ actor.name }}</p>
               <p v-if="actor.character" class="text-xs text-text-muted truncate">{{ actor.character }}</p>
-            </NuxtLink>
+            </div>
           </div>
         </div>
 

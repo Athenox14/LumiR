@@ -1,71 +1,48 @@
+import { lookup } from 'node:dns/promises'
+import { isIP } from 'node:net'
+
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:'])
+const ALLOWED_HEADER_NAMES = new Set([
+  'accept',
+  'accept-language',
+  'origin',
+  'referer',
+  'sec-fetch-dest',
+  'sec-fetch-mode',
+  'sec-fetch-site',
+  'user-agent',
+])
+
 export default defineEventHandler(async (event) => {
-  // Authentication check
   const session = await getUserSession(event)
   if (!session?.user) {
     throw createError({ statusCode: 401, message: 'Unauthorized' })
   }
 
   const query = getQuery(event)
-  const url = query.url as string
+  const rawUrl = query.url as string
   const headersParam = query.headers as string
 
-  if (!url) {
+  if (!rawUrl) {
     throw createError({ statusCode: 400, message: 'URL parameter is required' })
   }
 
-  // Parse custom headers (Referer, etc.)
-  // Note: getQuery already decodes URI components, so no need for decodeURIComponent
-  let customHeaders: Record<string, string> = {}
-  if (headersParam) {
-    try {
-      customHeaders = JSON.parse(headersParam)
-    } catch {
-      try {
-        // Fallback: try with decodeURIComponent in case of double encoding
-        customHeaders = JSON.parse(decodeURIComponent(headersParam))
-      } catch {
-        // Ignore invalid headers
-      }
-    }
-  }
+  const targetUrl = parseAndValidateTargetUrl(rawUrl)
+  await assertSafeRemoteTarget(targetUrl)
+
+  const customHeaders = parseCustomHeaders(headersParam)
 
   try {
-    // Derive Origin from Referer if available (many streaming servers check both)
-    const fetchHeaders: Record<string, string> = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'cross-site',
-      ...customHeaders,
-    }
+    const fetchHeaders = buildFetchHeaders(customHeaders, getHeader(event, 'range'))
 
-    // Add Origin from Referer if we have one
-    if (customHeaders.Referer || customHeaders.referer) {
-      try {
-        const refererUrl = new URL(customHeaders.Referer || customHeaders.referer)
-        fetchHeaders['Origin'] = refererUrl.origin
-      } catch {}
-    }
-
-    // Forward Range header from browser for seeking in MP4/media files
-    const rangeHeader = getHeader(event, 'range')
-    if (rangeHeader) {
-      fetchHeaders['Range'] = rangeHeader
-    }
-
-    console.log(`[Proxy] Fetching: ${url.substring(0, 100)}... | Referer: ${fetchHeaders.Referer || 'none'} | Origin: ${fetchHeaders.Origin || 'none'}${rangeHeader ? ` | Range: ${rangeHeader}` : ''}`)
-
-    const response = await fetch(url, {
+    const response = await fetch(targetUrl.toString(), {
       headers: fetchHeaders,
       redirect: 'follow',
     })
 
-    // 206 Partial Content is OK (Range response)
     if (!response.ok && response.status !== 206) {
       const errorBody = await response.text().catch(() => '')
-      console.error(`[Proxy] Upstream error: ${response.status} ${response.statusText} | URL: ${url.substring(0, 100)}... | Body: ${errorBody.substring(0, 200)}`)
+      console.error(`[Proxy] Upstream error: ${response.status} ${response.statusText} | Host: ${targetUrl.host} | Body: ${errorBody.substring(0, 160)}`)
       throw createError({
         statusCode: response.status,
         message: `Upstream error: ${response.statusText}`,
@@ -74,19 +51,17 @@ export default defineEventHandler(async (event) => {
 
     const contentType = response.headers.get('content-type') || 'application/octet-stream'
 
-    // Guard: if upstream returns HTML when we expect media, it's likely a Cloudflare challenge or error page
-    if (contentType.includes('text/html') && !url.endsWith('.m3u8') && !url.match(/\.srt(\?.*)?$/i)) {
+    if (contentType.includes('text/html') && !targetUrl.pathname.endsWith('.m3u8') && !targetUrl.pathname.match(/\.srt$/i)) {
       const body = await response.text()
       const isCloudflare = body.includes('challenge-platform') || body.includes('Just a moment') || body.includes('cf-browser-verification')
-      console.error(`[Proxy] Upstream returned HTML instead of media | URL: ${url.substring(0, 100)} | Cloudflare: ${isCloudflare} | Body: ${body.substring(0, 300)}`)
+      console.error(`[Proxy] Upstream returned HTML instead of media | Host: ${targetUrl.host} | Cloudflare: ${isCloudflare}`)
       throw createError({
         statusCode: 502,
         message: isCloudflare ? 'Blocked by Cloudflare protection' : 'Upstream returned HTML instead of media',
       })
     }
 
-    // If this is an SRT subtitle, convert to VTT for browser compatibility
-    if (url.match(/\.srt(\?.*)?$/i)) {
+    if (targetUrl.pathname.match(/\.srt$/i)) {
       const text = await response.text()
       const vtt = 'WEBVTT\n\n' + text.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
       setHeader(event, 'Content-Type', 'text/vtt')
@@ -94,17 +69,15 @@ export default defineEventHandler(async (event) => {
       return vtt
     }
 
-    // If this is an m3u8 manifest, rewrite URLs to go through the proxy
-    if (url.endsWith('.m3u8') || contentType.includes('mpegurl') || contentType.includes('x-mpegURL')) {
+    if (targetUrl.pathname.endsWith('.m3u8') || contentType.includes('mpegurl') || contentType.includes('x-mpegURL')) {
       const text = await response.text()
-      const rewritten = rewriteM3u8(text, url, headersParam || '')
+      const rewritten = rewriteM3u8(text, targetUrl.toString(), headersParam || '')
 
       setHeader(event, 'Content-Type', 'application/vnd.apple.mpegurl')
       setHeader(event, 'Access-Control-Allow-Origin', '*')
       return rewritten
     }
 
-    // For segments (.ts, .mp4, etc.), pipe the response
     const respHeaders = response.headers
     if (respHeaders.get('content-type')) {
       setHeader(event, 'Content-Type', respHeaders.get('content-type')!)
@@ -114,22 +87,15 @@ export default defineEventHandler(async (event) => {
     }
     setHeader(event, 'Access-Control-Allow-Origin', '*')
 
-    // Forward Range-related headers for seeking support
     if (respHeaders.get('content-range')) {
       setHeader(event, 'Content-Range', respHeaders.get('content-range')!)
     }
-    if (respHeaders.get('accept-ranges')) {
-      setHeader(event, 'Accept-Ranges', respHeaders.get('accept-ranges')!)
-    } else {
-      setHeader(event, 'Accept-Ranges', 'bytes')
-    }
+    setHeader(event, 'Accept-Ranges', respHeaders.get('accept-ranges') || 'bytes')
 
-    // Return 206 if upstream returned partial content
     if (response.status === 206) {
       setResponseStatus(event, 206, 'Partial Content')
     }
 
-    // Stream the response body
     if (response.body) {
       return sendStream(event, response.body as any)
     }
@@ -145,17 +111,169 @@ export default defineEventHandler(async (event) => {
   }
 })
 
+function parseAndValidateTargetUrl(rawUrl: string): URL {
+  let targetUrl: URL
+  try {
+    targetUrl = new URL(rawUrl)
+  } catch {
+    throw createError({ statusCode: 400, message: 'Invalid target URL' })
+  }
+
+  if (!ALLOWED_PROTOCOLS.has(targetUrl.protocol)) {
+    throw createError({ statusCode: 400, message: 'Unsupported target protocol' })
+  }
+
+  if (!targetUrl.hostname) {
+    throw createError({ statusCode: 400, message: 'Invalid target host' })
+  }
+
+  return targetUrl
+}
+
+function parseCustomHeaders(headersParam?: string): Record<string, string> {
+  if (!headersParam) return {}
+
+  let parsed: unknown = null
+  try {
+    parsed = JSON.parse(headersParam)
+  } catch {
+    try {
+      parsed = JSON.parse(decodeURIComponent(headersParam))
+    } catch {
+      return {}
+    }
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+  const sanitized: Record<string, string> = {}
+  for (const [rawKey, rawValue] of Object.entries(parsed)) {
+    if (typeof rawValue !== 'string') continue
+    const key = rawKey.toLowerCase()
+    if (!ALLOWED_HEADER_NAMES.has(key)) continue
+    sanitized[normalizeHeaderName(key)] = rawValue.slice(0, 1000)
+  }
+
+  return sanitized
+}
+
+function normalizeHeaderName(key: string): string {
+  if (key === 'user-agent') return 'User-Agent'
+  if (key === 'accept') return 'Accept'
+  if (key === 'accept-language') return 'Accept-Language'
+  if (key === 'origin') return 'Origin'
+  if (key === 'referer') return 'Referer'
+  if (key === 'sec-fetch-dest') return 'Sec-Fetch-Dest'
+  if (key === 'sec-fetch-mode') return 'Sec-Fetch-Mode'
+  if (key === 'sec-fetch-site') return 'Sec-Fetch-Site'
+  return key
+}
+
+function buildFetchHeaders(customHeaders: Record<string, string>, rangeHeader?: string): Record<string, string> {
+  const fetchHeaders: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'cross-site',
+    ...customHeaders,
+  }
+
+  if ((customHeaders.Referer || customHeaders.referer) && !customHeaders.Origin) {
+    try {
+      const refererUrl = new URL(customHeaders.Referer || customHeaders.referer!)
+      fetchHeaders.Origin = refererUrl.origin
+    } catch {}
+  }
+
+  if (rangeHeader) {
+    fetchHeaders.Range = rangeHeader
+  }
+
+  return fetchHeaders
+}
+
+async function assertSafeRemoteTarget(targetUrl: URL) {
+  const hostname = targetUrl.hostname.toLowerCase()
+
+  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
+    throw createError({ statusCode: 403, message: 'Local targets are forbidden' })
+  }
+
+  if (hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+    throw createError({ statusCode: 403, message: 'Private network targets are forbidden' })
+  }
+
+  const directIpType = isIP(hostname)
+  if (directIpType && isPrivateIpAddress(hostname)) {
+    throw createError({ statusCode: 403, message: 'Private network targets are forbidden' })
+  }
+
+  if (!directIpType) {
+    let resolved
+    try {
+      resolved = await lookup(hostname, { all: true })
+    } catch {
+      throw createError({ statusCode: 400, message: 'Unable to resolve target host' })
+    }
+
+    if (!resolved.length) {
+      throw createError({ statusCode: 400, message: 'Unable to resolve target host' })
+    }
+
+    for (const entry of resolved) {
+      if (isPrivateIpAddress(entry.address)) {
+        throw createError({ statusCode: 403, message: 'Private network targets are forbidden' })
+      }
+    }
+  }
+}
+
+function isPrivateIpAddress(address: string): boolean {
+  const family = isIP(address)
+  if (family === 4) return isPrivateIPv4(address)
+  if (family === 6) return isPrivateIPv6(address)
+  return true
+}
+
+function isPrivateIPv4(address: string): boolean {
+  const parts = address.split('.').map(Number)
+  if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) return true
+
+  const [a, b] = parts
+  if (a === 10) return true
+  if (a === 127) return true
+  if (a === 0) return true
+  if (a === 169 && b === 254) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  if (a === 192 && b === 168) return true
+  if (a === 100 && b >= 64 && b <= 127) return true
+  return false
+}
+
+function isPrivateIPv6(address: string): boolean {
+  const normalized = address.toLowerCase()
+  return normalized === '::1'
+    || normalized === '::'
+    || normalized.startsWith('fc')
+    || normalized.startsWith('fd')
+    || normalized.startsWith('fe80:')
+    || normalized.startsWith('::ffff:127.')
+    || normalized.startsWith('::ffff:10.')
+    || normalized.startsWith('::ffff:192.168.')
+    || /^::ffff:172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)
+    || normalized.startsWith('::ffff:169.254.')
+}
+
 function rewriteM3u8(content: string, manifestUrl: string, headersParam: string): string {
-  // Resolve base URL for relative paths
   const baseUrl = manifestUrl.substring(0, manifestUrl.lastIndexOf('/') + 1)
 
   const lines = content.split('\n')
   const rewritten = lines.map(line => {
     const trimmed = line.trim()
 
-    // Skip empty lines and comments/tags
     if (!trimmed || trimmed.startsWith('#')) {
-      // But check for URI= attributes in tags (e.g., #EXT-X-KEY:METHOD=AES-128,URI="...")
       if (trimmed.includes('URI="')) {
         return trimmed.replace(/URI="([^"]+)"/g, (_match, uri) => {
           const absoluteUri = resolveUrl(uri, baseUrl)
@@ -165,12 +283,10 @@ function rewriteM3u8(content: string, manifestUrl: string, headersParam: string)
       return line
     }
 
-    // If line is a URL (segment or sub-playlist)
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
       return buildProxyUrl(trimmed, headersParam)
     }
 
-    // Relative URL
     const absoluteUrl = resolveUrl(trimmed, baseUrl)
     return buildProxyUrl(absoluteUrl, headersParam)
   })
@@ -183,7 +299,6 @@ function resolveUrl(path: string, baseUrl: string): string {
     return path
   }
   if (path.startsWith('/')) {
-    // Absolute path - need origin from baseUrl
     const urlObj = new URL(baseUrl)
     return `${urlObj.origin}${path}`
   }

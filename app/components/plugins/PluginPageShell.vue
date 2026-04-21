@@ -2,10 +2,6 @@
 import { defineAsyncComponent } from 'vue'
 import { getPluginPage } from '../../utils/clientPlugins'
 
-definePageMeta({
-  middleware: ['auth'],
-})
-
 const route = useRoute()
 const { getPlugin, pluginsLoading } = usePlugins()
 
@@ -26,15 +22,6 @@ const pageDefinition = computed(() => {
 const pageComponent = computed(() => {
   if (!pageDefinition.value) return null
   return defineAsyncComponent(pageDefinition.value.component)
-})
-
-watchEffect(() => {
-  if (pluginPath.value.startsWith('/watch/')) {
-    setPageLayout(false)
-    return
-  }
-
-  setPageLayout('default')
 })
 
 useHead({

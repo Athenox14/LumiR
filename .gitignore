@@ -31,3 +31,8 @@ data/subtitles/
 .env
 .env.*
 !.env.example
+
+# Local plugins
+plugins/*
+!plugins/example/
+!plugins/example/**

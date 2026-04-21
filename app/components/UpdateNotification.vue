@@ -48,8 +48,17 @@ function formatBytes(bytes: number): string {
   return (bytes / 1048576).toFixed(1) + ' MB'
 }
 
-function simpleMarkdown(text: string): string {
+function escapeHtml(text: string): string {
   return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function renderReleaseNotes(text: string): string {
+  return escapeHtml(text)
     .replace(/^### (.+)$/gm, '<h4 class="font-semibold text-text-primary mt-2 mb-1">$1</h4>')
     .replace(/^## (.+)$/gm, '<h3 class="font-semibold text-text-primary mt-2 mb-1">$1</h3>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-text-primary">$1</strong>')
@@ -121,7 +130,7 @@ watch(isAdmin, (val) => {
           <div
             v-if="updateData.releaseNotes"
             class="p-2.5 bg-background rounded-lg text-xs text-text-muted leading-relaxed max-h-32 overflow-y-auto"
-            v-html="simpleMarkdown(updateData.releaseNotes)"
+            v-html="renderReleaseNotes(updateData.releaseNotes)"
           />
 
           <!-- Error -->

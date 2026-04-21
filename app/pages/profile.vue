@@ -22,12 +22,8 @@ const loading = ref(false)
 const error = ref('')
 const success = ref('')
 
-// Avatar search
-const selectedActor = ref<{ id: number; name: string; image: string | null } | null>(null)
-const actorSearch = ref('')
-const actorResults = ref<Array<{ id: number; name: string; profilePath: string | null; knownFor: string[] }>>([])
-const actorSearchLoading = ref(false)
-let actorSearchTimeout: ReturnType<typeof setTimeout> | null = null
+const favoritePersonName = ref('')
+const favoritePersonImage = ref('')
 
 // Stats
 const { data: stats } = useAsyncData(
@@ -46,15 +42,8 @@ async function loadProfile() {
     isProfilePublic.value = data.isProfilePublic || false
     showWatchedFilms.value = data.showWatchedFilms || false
     showLikedFilms.value = data.showLikedFilms || false
-    if (data.favoriteActorId) {
-      selectedActor.value = {
-        id: data.favoriteActorId,
-        name: data.favoriteActorName || '',
-        image: data.favoriteActorImage || null,
-      }
-    } else {
-      selectedActor.value = null
-    }
+    favoritePersonName.value = data.favoriteActorName || ''
+    favoritePersonImage.value = data.favoriteActorImage || ''
   } catch (e) {
     console.error('Failed to load profile:', e)
   }
@@ -63,33 +52,9 @@ async function loadProfile() {
 // Fetch profile when user is available
 watch(user, () => loadProfile(), { immediate: true })
 
-// Debounced actor search
-watch(actorSearch, (value) => {
-  if (actorSearchTimeout) clearTimeout(actorSearchTimeout)
-  if (!value.trim() || value.trim().length < 2) {
-    actorResults.value = []
-    return
-  }
-  actorSearchTimeout = setTimeout(async () => {
-    actorSearchLoading.value = true
-    try {
-      actorResults.value = await trpc.remoteMedia.searchPerson.query({ query: value })
-    } catch {
-      actorResults.value = []
-    } finally {
-      actorSearchLoading.value = false
-    }
-  }, 400)
-})
-
-function selectActor(actor: { id: number; name: string; profilePath: string | null }) {
-  selectedActor.value = { id: actor.id, name: actor.name, image: actor.profilePath }
-  actorSearch.value = ''
-  actorResults.value = []
-}
-
 function removeAvatar() {
-  selectedActor.value = null
+  favoritePersonName.value = ''
+  favoritePersonImage.value = ''
 }
 
 async function handleSubmit() {
@@ -122,9 +87,9 @@ async function handleSubmit() {
       isProfilePublic: isProfilePublic.value,
       showWatchedFilms: showWatchedFilms.value,
       showLikedFilms: showLikedFilms.value,
-      favoriteActorId: selectedActor.value?.id || null,
-      favoriteActorName: selectedActor.value?.name || null,
-      favoriteActorImage: selectedActor.value?.image || null,
+      favoriteActorId: null,
+      favoriteActorName: favoritePersonName.value || null,
+      favoriteActorImage: favoritePersonImage.value || null,
     })
 
     success.value = t('profile.profileUpdated')
@@ -159,9 +124,9 @@ async function handleSubmit() {
             <div class="flex items-center gap-4">
               <div class="w-20 h-20 rounded-full overflow-hidden bg-surface-secondary flex-shrink-0">
                 <img
-                  v-if="selectedActor?.image"
-                  :src="selectedActor.image"
-                  :alt="selectedActor.name"
+                  v-if="favoritePersonImage"
+                  :src="favoritePersonImage"
+                  :alt="favoritePersonName || user?.displayName || 'Avatar'"
                   class="w-full h-full object-cover"
                 >
                 <div v-else class="w-full h-full flex items-center justify-center">
@@ -170,8 +135,8 @@ async function handleSubmit() {
                   </span>
                 </div>
               </div>
-              <div v-if="selectedActor" class="flex-1">
-                <p class="text-sm font-medium text-text-primary">{{ selectedActor.name }}</p>
+              <div v-if="favoritePersonName || favoritePersonImage" class="flex-1">
+                <p class="text-sm font-medium text-text-primary">{{ favoritePersonName || 'Photo personnalisée' }}</p>
                 <button
                   type="button"
                   class="text-xs text-red-400 hover:text-red-300 mt-1"
@@ -182,44 +147,20 @@ async function handleSubmit() {
               </div>
             </div>
 
-            <!-- Actor search -->
-            <div class="relative">
-              <input
-                v-model="actorSearch"
-                type="text"
-                :placeholder="t('profile.searchActor')"
-                class="w-full px-4 py-2.5 rounded-lg bg-surface-secondary border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary text-sm"
-              >
-              <div
-                v-if="actorResults.length > 0"
-                class="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-xl shadow-xl overflow-hidden z-50 max-h-64 overflow-y-auto"
-              >
-                <button
-                  v-for="actor in actorResults"
-                  :key="actor.id"
-                  type="button"
-                  class="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-secondary transition-colors text-left"
-                  @click="selectActor(actor)"
-                >
-                  <div class="w-10 h-10 rounded-full bg-surface-secondary overflow-hidden flex-shrink-0">
-                    <img
-                      v-if="actor.profilePath"
-                      :src="actor.profilePath"
-                      :alt="actor.name"
-                      class="w-full h-full object-cover"
-                    >
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-text-primary">{{ actor.name }}</p>
-                    <p v-if="actor.knownFor.length" class="text-xs text-text-muted truncate">
-                      {{ actor.knownFor.join(', ') }}
-                    </p>
-                  </div>
-                </button>
-              </div>
-              <div v-else-if="actorSearchLoading" class="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-xl p-3 text-sm text-text-muted">
-                {{ t('common.search') }}...
-              </div>
+            <div class="space-y-3">
+              <UiInput
+                v-model="favoritePersonName"
+                label="Personne favorite"
+                placeholder="Nom libre"
+              />
+              <UiInput
+                v-model="favoritePersonImage"
+                label="Image du profil"
+                placeholder="https://..."
+              />
+              <p class="text-xs text-text-muted">
+                Champ manuel pour rester indépendant des plugins optionnels.
+              </p>
             </div>
           </div>
 

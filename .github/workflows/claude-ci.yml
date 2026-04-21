@@ -1,13 +1,13 @@
-name: CI — Claude branch auto-merge
+name: CI
 
 on:
+  pull_request:
   push:
     branches:
-      - 'claude/**'
+      - master
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 jobs:
   ci:
@@ -33,29 +33,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-  auto-merge:
-    name: Auto-merge to master
-    needs: ci
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Merge to master
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin master
-          git checkout master
-          git merge --no-ff origin/${{ github.ref_name }} \
-            -m "auto-merge: ${{ github.ref_name }}"
-          git push origin master
-
-      - name: Trigger release
-        run: gh workflow run release.yml --ref master
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

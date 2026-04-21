@@ -1,5 +1,10 @@
+import { getExternalPluginsDir } from './shared/pluginPaths'
+
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  alias: {
+    '#lumir-external-plugins': getExternalPluginsDir(),
+  },
   compatibilityDate: '2025-01-27',
   devtools: { enabled: true },
   devServer: {
@@ -65,6 +70,19 @@ export default defineNuxtConfig({
   nitro: {
     experimental: {
       asyncContext: true
+    },
+    alias: {
+      '#lumir-external-plugins': getExternalPluginsDir(),
+    }
+  },
+
+  vite: {
+    server: {
+      fs: {
+        allow: [
+          getExternalPluginsDir(),
+        ]
+      }
     }
   }
 })

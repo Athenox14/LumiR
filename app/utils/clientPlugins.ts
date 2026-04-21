@@ -1,8 +1,9 @@
 import type { ClientPluginDefinition, PluginLocaleMessages, PluginNavItem, PluginPageDefinition } from '../types/plugins'
 
-const pluginModules = import.meta.glob('../../plugins/*/client/plugin.ts', { eager: true }) as Record<string, { default: ClientPluginDefinition }>
+const repoPluginModules = import.meta.glob('../../plugins/*/client/plugin.ts', { eager: true }) as Record<string, { default: ClientPluginDefinition }>
+const externalPluginModules = import.meta.glob('#lumir-external-plugins/*/client/plugin.ts', { eager: true }) as Record<string, { default: ClientPluginDefinition }>
 
-const plugins = Object.values(pluginModules).map((mod) => mod.default)
+const plugins = [...Object.values(repoPluginModules), ...Object.values(externalPluginModules)].map((mod) => mod.default)
 
 export function getPluginEnabledSettingKey(pluginId: string): string {
   return `plugin.${pluginId}.enabled`
