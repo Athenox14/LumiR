@@ -7,6 +7,7 @@ export default {
     './layouts/**/*.vue',
     './pages/**/*.vue',
     './plugins/**/*.{js,ts}',
+    '../lumir-plugins/**/*.{vue,js,ts}',
   ],
   darkMode: 'class',
   theme: {
