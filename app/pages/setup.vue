@@ -8,7 +8,6 @@ const { t } = useI18n()
 const { appName } = useAppName()
 
 useHead({ title: 'Setup' })
-const trpc = useTrpc()
 
 const displayName = ref('')
 const email = ref('')

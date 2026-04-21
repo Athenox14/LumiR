@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* eslint-disable vue/no-v-html */
 const { t } = useI18n()
 const { isAdmin } = useAuth()
 const {

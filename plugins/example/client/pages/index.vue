@@ -1,4 +1,8 @@
 <script setup lang="ts">
+defineOptions({
+  name: 'ExamplePluginHome',
+})
+
 const title = 'Example Plugin'
 </script>
 
