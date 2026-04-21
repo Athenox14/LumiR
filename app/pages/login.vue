@@ -8,7 +8,6 @@ const { login } = useAuth()
 const { t } = useI18n()
 
 useHead({ title: computed(() => t('auth.signIn')) })
-const trpc = useTrpc()
 const { registrationEnabled } = useFeatureFlags()
 
 const identifier = ref('')
@@ -21,7 +20,8 @@ const needsSetup = ref(false)
 
 onMounted(async () => {
   try {
-    needsSetup.value = await trpc.auth.needsSetup.query()
+    const response = await $fetch<{ needsSetup: boolean }>('/api/setup-status')
+    needsSetup.value = response.needsSetup
     if (needsSetup.value) {
       navigateTo('/setup')
     }

@@ -27,15 +27,18 @@ const appNameInput = ref('')
 const mediaPath = ref('')
 const tmdbApiKey = ref('')
 const groqApiKey = ref('')
-const githubRepo = ref('')
-const githubToken = ref('')
+const groqModel = ref('llama-3.1-8b-instant')
 const autoScanEnabled = ref(false)
 const scanInterval = ref(24)
-const catalogEnabled = ref(true)
-const downloadsEnabled = ref(true)
 const registrationEnabled = ref(true)
 const bugReportEnabled = ref(false)
 const bugReportWebhookUrl = ref('')
+const groqModelOptions = [
+  { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
+  { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
+  { value: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B' },
+  { value: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B' },
+]
 
 // Announcements
 const announcementsLoading = ref(false)
@@ -292,12 +295,9 @@ watch(settings, (data) => {
     mediaPath.value = (data.mediaPath as string) || ''
     tmdbApiKey.value = (data.tmdbApiKey as string) || ''
     groqApiKey.value = (data.groqApiKey as string) || ''
-    githubRepo.value = (data.githubRepo as string) || ''
-    githubToken.value = (data.githubToken as string) || ''
+    groqModel.value = (data.groqModel as string) || 'llama-3.1-8b-instant'
     autoScanEnabled.value = (data.autoScanEnabled as boolean) || false
     scanInterval.value = (data.scanInterval as number) || 24
-    catalogEnabled.value = data.catalogEnabled !== false
-    downloadsEnabled.value = data.downloadsEnabled !== false
     registrationEnabled.value = data.registrationEnabled !== false
     bugReportEnabled.value = (data.bugReportEnabled as boolean) || false
     bugReportWebhookUrl.value = (data.bugReportWebhookUrl as string) || ''
@@ -315,12 +315,9 @@ async function saveSettings() {
       mediaPath: mediaPath.value,
       tmdbApiKey: tmdbApiKey.value,
       groqApiKey: groqApiKey.value,
-      githubRepo: githubRepo.value || undefined,
-      githubToken: githubToken.value || undefined,
+      groqModel: groqModel.value,
       autoScanEnabled: autoScanEnabled.value,
       scanInterval: scanInterval.value,
-      catalogEnabled: catalogEnabled.value,
-      downloadsEnabled: downloadsEnabled.value,
       registrationEnabled: registrationEnabled.value,
       bugReportEnabled: bugReportEnabled.value,
       bugReportWebhookUrl: bugReportWebhookUrl.value || undefined,
@@ -418,40 +415,10 @@ async function saveSettings() {
         </div>
       </div>
 
-      <!-- Features toggles + GitHub -->
+      <!-- Features toggles -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
           <h3 class="font-semibold text-text-primary">{{ t('adminSettings.features') }}</h3>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.catalogEnabled') }}</p>
-              <p class="text-xs text-text-muted">{{ t('adminSettings.catalogEnabledDesc') }}</p>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input
-                v-model="catalogEnabled"
-                type="checkbox"
-                class="sr-only peer"
-              >
-              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
-            </label>
-          </div>
-
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.downloadsEnabled') }}</p>
-              <p class="text-xs text-text-muted">{{ t('adminSettings.downloadsEnabledDesc') }}</p>
-            </div>
-            <label class="relative inline-flex items-center cursor-pointer">
-              <input
-                v-model="downloadsEnabled"
-                type="checkbox"
-                class="sr-only peer"
-              >
-              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
-            </label>
-          </div>
 
           <div class="flex items-center justify-between">
             <div>
@@ -467,36 +434,6 @@ async function saveSettings() {
               <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
             </label>
           </div>
-        </div>
-
-        <!-- GitHub -->
-        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.github') }}</h3>
-
-          <UiInput
-            v-model="githubRepo"
-            :label="t('adminSettings.githubRepo')"
-            :placeholder="t('adminSettings.githubRepoPlaceholder')"
-          >
-            <template #description>
-              <p class="text-xs text-text-muted mt-1">
-                {{ t('adminSettings.githubRepoDesc') }}
-              </p>
-            </template>
-          </UiInput>
-
-          <UiInput
-            v-model="githubToken"
-            type="password"
-            :label="t('adminSettings.githubToken')"
-            :placeholder="t('adminSettings.githubTokenPlaceholder')"
-          >
-            <template #description>
-              <p class="text-xs text-text-muted mt-1">
-                {{ t('adminSettings.githubTokenDesc') }}
-              </p>
-            </template>
-          </UiInput>
         </div>
       </div>
 
@@ -710,7 +647,22 @@ async function saveSettings() {
 
         <!-- Groq AI -->
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.groqAi') }}</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="font-semibold text-text-primary">{{ t('adminSettings.groqAi') }}</h3>
+            <div class="relative group">
+              <button
+                type="button"
+                class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-xs font-semibold text-text-muted hover:text-text-primary hover:border-border-secondary transition-colors"
+                :aria-label="t('adminSettings.groqHelpTitle')"
+              >
+                ?
+              </button>
+              <div class="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-72 -translate-x-1/2 rounded-xl border border-border bg-background p-3 text-xs text-text-secondary shadow-xl group-hover:block">
+                <p class="font-medium text-text-primary">{{ t('adminSettings.groqHelpTitle') }}</p>
+                <p class="mt-1">{{ t('adminSettings.groqHelpBody') }}</p>
+              </div>
+            </div>
+          </div>
 
           <UiInput
             v-model="groqApiKey"
@@ -725,6 +677,15 @@ async function saveSettings() {
               </p>
             </template>
           </UiInput>
+
+          <UiSelect
+            v-model="groqModel"
+            :label="t('adminSettings.groqModel')"
+            :options="groqModelOptions"
+          />
+          <p class="text-xs text-text-muted">
+            {{ t('adminSettings.groqModelDesc') }}
+          </p>
         </div>
       </div>
 

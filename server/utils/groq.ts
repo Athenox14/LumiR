@@ -14,6 +14,17 @@ async function getGroqApiKey(): Promise<string | null> {
   return key?.trim() || null
 }
 
+async function getGroqModel(): Promise<string> {
+  const [setting] = await db
+    .select()
+    .from(settings)
+    .where(eq(settings.key, 'groqModel'))
+    .limit(1)
+
+  const model = setting?.value as string | undefined
+  return model?.trim() || 'llama-3.1-8b-instant'
+}
+
 /**
  * Ask Groq AI to identify a movie/TV show title from the file path and metadata.
  * Used as a last resort when filename parsing and metadata title both fail.
@@ -40,6 +51,7 @@ export async function askGroqForTitle(
 
   try {
     const client = new Groq({ apiKey })
+    const model = await getGroqModel()
 
     const metaInfo = metadata
       ? `\nMetadonnees du fichier:\n- Titre embarque: ${metadata.title || 'aucun'}\n- Duree: ${metadata.duration ? Math.round(metadata.duration / 60) + ' min' : 'inconnue'}\n- Resolution: ${metadata.width && metadata.height ? `${metadata.width}x${metadata.height}` : 'inconnue'}\n- Codec video: ${metadata.videoCodec || 'inconnu'}\n- Codec audio: ${metadata.audioCodec || 'inconnu'}\n- Date: ${metadata.date || 'inconnue'}`
@@ -58,7 +70,7 @@ Si tu ne peux pas identifier le contenu, reponds "UNKNOWN".`
     console.log(`[Groq] Asking AI to identify: "${parsedTitle}" (path: ${filePath})`)
 
     const completion = await client.chat.completions.create({
-      model: 'llama-3.1-8b-instant',
+      model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
       max_tokens: 100,

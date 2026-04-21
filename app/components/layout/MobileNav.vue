@@ -1,33 +1,44 @@
 <script setup lang="ts">
 const { isAdmin } = useAuth()
-const { catalogEnabled, downloadsEnabled } = useFeatureFlags()
+const { t } = useI18n()
+const { pluginItems } = usePluginNavigation()
 const route = useRoute()
 
 const navItems = computed(() => {
   const items = [
-    { icon: 'home', labelKey: 'nav.home', to: '/' },
-    { icon: 'film', labelKey: 'nav.movies', to: '/movies' },
-    { icon: 'tv', labelKey: 'nav.tvShows', to: '/tv' },
-    { icon: 'clock', labelKey: 'nav.continue', to: '/continue' },
+    { icon: 'home', label: t('nav.home'), to: '/' },
+    { icon: 'film', label: t('nav.movies'), to: '/movies' },
+    { icon: 'tv', label: t('nav.tvShows'), to: '/tv' },
+    { icon: 'clock', label: t('nav.continue'), to: '/continue' },
   ]
 
-  if (catalogEnabled.value) {
-    items.push({ icon: 'globe', labelKey: 'nav.catalog', to: '/catalog' })
-  }
-  if (downloadsEnabled.value) {
-    items.push({ icon: 'download', labelKey: 'nav.downloads', to: '/downloads' })
-  }
+  items.push(...pluginItems.value.map(item => ({
+    icon: item.icon,
+    label: item.label,
+    to: item.to,
+  })))
 
   if (isAdmin.value) {
-    items.push({ icon: 'cog', labelKey: 'nav.admin', to: '/admin' })
+    items.push({ icon: 'cog', label: t('nav.admin'), to: '/admin' })
   }
 
   return items
 })
 
+const activeNavTo = computed(() => {
+  const matches = navItems.value
+    .map(item => item.to)
+    .filter((path) => {
+      if (path === '/') return route.path === '/'
+      return route.path === path || route.path.startsWith(`${path}/`)
+    })
+    .sort((a, b) => b.length - a.length)
+
+  return matches[0] || null
+})
+
 function isActive(path: string) {
-  if (path === '/') return route.path === '/'
-  return route.path.startsWith(path)
+  return activeNavTo.value === path
 }
 </script>
 
@@ -110,6 +121,7 @@ function isActive(path: string) {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
+        <span class="text-[10px] leading-none mt-1">{{ t(item.label) }}</span>
       </NuxtLink>
     </div>
   </nav>

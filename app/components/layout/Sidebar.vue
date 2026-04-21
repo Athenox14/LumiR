@@ -2,38 +2,47 @@
 const { user, isAdmin, logout } = useAuth()
 const { t } = useI18n()
 const { appName } = useAppName()
-const { catalogEnabled, downloadsEnabled } = useFeatureFlags()
+const { pluginItems } = usePluginNavigation()
 const route = useRoute()
 
 const collapsed = useState('sidebar-collapsed', () => false)
 
 const navItems = computed(() => {
-  const items: { icon: string, labelKey: string, to: string, beta?: boolean }[] = [
-    { icon: 'home', labelKey: 'nav.home', to: '/' },
-    { icon: 'film', labelKey: 'nav.movies', to: '/movies' },
-    { icon: 'tv', labelKey: 'nav.tvShows', to: '/tv' },
-    { icon: 'clock', labelKey: 'nav.continueWatching', to: '/continue' },
+  const items: { icon: string, label: string, to: string, beta?: boolean }[] = [
+    { icon: 'home', label: t('nav.home'), to: '/' },
+    { icon: 'film', label: t('nav.movies'), to: '/movies' },
+    { icon: 'tv', label: t('nav.tvShows'), to: '/tv' },
+    { icon: 'clock', label: t('nav.continueWatching'), to: '/continue' },
   ]
 
-  if (catalogEnabled.value) {
-    items.push({ icon: 'globe', labelKey: 'nav.catalog', to: '/catalog', beta: true })
-  }
-  if (downloadsEnabled.value) {
-    items.push({ icon: 'download', labelKey: 'nav.downloads', to: '/downloads', beta: true })
-  }
+  items.push(...pluginItems.value.map(item => ({
+    icon: item.icon,
+    label: item.label,
+    to: item.to,
+    beta: item.beta,
+  })))
 
   if (isAdmin.value) {
-    items.push({ icon: 'cog', labelKey: 'nav.admin', to: '/admin' })
+    items.push({ icon: 'cog', label: t('nav.admin'), to: '/admin' })
   }
 
   return items
 })
 
+const activeNavTo = computed(() => {
+  const matches = navItems.value
+    .map(item => item.to)
+    .filter((path) => {
+      if (path === '/') return route.path === '/'
+      return route.path === path || route.path.startsWith(`${path}/`)
+    })
+    .sort((a, b) => b.length - a.length)
+
+  return matches[0] || null
+})
+
 function isActive(path: string) {
-  if (path === '/') {
-    return route.path === '/'
-  }
-  return route.path.startsWith(path)
+  return activeNavTo.value === path
 }
 
 function toggleCollapse() {
@@ -192,7 +201,7 @@ function toggleCollapse() {
           v-if="!collapsed"
           class="font-medium flex-1"
         >
-          {{ t(item.labelKey) }}
+          {{ t(item.label) }}
         </span>
         <span
           v-if="!collapsed && item.beta"

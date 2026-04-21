@@ -7,23 +7,22 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
-const { catalogEnabled } = useFeatureFlags()
-
-watch(catalogEnabled, (val) => {
-  if (!val) navigateTo('/')
-}, { immediate: true })
-
-const tmdbId = computed(() => Number(route.params.id))
+const tmdbId = computed(() => Number(route.params.id || (Array.isArray(route.params.path) ? route.params.path.at(-1) : route.params.path)))
 const episodeId = computed(() => (route.query.episodeId as string) || undefined)
 const mediaType = computed(() => (route.query.type as string) || 'movie')
 const seasonNum = computed(() => route.query.season ? Number(route.query.season) : null)
 const episodeNum = computed(() => route.query.episode ? Number(route.query.episode) : null)
 const titleParam = computed(() => (route.query.title as string) || '')
 
+if (route.path.startsWith('/catalog/watch/')) {
+  const query = new URLSearchParams(route.query as Record<string, string>).toString()
+  navigateTo(`/p/remote-media/watch/${tmdbId.value}${query ? `?${query}` : ''}`, { redirectCode: 301 })
+}
+
 // Fetch content info for title/metadata (lazy - don't block page render)
 const { data: info } = useLazyAsyncData(
   `catalog-watch-info-${tmdbId.value}`,
-  () => trpc.catalog.info.query({
+  () => trpc.remoteMedia.info.query({
     tmdbId: tmdbId.value,
     type: mediaType.value as 'movie' | 'tv',
   })
@@ -47,7 +46,7 @@ const sourcesError = ref<Error | null>(null)
 onMounted(async () => {
   try {
     const title = titleParam.value || info.value?.title || ''
-    const result = await trpc.catalog.streamingSources.query({
+    const result = await trpc.remoteMedia.streamingSources.query({
       tmdbId: tmdbId.value,
       title,
       type: mediaType.value as 'movie' | 'tv',
@@ -122,8 +121,8 @@ const displayTitle = computed(() => {
 })
 
 const backUrl = computed(() => {
-  if (mediaType.value === 'tv') return `/catalog/tv/${tmdbId.value}`
-  return `/catalog/movie/${tmdbId.value}`
+  if (mediaType.value === 'tv') return `/p/remote-media/tv/${tmdbId.value}`
+  return `/p/remote-media/movie/${tmdbId.value}`
 })
 
 function handlePlayerError() {
@@ -140,7 +139,7 @@ function selectStream(index: number) {
 
 async function handleProgress(position: number, duration: number) {
   try {
-    await trpc.catalog.updateOnlineProgress.mutate({
+    await trpc.remoteMedia.updateOnlineProgress.mutate({
       tmdbId: tmdbId.value,
       episodeId: mediaType.value === 'tv' ? episodeId.value : undefined,
       mediaType: mediaType.value as 'movie' | 'tv',

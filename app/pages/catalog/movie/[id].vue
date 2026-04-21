@@ -6,17 +6,15 @@ definePageMeta({
 const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
-const { catalogEnabled } = useFeatureFlags()
+const tmdbId = computed(() => Number(route.params.id || (Array.isArray(route.params.path) ? route.params.path.at(-1) : route.params.path)))
 
-watch(catalogEnabled, (val) => {
-  if (!val) navigateTo('/')
-}, { immediate: true })
-
-const tmdbId = computed(() => Number(route.params.id))
+if (route.path.startsWith('/catalog/movie/')) {
+  navigateTo(`/p/remote-media/movie/${tmdbId.value}`, { redirectCode: 301 })
+}
 
 const { data: info, pending, error } = useAsyncData(
   `catalog-movie-${tmdbId.value}`,
-  () => trpc.catalog.info.query({ tmdbId: tmdbId.value, type: 'movie' })
+  () => trpc.remoteMedia.info.query({ tmdbId: tmdbId.value, type: 'movie' })
 )
 
 useHead({ title: computed(() => info.value?.title || t('common.loading')) })
@@ -24,7 +22,7 @@ useHead({ title: computed(() => info.value?.title || t('common.loading')) })
 // Preheat streaming sources as soon as we have the title
 watch(() => info.value?.title, (title) => {
   if (!title) return
-  trpc.catalog.preheatSources.mutate({
+  trpc.remoteMedia.preheatSources.mutate({
     tmdbId: tmdbId.value,
     title,
     type: 'movie',
@@ -39,7 +37,7 @@ async function handleDownloadSource(source: { url: string; isM3U8: boolean; head
   downloading.value = true
   try {
     const epId = info.value.episodes?.[0]?.id
-    await trpc.catalog.startDownload.mutate({
+    await trpc.remoteMedia.startDownload.mutate({
       tmdbId: tmdbId.value,
       episodeId: epId || undefined,
       mediaType: 'movie',
@@ -75,7 +73,7 @@ function formatRuntime(duration: string | undefined): string {
 const watchUrl = computed(() => {
   if (!info.value) return null
   const epId = info.value.episodes?.[0]?.id
-  let url = `/catalog/watch/${tmdbId.value}?type=movie&title=${encodeURIComponent(info.value.title)}`
+  let url = `/p/remote-media/watch/${tmdbId.value}?type=movie&title=${encodeURIComponent(info.value.title)}`
   if (epId) url += `&episodeId=${encodeURIComponent(epId)}`
   return url
 })
@@ -98,7 +96,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
     <!-- Error -->
     <div v-else-if="error" class="p-6 text-center">
       <p class="text-red-500">{{ t('catalog.failedToLoad') }}</p>
-      <NuxtLink to="/catalog" class="text-primary hover:underline mt-2 inline-block">
+      <NuxtLink to="/p/remote-media" class="text-primary hover:underline mt-2 inline-block">
         {{ t('catalog.backToCatalog') }}
       </NuxtLink>
     </div>
@@ -213,7 +211,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
             <NuxtLink
               v-for="actor in info.cast.slice(0, 10)"
               :key="actor.name"
-              :to="actor.id ? `/catalog/person/${actor.id}` : '#'"
+              :to="actor.id ? `/p/remote-media/person/${actor.id}` : '#'"
               class="flex-shrink-0 w-28 text-center group"
             >
               <div class="w-28 h-28 rounded-full overflow-hidden bg-surface mx-auto mb-2 flex items-center justify-center ring-2 ring-transparent group-hover:ring-primary transition-all">
@@ -241,7 +239,7 @@ const placeholderBackdrop = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/
             <NuxtLink
               v-for="rec in info.recommendations.slice(0, 10)"
               :key="rec.id"
-              :to="`/catalog/movie/${rec.id}`"
+              :to="`/p/remote-media/movie/${rec.id}`"
               class="group block"
             >
               <div class="aspect-[2/3] rounded-xl overflow-hidden bg-surface">

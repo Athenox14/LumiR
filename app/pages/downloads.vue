@@ -5,17 +5,16 @@ definePageMeta({
 
 const { t } = useI18n()
 const trpc = useTrpc()
-const { downloadsEnabled } = useFeatureFlags()
-
+const route = useRoute()
 useHead({ title: computed(() => t('nav.downloads')) })
 
-watch(downloadsEnabled, (val) => {
-  if (!val) navigateTo('/')
-}, { immediate: true })
+if (route.path === '/downloads') {
+  navigateTo('/p/remote-media/downloads', { redirectCode: 301 })
+}
 
 const { data: downloads, pending, refresh } = useAsyncData(
   'downloads',
-  () => trpc.catalog.listDownloads.query({ limit: 50 }),
+  () => trpc.remoteMedia.listDownloads.query({ limit: 50 }),
 )
 
 // Auto-refresh every 5s if there are active downloads
@@ -36,7 +35,7 @@ onUnmounted(() => {
 
 async function cancelDownload(id: string) {
   try {
-    await trpc.catalog.cancelDownload.mutate(id)
+    await trpc.remoteMedia.cancelDownload.mutate(id)
     refresh()
   } catch (e: any) {
     useToast().error(t('downloads.cancelFailed') + ': ' + (e.message || 'Unknown error'))
@@ -95,7 +94,7 @@ const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/200
         </svg>
       </div>
       <p class="text-text-secondary">{{ t('downloads.noDownloads') }}</p>
-      <NuxtLink to="/catalog" class="text-primary hover:underline mt-2 text-sm">
+      <NuxtLink to="/p/remote-media" class="text-primary hover:underline mt-2 text-sm">
         {{ t('downloads.browseCatalog') }}
       </NuxtLink>
     </div>

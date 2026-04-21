@@ -47,7 +47,7 @@ async function fetchSources() {
   error.value = ''
   streams.value = []
   try {
-    const result = await trpc.catalog.streamingSources.query({
+    const result = await trpc.remoteMedia.streamingSources.query({
       tmdbId: props.tmdbId,
       title: props.title,
       type: props.type,

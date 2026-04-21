@@ -5,14 +5,14 @@ definePageMeta({
 
 const { t } = useI18n()
 const trpc = useTrpc()
-const { catalogEnabled } = useFeatureFlags()
 const { track } = useAnalytics()
+const route = useRoute()
 
 useHead({ title: computed(() => t('nav.catalog')) })
 
-watch(catalogEnabled, (val) => {
-  if (!val) navigateTo('/')
-}, { immediate: true })
+if (route.path === '/catalog') {
+  navigateTo('/p/remote-media', { redirectCode: 301 })
+}
 
 const searchQuery = ref('')
 const activeTab = ref<'movie' | 'tv'>('movie')
@@ -53,12 +53,12 @@ onMounted(() => {
 // Fetch trending
 const { data: trendingMovies, pending: trendingMoviesLoading, error: trendingMoviesError } = useAsyncData(
   'trending-movies',
-  () => trpc.catalog.trending.query({ type: 'movie' })
+  () => trpc.remoteMedia.trending.query({ type: 'movie' })
 )
 
 const { data: trendingTv, pending: trendingTvLoading, error: trendingTvError } = useAsyncData(
   'trending-tv',
-  () => trpc.catalog.trending.query({ type: 'tv' })
+  () => trpc.remoteMedia.trending.query({ type: 'tv' })
 )
 
 // Detect network errors from failed TMDB calls
@@ -92,7 +92,7 @@ watch(searchQuery, (val) => {
   if (!searchStartedAt.value) searchStartedAt.value = Date.now()
   searchTimeout = setTimeout(async () => {
     try {
-      searchResults.value = await trpc.catalog.search.query({
+      searchResults.value = await trpc.remoteMedia.search.query({
         query: val.trim(),
         type: activeTab.value,
       })
@@ -118,7 +118,7 @@ watch(activeTab, () => {
   if (searchQuery.value.trim()) {
     // Re-search with new tab
     searchLoading.value = true
-    trpc.catalog.search.query({
+    trpc.remoteMedia.search.query({
       query: searchQuery.value.trim(),
       type: activeTab.value,
     }).then(results => {
@@ -145,7 +145,7 @@ const loading = computed(() => {
 
 function getDetailUrl(item: any): string {
   const type = item.type === 'TV Series' || activeTab.value === 'tv' ? 'tv' : 'movie'
-  return `/catalog/${type}/${item.id}`
+  return `/p/remote-media/${type}/${item.id}`
 }
 
 const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"%3E%3Crect fill="%231a1a1a" width="300" height="450"/%3E%3Ctext fill="%23404040" font-family="sans-serif" font-size="24" text-anchor="middle" x="150" y="225"%3ENo Poster%3C/text%3E%3C/svg%3E'

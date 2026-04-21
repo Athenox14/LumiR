@@ -7,11 +7,15 @@ const { t } = useI18n()
 const route = useRoute()
 const trpc = useTrpc()
 
-const personId = computed(() => Number(route.params.id))
+const personId = computed(() => Number(route.params.id || (Array.isArray(route.params.path) ? route.params.path.at(-1) : route.params.path)))
+
+if (route.path.startsWith('/catalog/person/')) {
+  navigateTo(`/p/remote-media/person/${personId.value}`, { redirectCode: 301 })
+}
 
 const { data: person, pending, error } = useAsyncData(
   `person-${personId.value}`,
-  () => trpc.catalog.personInfo.query({ personId: personId.value })
+  () => trpc.remoteMedia.personInfo.query({ personId: personId.value })
 )
 
 useHead({ title: computed(() => person.value?.name || t('common.loading')) })
@@ -38,8 +42,8 @@ function calculateAge(birthday: string | null, deathday: string | null): number 
 
 function getMediaLink(credit: { id: number; type: string }): string {
   return credit.type === 'TV Series'
-    ? `/catalog/tv/${credit.id}`
-    : `/catalog/movie/${credit.id}`
+    ? `/p/remote-media/tv/${credit.id}`
+    : `/p/remote-media/movie/${credit.id}`
 }
 
 const placeholderProfile = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="450" viewBox="0 0 300 450"%3E%3Crect fill="%231a1a1a" width="300" height="450"/%3E%3Ctext fill="%23404040" font-family="sans-serif" font-size="24" text-anchor="middle" x="150" y="225"%3ENo Photo%3C/text%3E%3C/svg%3E'
@@ -62,7 +66,7 @@ const placeholderProfile = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2
     <!-- Error -->
     <div v-else-if="error" class="p-6 text-center">
       <p class="text-red-500">{{ t('person.failedToLoad') }}</p>
-      <NuxtLink to="/catalog" class="text-primary hover:underline mt-2 inline-block">
+      <NuxtLink to="/p/remote-media" class="text-primary hover:underline mt-2 inline-block">
         {{ t('person.backToCatalog') }}
       </NuxtLink>
     </div>

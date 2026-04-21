@@ -73,7 +73,7 @@ watch(actorSearch, (value) => {
   actorSearchTimeout = setTimeout(async () => {
     actorSearchLoading.value = true
     try {
-      actorResults.value = await trpc.catalog.searchPerson.query({ query: value })
+      actorResults.value = await trpc.remoteMedia.searchPerson.query({ query: value })
     } catch {
       actorResults.value = []
     } finally {
