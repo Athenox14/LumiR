@@ -1,6 +1,3 @@
-import { db } from '../../db'
-import { settings } from '../../db/schema'
-import { eq } from 'drizzle-orm'
 import { execSync } from 'child_process'
 import { mkdirSync, createWriteStream, writeFileSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
@@ -22,10 +19,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing downloadUrl' })
   }
 
-  // Get GitHub token from DB
-  const [tokenSetting] = await db.select().from(settings).where(eq(settings.key, 'githubToken')).limit(1)
-  const token = tokenSetting?.value as string
-
   const appDir = process.cwd()
   const tempDir = join(appDir, `.update-${Date.now()}`)
   const zipPath = join(appDir, '.update.zip')
@@ -35,9 +28,6 @@ export default defineEventHandler(async (event) => {
     const headers: Record<string, string> = {
       Accept: 'application/octet-stream',
       'User-Agent': 'LumiR-Updater',
-    }
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
     }
 
     const response = await fetch(downloadUrl, { headers })

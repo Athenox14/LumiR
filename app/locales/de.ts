@@ -378,6 +378,8 @@ export default {
     settingsSaved: 'Einstellungen erfolgreich gespeichert!',
     failedToSave: 'Einstellungen konnten nicht gespeichert werden',
     features: 'Funktionen',
+    autoUpdateEnabled: 'Automatische Updates',
+    autoUpdateEnabledDesc: 'Prüft regelmäßig auf neue Versionen und installiert sie automatisch, wenn kein Benutzer aktiv ist.',
     catalogEnabled: 'Online-Katalog',
     catalogEnabledDesc: 'Filme und Serien online durchsuchen und streamen',
     downloadsEnabled: 'Downloads',

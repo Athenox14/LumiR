@@ -7,6 +7,7 @@ import { getActiveUserCount } from '../utils/activityTracker'
 import { execSync } from 'child_process'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
+import { fetchLatestRelease, getReleaseZipAsset } from '../utils/releases'
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
@@ -24,35 +25,14 @@ let _checkTimer: ReturnType<typeof setInterval> | null = null
  */
 async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
-    const [repoSetting] = await db.select().from(settings).where(eq(settings.key, 'githubRepo')).limit(1)
-    const [tokenSetting] = await db.select().from(settings).where(eq(settings.key, 'githubToken')).limit(1)
+    const [enabledSetting] = await db.select().from(settings).where(eq(settings.key, 'autoUpdateEnabled')).limit(1)
+    const enabled = enabledSetting?.value === true || enabledSetting?.value === 'true'
 
-    const repo = repoSetting?.value as string
-    const token = tokenSetting?.value as string
-
-    if (!repo) {
-      console.log('[AutoUpdate] GitHub repo not configured, skipping update check')
+    if (!enabled) {
+      console.log('[AutoUpdate] Automatic updates disabled, skipping update check')
       return null
     }
-
-    const headers: Record<string, string> = {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'LumiR-Updater',
-    }
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-    }
-
-    const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers })
-    if (!response.ok) {
-      console.error(`[AutoUpdate] GitHub API error: ${response.status}`)
-      return null
-    }
-
-    const release = await response.json() as {
-      tag_name: string
-      assets: Array<{ name: string; url: string; browser_download_url: string; size: number }>
-    }
+    const release = await fetchLatestRelease()
 
     // Current version
     let currentVersion = 'dev'
@@ -64,11 +44,8 @@ async function checkForUpdate(): Promise<UpdateInfo | null> {
     }
 
     const hasUpdate = currentVersion !== release.tag_name && currentVersion !== 'dev'
-    const asset = release.assets.find(a => a.name.endsWith('.zip'))
-
-    const downloadUrl = token && asset?.url
-      ? asset.url
-      : asset?.browser_download_url || null
+    const asset = getReleaseZipAsset(release)
+    const downloadUrl = asset?.browser_download_url || null
 
     return { latestVersion: release.tag_name, downloadUrl, hasUpdate }
   } catch (e) {
@@ -81,9 +58,6 @@ async function checkForUpdate(): Promise<UpdateInfo | null> {
  * Install the update (same mechanism as update.post.ts).
  */
 async function installUpdate(downloadUrl: string, version: string): Promise<boolean> {
-  const [tokenSetting] = await db.select().from(settings).where(eq(settings.key, 'githubToken')).limit(1)
-  const token = tokenSetting?.value as string
-
   const appDir = process.cwd()
   const tempDir = join(appDir, `.update-${Date.now()}`)
   const zipPath = join(appDir, '.update.zip')
@@ -94,10 +68,6 @@ async function installUpdate(downloadUrl: string, version: string): Promise<bool
       Accept: 'application/octet-stream',
       'User-Agent': 'LumiR-Updater',
     }
-    if (token) {
-      headers.Authorization = `Bearer ${token}`
-    }
-
     const response = await fetch(downloadUrl, { headers })
     if (!response.ok || !response.body) {
       throw new Error(`Download failed: ${response.status}`)
