@@ -197,6 +197,10 @@ docs/images/  # README screenshots
 - Improve the translation system
 - Add more languages
 
+## Recommendation signals
+
+The file [WHATS_WATCHED.md](WHATS_WATCHED.md) documents the behavioral signals and viewing context used as inputs for LumiR's personalization and recommendation logic. It is intentionally kept as a readable product-facing reference rather than hidden implementation detail.
+
 ## License
 
 MIT
