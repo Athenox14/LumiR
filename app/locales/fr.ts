@@ -378,6 +378,8 @@ export default {
     settingsSaved: 'Paramètres enregistrés avec succès !',
     failedToSave: 'Échec de l\'enregistrement des paramètres',
     features: 'Fonctionnalités',
+    autoUpdateEnabled: 'Mise à jour automatique',
+    autoUpdateEnabledDesc: 'Vérifie périodiquement les nouvelles versions et les installe automatiquement quand aucun utilisateur n’est actif.',
     catalogEnabled: 'Catalogue en ligne',
     catalogEnabledDesc: 'Permet de parcourir et streamer des films et séries en ligne',
     downloadsEnabled: 'Téléchargements',

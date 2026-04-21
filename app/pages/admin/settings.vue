@@ -28,17 +28,12 @@ const mediaPath = ref('')
 const tmdbApiKey = ref('')
 const groqApiKey = ref('')
 const groqModel = ref('llama-3.1-8b-instant')
+const autoUpdateEnabled = ref(false)
 const autoScanEnabled = ref(false)
 const scanInterval = ref(24)
 const registrationEnabled = ref(true)
 const bugReportEnabled = ref(false)
 const bugReportWebhookUrl = ref('')
-const groqModelOptions = [
-  { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
-  { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile' },
-  { value: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B' },
-  { value: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B' },
-]
 
 // Announcements
 const announcementsLoading = ref(false)
@@ -296,6 +291,7 @@ watch(settings, (data) => {
     tmdbApiKey.value = (data.tmdbApiKey as string) || ''
     groqApiKey.value = (data.groqApiKey as string) || ''
     groqModel.value = (data.groqModel as string) || 'llama-3.1-8b-instant'
+    autoUpdateEnabled.value = data.autoUpdateEnabled === true || data.autoUpdateEnabled === 'true'
     autoScanEnabled.value = (data.autoScanEnabled as boolean) || false
     scanInterval.value = (data.scanInterval as number) || 24
     registrationEnabled.value = data.registrationEnabled !== false
@@ -316,6 +312,7 @@ async function saveSettings() {
       tmdbApiKey: tmdbApiKey.value,
       groqApiKey: groqApiKey.value,
       groqModel: groqModel.value,
+      autoUpdateEnabled: autoUpdateEnabled.value,
       autoScanEnabled: autoScanEnabled.value,
       scanInterval: scanInterval.value,
       registrationEnabled: registrationEnabled.value,
@@ -415,7 +412,7 @@ async function saveSettings() {
         </div>
       </div>
 
-      <!-- Features toggles -->
+      <!-- Features + Analytics -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
           <h3 class="font-semibold text-text-primary">{{ t('adminSettings.features') }}</h3>
@@ -434,14 +431,21 @@ async function saveSettings() {
               <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
             </label>
           </div>
-        </div>
-      </div>
 
-      <!-- Bug Reports + Presence -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <!-- Bug Reports -->
-        <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
-          <h3 class="font-semibold text-text-primary">{{ t('adminSettings.bugReports') }}</h3>
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-sm font-medium text-text-primary">{{ t('adminSettings.autoUpdateEnabled') }}</p>
+              <p class="text-xs text-text-muted">{{ t('adminSettings.autoUpdateEnabledDesc') }}</p>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                v-model="autoUpdateEnabled"
+                type="checkbox"
+                class="sr-only peer"
+              >
+              <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+            </label>
+          </div>
 
           <div class="flex items-center justify-between">
             <div>
@@ -472,7 +476,6 @@ async function saveSettings() {
           </UiInput>
         </div>
 
-        <!-- Presence & Analytics -->
         <div class="p-6 bg-surface border border-border rounded-xl space-y-4">
           <div class="flex items-start justify-between gap-4">
             <div>
@@ -678,10 +681,10 @@ async function saveSettings() {
             </template>
           </UiInput>
 
-          <UiSelect
+          <UiInput
             v-model="groqModel"
             :label="t('adminSettings.groqModel')"
-            :options="groqModelOptions"
+            placeholder="llama-3.1-8b-instant"
           />
           <p class="text-xs text-text-muted">
             {{ t('adminSettings.groqModelDesc') }}

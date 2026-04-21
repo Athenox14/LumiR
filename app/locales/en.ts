@@ -378,6 +378,8 @@ export default {
     settingsSaved: 'Settings saved successfully!',
     failedToSave: 'Failed to save settings',
     features: 'Features',
+    autoUpdateEnabled: 'Automatic updates',
+    autoUpdateEnabledDesc: 'Periodically checks for new versions and installs them automatically when no user is active.',
     catalogEnabled: 'Online Catalog',
     catalogEnabledDesc: 'Browse and stream movies and TV shows online',
     downloadsEnabled: 'Downloads',
