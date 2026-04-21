@@ -20,19 +20,41 @@ Support the project: [GitHub Sponsors](https://github.com/sponsors/Athenox14)
 
 ## Screenshots
 
-![Accueil](docs/images/accueil.png)
-![Dashboard admin](docs/images/admin-dash.png)
-![Bibliothèque](docs/images/library.png)
-![Fiche film](docs/images/fiche-film.png)
-![Lecteur](docs/images/player.png)
-![Fiche acteur](docs/images/fiche-acteur.png)
+**Accueil**
 
-- **Accueil**: the main dashboard blends quick library stats, continue-watching shortcuts, recommendations, and recently added titles in a single view. It is designed to feel like the daily entry point rather than just a plain file index.
-- **Dashboard admin**: the admin home aggregates platform stats, system health, scan state, update status, loaded plugins, and moderation/cleanup tools such as duplicate detection and missing-TMDB checks.
-- **Bibliothèque**: the movie library page combines personalized rows with classic filters for sorting, genre, year, and page size, so the interface works both as a discovery surface and as a practical collection browser.
-- **Fiche film**: each media page mixes cinematic presentation with useful metadata: backdrop hero, resume state, likes/dislikes, overview, cast, technical tracks, franchise links, and local recommendations.
-- **Lecteur**: playback runs in a dedicated fullscreen layout with resume support, progress tracking, audio-track switching, subtitle selection, and automatic next-episode behavior for TV content.
-- **Profil public**: user profile pages can expose a public-facing identity with avatar/favorite actor, viewing stats, liked titles, and watched titles, while still respecting profile privacy settings.
+- The main dashboard blends quick library stats, continue-watching shortcuts, recommendations, and recently added titles in a single view. It is designed to feel like the daily entry point rather than just a plain file index.
+
+![Accueil](docs/images/accueil.png)
+
+**Dashboard admin**
+
+- The admin home aggregates platform stats, system health, scan state, update status, loaded plugins, and moderation or cleanup tools such as duplicate detection and missing-TMDB checks.
+
+![Dashboard admin](docs/images/admin-dash.png)
+
+**Bibliothèque**
+
+- The movie library page combines personalized rows with classic filters for sorting, genre, year, and page size, so the interface works both as a discovery surface and as a practical collection browser.
+
+![Bibliothèque](docs/images/library.png)
+
+**Fiche film**
+
+- Each media page mixes cinematic presentation with useful metadata: backdrop hero, resume state, likes and dislikes, overview, cast, technical tracks, franchise links, and local recommendations.
+
+![Fiche film](docs/images/fiche-film.png)
+
+**Lecteur**
+
+- Playback runs in a dedicated fullscreen layout with resume support, progress tracking, audio-track switching, subtitle selection, and automatic next-episode behavior for TV content.
+
+![Lecteur](docs/images/player.png)
+
+**Profil public**
+
+- User profile pages can expose a public-facing identity with avatar or favorite actor, viewing stats, liked titles, and watched titles, while still respecting profile privacy settings.
+
+![Fiche acteur](docs/images/fiche-acteur.png)
 
 ## Features
 
