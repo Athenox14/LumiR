@@ -121,7 +121,7 @@ export const settingsRouter = router({
 
   // Get public settings (accessible without login)
   getPublic: publicProcedure.query(async () => {
-    const publicKeys = ['appName', 'logoUrl', 'catalogEnabled', 'downloadsEnabled', 'registrationEnabled']
+    const publicKeys = ['appName', 'logoUrl', 'registrationEnabled']
     const results = await db.select().from(settings).where(inArray(settings.key, publicKeys))
 
     const settingsMap: Record<string, unknown> = {}
@@ -132,8 +132,6 @@ export const settingsRouter = router({
     return {
       appName: settingsMap.appName ?? null,
       logoUrl: settingsMap.logoUrl ?? null,
-      catalogEnabled: settingsMap.catalogEnabled !== false,
-      downloadsEnabled: settingsMap.downloadsEnabled !== false,
       registrationEnabled: settingsMap.registrationEnabled !== false,
     }
   }),

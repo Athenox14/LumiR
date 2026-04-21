@@ -1,9 +1,35 @@
 import fr from '~/locales/fr'
 import en from '~/locales/en'
 import de from '~/locales/de'
+import { getPluginI18nMessages } from '../utils/clientPlugins'
 
 type Locale = 'fr' | 'en' | 'de'
-const messages: Record<Locale, any> = { fr, en, de }
+
+function mergeMessages(base: Record<string, any>, extension: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = { ...base }
+
+  for (const [key, value] of Object.entries(extension)) {
+    const current = result[key]
+    if (current && typeof current === 'object' && !Array.isArray(current) && typeof value === 'object' && value && !Array.isArray(value)) {
+      result[key] = mergeMessages(current, value)
+      continue
+    }
+
+    result[key] = value
+  }
+
+  return result
+}
+
+const baseMessages: Record<Locale, any> = { fr, en, de }
+const pluginMessages = getPluginI18nMessages()
+const messages = pluginMessages.reduce<Record<Locale, any>>((acc, pluginMessage) => {
+  return {
+    fr: pluginMessage.fr ? mergeMessages(acc.fr, pluginMessage.fr) : acc.fr,
+    en: pluginMessage.en ? mergeMessages(acc.en, pluginMessage.en) : acc.en,
+    de: pluginMessage.de ? mergeMessages(acc.de, pluginMessage.de) : acc.de,
+  }
+}, baseMessages)
 
 export function useI18n() {
   const locale = useState<Locale>('app-locale', () => {

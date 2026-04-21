@@ -17,15 +17,16 @@ const confirmPassword = ref('')
 const error = ref('')
 const loading = ref(false)
 
-// Check if setup is needed
 onMounted(async () => {
   try {
-    const needsSetup = await trpc.auth.needsSetup.query()
-    if (!needsSetup) {
+    const response = await $fetch<{ needsSetup: boolean }>('/api/setup-status')
+    useState<boolean | null>('needs-setup').value = response.needsSetup
+
+    if (!response.needsSetup) {
       navigateTo('/login')
     }
   } catch {
-    // Ignore
+    // Ignore and keep the page accessible.
   }
 })
 
@@ -50,6 +51,7 @@ async function handleSubmit() {
 
   try {
     await register(email.value, password.value, displayName.value)
+    useState<boolean | null>('needs-setup').value = false
     navigateTo('/')
   } catch (e: any) {
     error.value = e.message || t('setup.setupFailed')

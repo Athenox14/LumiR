@@ -4,9 +4,59 @@ import * as schema from './schema'
 import { join, dirname  } from 'path'
 
 // Ensure data directory exists
-import { mkdirSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs'
 
-const dbPath = process.env.DATABASE_PATH || join(process.cwd(), 'data', 'pipouflix.db')
+const dataDir = join(process.cwd(), 'data')
+const defaultDbPath = join(dataDir, 'lumir.db')
+const legacyDbPath = join(dataDir, 'pipouflix.db')
+
+function migrateLegacyDatabaseIfNeeded(): string {
+  if (process.env.DATABASE_PATH) {
+    return process.env.DATABASE_PATH
+  }
+
+  const hasDefaultDb = existsSync(defaultDbPath)
+  const hasLegacyDb = existsSync(legacyDbPath)
+
+  if (!hasDefaultDb && hasLegacyDb) {
+    try {
+      renameSync(legacyDbPath, defaultDbPath)
+
+      const legacyWalPath = `${legacyDbPath}-wal`
+      const legacyShmPath = `${legacyDbPath}-shm`
+      const defaultWalPath = `${defaultDbPath}-wal`
+      const defaultShmPath = `${defaultDbPath}-shm`
+
+      if (existsSync(legacyWalPath)) {
+        if (existsSync(defaultWalPath)) unlinkSync(defaultWalPath)
+        renameSync(legacyWalPath, defaultWalPath)
+      }
+
+      if (existsSync(legacyShmPath)) {
+        if (existsSync(defaultShmPath)) unlinkSync(defaultShmPath)
+        renameSync(legacyShmPath, defaultShmPath)
+      }
+
+      console.log(`Migrated legacy database from ${legacyDbPath} to ${defaultDbPath}`)
+      return defaultDbPath
+    } catch (error) {
+      console.warn(`Failed to rename legacy database to ${defaultDbPath}, falling back to ${legacyDbPath}`, error)
+
+      try {
+        copyFileSync(legacyDbPath, defaultDbPath)
+        console.log(`Copied legacy database from ${legacyDbPath} to ${defaultDbPath}`)
+        return defaultDbPath
+      } catch (copyError) {
+        console.warn(`Failed to copy legacy database to ${defaultDbPath}, continuing with ${legacyDbPath}`, copyError)
+        return legacyDbPath
+      }
+    }
+  }
+
+  return defaultDbPath
+}
+
+const dbPath = migrateLegacyDatabaseIfNeeded()
 try {
   mkdirSync(dirname(dbPath), { recursive: true })
 } catch {

@@ -1,5 +1,5 @@
 export default defineNuxtPlugin(() => {
-  const { $trpc } = useNuxtApp()
+  const nuxtApp = useNuxtApp()
   const route = useRoute()
   const sessionKey = 'pipouflix:analytics-session'
 
@@ -54,7 +54,10 @@ export default defineNuxtPlugin(() => {
   }
 
   function trackPageView(path: string) {
-    $trpc.analytics.logEvent.mutate({
+    const analytics = nuxtApp.$trpc?.analytics
+    if (!analytics) return
+
+    analytics.logEvent.mutate({
       type: 'PAGE_VIEW',
       metadata: buildPageMetadata(path),
     }).catch(() => {})

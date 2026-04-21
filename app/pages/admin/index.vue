@@ -6,6 +6,8 @@ definePageMeta({
 const trpc = useTrpc()
 const { t } = useI18n()
 const { appName } = useAppName()
+const { getPluginLabel } = usePluginLabels()
+const { plugins, refreshPluginStates, isPluginEnabled } = usePlugins()
 
 useHead({ title: computed(() => t('nav.admin')) })
 
@@ -188,6 +190,85 @@ const adminSections = computed(() => [
     to: '/admin/settings',
   },
 ])
+
+const showPluginSettingsModal = ref(false)
+const pluginSettingsLoading = ref(false)
+const pluginSettingsSaving = ref(false)
+const pluginSettingsError = ref('')
+const pluginToggleLoadingId = ref<string | null>(null)
+const selectedPluginId = ref<string | null>(null)
+const pluginSettingsValues = ref<Record<string, string>>({})
+
+const selectedPlugin = computed(() => plugins.value.find(plugin => plugin.id === selectedPluginId.value) || null)
+
+async function openPluginSettings(pluginId: string) {
+  const plugin = plugins.value.find(entry => entry.id === pluginId)
+  if (!plugin?.settings) return
+
+  selectedPluginId.value = pluginId
+  showPluginSettingsModal.value = true
+  pluginSettingsLoading.value = true
+  pluginSettingsError.value = ''
+
+  try {
+    const keys = plugin.settings.fields.map(field => field.key)
+    const values = await trpc.settings.getMany.query(keys)
+    pluginSettingsValues.value = Object.fromEntries(
+      plugin.settings.fields.map(field => [field.key, String(values[field.key] ?? '')]),
+    )
+  } catch (e: any) {
+    pluginSettingsError.value = e.message || 'Failed to load plugin settings'
+    pluginSettingsValues.value = {}
+  } finally {
+    pluginSettingsLoading.value = false
+  }
+}
+
+function closePluginSettings() {
+  showPluginSettingsModal.value = false
+  selectedPluginId.value = null
+  pluginSettingsValues.value = {}
+  pluginSettingsError.value = ''
+}
+
+async function savePluginSettings() {
+  if (!selectedPlugin.value?.settings) return
+
+  pluginSettingsSaving.value = true
+  pluginSettingsError.value = ''
+
+  try {
+    await trpc.settings.setMany.mutate(pluginSettingsValues.value)
+    useToast().success('Plugin settings saved')
+    closePluginSettings()
+  } catch (e: any) {
+    pluginSettingsError.value = e.message || 'Failed to save plugin settings'
+  } finally {
+    pluginSettingsSaving.value = false
+  }
+}
+
+async function togglePlugin(pluginId: string) {
+  pluginToggleLoadingId.value = pluginId
+
+  try {
+    await trpc.settings.set.mutate({
+      key: `plugin.${pluginId}.enabled`,
+      value: !isPluginEnabled(pluginId),
+    })
+
+    await refreshPluginStates()
+    await refreshNuxtData('plugin-settings')
+
+    if (selectedPluginId.value === pluginId && !isPluginEnabled(pluginId)) {
+      closePluginSettings()
+    }
+  } catch (e: any) {
+    useToast().error(e.message || 'Failed to update plugin state')
+  } finally {
+    pluginToggleLoadingId.value = null
+  }
+}
 </script>
 
 <template>
@@ -367,6 +448,145 @@ const adminSections = computed(() => [
         <p class="text-sm text-text-secondary">{{ section.description }}</p>
       </NuxtLink>
     </div>
+
+    <div class="mb-8 p-4 bg-surface border border-border rounded-xl">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 class="font-semibold text-text-primary">Plugins</h3>
+          <p class="text-sm text-text-muted">Plugins client actuellement chargés par l'application.</p>
+        </div>
+        <span class="px-3 py-1 text-xs font-semibold rounded-lg bg-primary/10 text-primary border border-primary/20">
+          {{ plugins.length }} plugin<span v-if="plugins.length > 1">s</span>
+        </span>
+      </div>
+
+      <div v-if="plugins.length" class="grid md:grid-cols-2 gap-4">
+        <div
+          v-for="plugin in plugins"
+          :key="plugin.id"
+          class="p-4 rounded-xl border border-border bg-background"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h4 class="font-medium text-text-primary">
+                {{ getPluginLabel(plugin).name }}
+              </h4>
+              <p class="text-sm text-text-secondary mt-1">
+                {{ getPluginLabel(plugin).description }}
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="plugin.settings"
+                type="button"
+                class="p-2 rounded-lg border border-border text-text-muted hover:text-text-primary hover:border-primary/40 hover:bg-surface-secondary transition-colors"
+                title="Configurer le plugin"
+                :disabled="!isPluginEnabled(plugin.id)"
+                @click="openPluginSettings(plugin.id)"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </button>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  class="sr-only peer"
+                  :checked="isPluginEnabled(plugin.id)"
+                  :disabled="pluginToggleLoadingId === plugin.id"
+                  @change="togglePlugin(plugin.id)"
+                >
+                <div class="w-11 h-6 bg-surface-secondary rounded-full peer peer-checked:bg-primary transition-colors peer peer-disabled:opacity-60 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all" />
+              </label>
+              <span
+                :class="[
+                  'px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded border',
+                  isPluginEnabled(plugin.id)
+                    ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                    : 'bg-surface-secondary text-text-muted border-border',
+                ]"
+              >
+                {{ isPluginEnabled(plugin.id) ? 'Activé' : 'Désactivé' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="mt-4 flex flex-wrap gap-2 text-xs text-text-muted">
+            <span class="px-2 py-1 rounded bg-surface-secondary border border-border">
+              id: {{ plugin.id }}
+            </span>
+            <span class="px-2 py-1 rounded bg-surface-secondary border border-border">
+              nav: {{ plugin.navigation?.length || 0 }}
+            </span>
+            <span class="px-2 py-1 rounded bg-surface-secondary border border-border">
+              pages: {{ Object.keys(plugin.pages || {}).length }}
+            </span>
+            <span class="px-2 py-1 rounded bg-surface-secondary border border-border">
+              i18n: {{ plugin.i18n ? 'yes' : 'no' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <p v-else class="text-sm text-text-muted">Aucun plugin chargé.</p>
+    </div>
+
+    <UiModal
+      v-model="showPluginSettingsModal"
+      :title="selectedPlugin ? `Configurer ${getPluginLabel(selectedPlugin).name}` : 'Configurer le plugin'"
+      size="lg"
+    >
+      <div v-if="selectedPlugin?.settings" class="space-y-4">
+        <p class="text-sm text-text-secondary">{{ getPluginLabel(selectedPlugin).description }}</p>
+
+        <div v-if="pluginSettingsLoading" class="text-sm text-text-muted">
+          Chargement...
+        </div>
+
+        <div v-else class="space-y-4">
+          <div
+            v-for="field in selectedPlugin.settings.fields"
+            :key="field.key"
+            class="space-y-2"
+          >
+            <UiInput
+              v-model="pluginSettingsValues[field.key]"
+              :type="field.type || 'text'"
+              :label="field.label"
+              :placeholder="field.placeholder || ''"
+              :required="field.required"
+            />
+            <p v-if="field.description" class="text-xs text-text-muted">
+              {{ field.description }}
+            </p>
+          </div>
+
+          <p v-if="pluginSettingsError" class="text-sm text-red-500">
+            {{ pluginSettingsError }}
+          </p>
+        </div>
+      </div>
+
+      <template #footer>
+        <UiButton variant="secondary" @click="closePluginSettings">
+          Annuler
+        </UiButton>
+        <UiButton :loading="pluginSettingsSaving" @click="savePluginSettings">
+          Enregistrer
+        </UiButton>
+      </template>
+    </UiModal>
 
     <!-- Scan status -->
     <div v-if="scanStatus" class="mb-8 p-4 bg-surface border border-border rounded-xl">

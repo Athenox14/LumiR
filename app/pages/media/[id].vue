@@ -578,7 +578,7 @@ onMounted(() => {
             <NuxtLink
               v-for="actor in normalizedCast"
               :key="actor.name"
-              :to="actor.id ? `/catalog/person/${actor.id}` : '#'"
+              :to="actor.id ? `/p/remote-media/person/${actor.id}` : '#'"
               class="flex-shrink-0 w-28 text-center group"
             >
               <div class="w-28 h-28 rounded-full overflow-hidden bg-surface mx-auto mb-2 ring-2 ring-transparent group-hover:ring-primary transition-all">
