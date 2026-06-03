@@ -127,6 +127,11 @@ This file is a working list of the behavioral signals and usage patterns conside
 Ces signaux sont désormais réellement observés et intégrés au score de
 recommandation (voir `docs/recommendation-algorithm.md` pour le détail technique).
 
+> **Couverture 100 %** : chaque champ suivi dans le profil (`profileData`) est
+> effectivement consommé par le scoring — soit comme terme par titre, soit fondu
+> dans un « style utilisateur » global (`deriveUserStyle`). Aucun signal n'est
+> collecté sans servir.
+
 ### Goûts explicites
 - like / dislike des films (renforcé : propagé aux genres, mots-clés, réalisateur, etc.)
 - watchlist / « reprendre plus tard » (vraie fonctionnalité, signal d'intention fort)

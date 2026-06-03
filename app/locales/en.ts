@@ -615,6 +615,35 @@ export default {
     remove: 'Remove from my list',
   },
 
+  reco: {
+    reason: {
+      genre: 'Because you like {value}',
+      actor: 'Starring {value}',
+      director: 'Directed by {value}',
+      composer: 'Music by {value}',
+      keyword: 'Theme: {value}',
+      collection: '{value} saga',
+      decade: '{value} cinema',
+      recency: 'From an era you enjoy',
+      moment: 'Perfect for right now',
+      season: 'In season',
+      popular: 'Popular right now',
+      novelty: 'New release',
+      acclaimed: 'Critically acclaimed',
+      fitsShort: 'Quick watch',
+      fitsEpic: 'For a long evening',
+      bingeFriendly: 'Easy to binge',
+      continueSaga: 'Continue the {value} saga',
+      household: 'For the whole family',
+      watchlist: 'Like your watchlist',
+      recentGenres: 'Like your recent watches',
+      searchMatch: 'Matches your search',
+      audience: 'Loved by viewers',
+      discover: 'Something new',
+      lingered: 'Caught your eye',
+    },
+  },
+
   // Media edit
   mediaEdit: {
     title: 'Edit media info',

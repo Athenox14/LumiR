@@ -615,6 +615,35 @@ export default {
     remove: 'Retirer de ma liste',
   },
 
+  reco: {
+    reason: {
+      genre: 'Parce que vous aimez {value}',
+      actor: 'Avec {value}',
+      director: 'Réalisé par {value}',
+      composer: 'Musique de {value}',
+      keyword: 'Thème : {value}',
+      collection: 'Saga {value}',
+      decade: 'Époque {value}',
+      recency: 'D\'une époque que vous appréciez',
+      moment: 'Parfait pour ce moment',
+      season: 'De saison',
+      popular: 'Populaire en ce moment',
+      novelty: 'Nouveauté',
+      acclaimed: 'Acclamé par la critique',
+      fitsShort: 'Format court',
+      fitsEpic: 'Pour une longue soirée',
+      bingeFriendly: 'Facile à enchaîner',
+      continueSaga: 'Continuez la saga {value}',
+      household: 'Pour toute la famille',
+      watchlist: 'Comme votre liste',
+      recentGenres: 'Comme vos visionnages récents',
+      searchMatch: 'Correspond à votre recherche',
+      audience: 'Plébiscité par les spectateurs',
+      discover: 'À découvrir',
+      lingered: 'A retenu votre attention',
+    },
+  },
+
   // Media edit
   mediaEdit: {
     title: 'Modifier les infos du média',

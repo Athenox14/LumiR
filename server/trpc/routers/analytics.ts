@@ -3,6 +3,7 @@ import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { db } from '../../db'
 import { userEvents, userProfiles, users } from '../../db/schema'
 import { processEvent } from '../../utils/analyticsEngine'
+import { evaluateRecommendations } from '../../utils/recoEval'
 import { eq } from 'drizzle-orm'
 import { getActiveUsers, recordUserActivity, suppressUserForNextCheck } from '../../utils/activityTracker'
 
@@ -132,6 +133,17 @@ export const analyticsRouter = router({
     .mutation(async ({ input }) => {
       suppressUserForNextCheck(input.userId)
       return { success: true }
+    }),
+
+  // Offline recommender evaluation (precision@k / recall@k / NDCG / MRR).
+  // Use to compare scoring-weight changes objectively instead of by feel.
+  evaluateReco: adminProcedure
+    .input(z.object({
+      k: z.number().min(1).max(50).default(10),
+      maxUsers: z.number().min(1).max(500).default(50),
+    }).optional())
+    .query(async ({ input }) => {
+      return evaluateRecommendations({ k: input?.k ?? 10, maxUsers: input?.maxUsers ?? 50 })
     }),
 })
 

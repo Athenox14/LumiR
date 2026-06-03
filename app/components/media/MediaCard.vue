@@ -8,6 +8,8 @@ interface Media {
   mediaType?: string | null
   season?: number | null
   episode?: number | null
+  matchScore?: number | null
+  reasons?: Array<{ code: string; value?: string | null }> | null
   watchProgress?: {
     position: number
     duration?: number | null
@@ -24,6 +26,17 @@ const props = withDefaults(defineProps<Props>(), {
   showProgress: true,
 })
 const { track } = useAnalytics()
+const { t } = useI18n()
+
+// "Why" badge — the top recommendation reason, localized. t() returns the raw
+// key when a translation is missing, so we hide it in that case.
+const reasonLabel = computed(() => {
+  const r = props.media.reasons?.[0]
+  if (!r) return ''
+  const key = `reco.reason.${r.code}`
+  const label = t(key, { value: r.value || '' })
+  return label === key ? '' : label
+})
 const hoverStartedAt = ref<number | null>(null)
 const lastHoverMs = ref(0)
 const lastClickAt = ref(0)
@@ -143,6 +156,9 @@ function handleClick() {
       </h3>
       <p v-if="media.year" class="text-xs text-text-muted mt-0.5">
         {{ media.year }}
+      </p>
+      <p v-if="reasonLabel" class="text-xs text-primary/80 mt-0.5 truncate" :title="reasonLabel">
+        {{ reasonLabel }}
       </p>
     </div>
   </NuxtLink>

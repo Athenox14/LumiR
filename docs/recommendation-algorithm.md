@@ -53,39 +53,55 @@ All migrations are idempotent (`CREATE TABLE IF NOT EXISTS` + `ALTER TABLE … A
 COLUMN` in `server/db/index.ts`), so existing databases upgrade in place.
 Newly-enriched TMDB columns populate on the next library scan / metadata refresh.
 
-## Proposed improvements
+## Implemented improvements
 
-These are intentionally **not** implemented yet — they are the recommended next
-steps, roughly in priority order:
+All of the following are now live (see `server/utils/recoScoring.ts`,
+`mediaStatsEngine.ts`, `analyticsEngine.ts`, `recoEval.ts`):
 
-1. **Cold-start & exploration.** New users get nothing until they interact. Add a
-   trending/popular fallback rail and an ε-greedy exploration slot (~10–15% of
-   recommendations) so the model keeps discovering new tastes instead of
-   collapsing onto the top genre.
-2. **Recency decay on the behavioral profile.** `profileData` scores accumulate
-   forever. Apply the same time-decay already used in `preferences.ts` (half-life
-   ~60–90 days) so last year's binge doesn't dominate today's tastes.
-3. **Normalize the score to 0–100 and expose "why".** The blended score is an
-   unbounded sum of heterogeneous terms. Convert each term to a calibrated
-   contribution and surface the top 1–2 reasons ("Because you like Nolan",
-   "Popular this week") for transparency and debuggability.
-4. **Negative-keyword / anti-genre modeling.** Today dislikes only dampen genre
-   weights. Track keyword/director/actor scores that go *negative* and actively
-   demote candidates that share them.
-5. **Diversity / re-ranking (MMR).** The current sort is pure score-descending,
-   which produces near-duplicate rails. Apply Maximal Marginal Relevance to
-   trade a little relevance for variety across genre/collection.
-6. **Per-household profiles & co-viewing.** `coViewingSignals` is captured but
-   unused. Detect multi-person sessions (e.g. kids' content interleaved with
-   adult content) and split into sub-profiles.
-7. **Seasonality weighting.** `monthBuckets` is recorded but not yet applied;
-   boost seasonal content (horror in October, family films in December) using a
-   month-affinity term.
-8. **Sessions-to-finish as effort signal.** Use a high average sessions-to-finish
-   as a mild negative ("hard to finish") for users who rarely complete long
-   titles, and a positive for committed bingers.
-9. **Offline evaluation harness.** Replay `user_events` to measure
-   precision@k / NDCG when tuning weights, instead of hand-picking constants.
-10. **Move hot reads out of the request path.** `youMightAlsoLike` does several
-    synchronous SQLite reads per call; precompute candidate stats into a cached
-    materialized view refreshed on a timer.
+1. **Cold-start & exploration.** When a user has no learned taste,
+   `youMightAlsoLike` returns a trending/popular fallback rail (ordered by
+   popularity → rating → vote count). For everyone, an **ε-greedy exploration
+   slot** (~15% of results) is filled from genres *outside* the user's top
+   genres so the model keeps discovering instead of collapsing.
+2. **Recency decay.** `applyRecencyDecay()` exponentially decays every taste map
+   (genre/actor/keyword/director/composer/certification/collection/decade,
+   genre×moment, genre×month, household) with a ~75-day half-life, tracked via
+   `profileData.decayAt`. Negligible entries are pruned.
+3. **Calibrated 0–100 score + "why".** `scoreCandidate()` accumulates labeled
+   contributions, maps the raw sum through a saturating curve to 0–100, and
+   returns the top 1–2 presentable reasons. The reasons render on `MediaCard`
+   ("Because you like …", "Popular right now", "Continue the … saga", …),
+   localized in fr/en/de under `reco.reason.*`.
+4. **Negative-keyword / anti-genre.** `negScore()` actively demotes candidates
+   sharing genres/keywords/actors/directors/certifications the user has soured
+   on (scores gone negative via dislikes).
+5. **Diversity / MMR.** `applyMMR()` re-ranks with Maximal Marginal Relevance
+   (genre/collection similarity, λ≈0.72) to avoid near-duplicate rails.
+6. **Per-household / co-viewing.** `recordHousehold()` maintains kids vs adult
+   genre sub-profiles and detects rapid class flips as co-viewing; scoring blends
+   the kids sub-profile during likely family moments.
+7. **Seasonality.** `genreMonth` affinity is recorded and applied via a month
+   term (e.g. horror in October), plus raw month/hour/weekday activity context.
+8. **Sessions-to-finish effort.** High average sessions-to-finish demotes long /
+   epic titles for non-bingers and boosts them for committed bingers.
+9. **Offline evaluation harness.** `evaluateRecommendations()` (admin endpoint
+   `analytics.evaluateReco`) replays known positives against distractors and
+   reports precision@k, recall@k, NDCG@k and MRR.
+10. **Hot reads off the request path.** Per-title stats are served from a
+    cached materialized snapshot (`getAllMediaStatsCached()`, 60 s TTL) instead
+    of per-request SQLite reads.
+
+### 100% signal coverage
+
+Every field tracked in `profileData` is consumed by the scorer — either as a
+per-candidate term or folded into a global "user style" (`deriveUserStyle()`:
+finisher, short/epic bias, cinephile, explorer, popularity-seeker, binger,
+planner, recent-caution, trust). Raw temporal buckets, navigation paths/session
+timing, search deliberation, hover/scroll engagement, playback interruptions,
+audio/subtitle usage, churn cadence and the recent-signal log all feed the score.
+
+### Further ideas (not yet done)
+
+- Learned (regression/GBDT) weights trained on the offline harness labels.
+- Bandit-tuned exploration rate per user.
+- Embedding-based similarity for MMR instead of genre overlap.
