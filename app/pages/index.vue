@@ -25,6 +25,11 @@ const { data: youMightAlsoLike, pending: recommendationsLoading } = useAsyncData
   () => trpc.media.youMightAlsoLike.query({ limit: 12, mediaType: 'movie' })
 )
 
+const { data: watchlist, pending: watchlistLoading } = useAsyncData(
+  'home-watchlist',
+  () => trpc.media.getWatchlist.query({ limit: 12 })
+)
+
 const { data: stats } = useAsyncData(
   'stats',
   () => trpc.media.stats.query()
@@ -76,6 +81,17 @@ const { data: stats } = useAsyncData(
       :items="continueWatching || []"
       :loading="continueLoading"
     />
+
+    <!-- My Watchlist -->
+    <div v-if="watchlist?.length">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold text-text-primary">{{ t('watchlist.title') }}</h2>
+      </div>
+      <MediaGrid
+        :items="watchlist || []"
+        :loading="watchlistLoading"
+      />
+    </div>
 
     <div v-if="youMightAlsoLike?.length">
       <div class="flex items-center justify-between mb-4">

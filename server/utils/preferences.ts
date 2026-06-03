@@ -58,7 +58,16 @@ function _calculateUserPreferences(userId: string): UserPreferences | null {
     ratingMap.set(r.mediaId, r.rating)
   }
 
-  if (watchData.length === 0 && ratings.length === 0) return null
+  // Watchlisted (but not yet watched) titles are an explicit intent signal:
+  // they tell us what the user *wants* to watch, which is gold for taste.
+  const watchlistRows = sqlite.prepare(`
+    SELECT m.genres as genres, m.year as year
+    FROM watchlist w
+    JOIN media m ON m.id = w.media_id
+    WHERE w.user_id = ?
+  `).all(userId) as any[]
+
+  if (watchData.length === 0 && ratings.length === 0 && watchlistRows.length === 0) return null
 
   const genreWeights = new Map<string, number>()
   const decadeWeights = new Map<number, number>()
@@ -134,6 +143,19 @@ function _calculateUserPreferences(userId: string): UserPreferences | null {
           score: 5,
         })
       }
+    }
+  }
+
+  // Watchlist → genre & decade affinity (intent weight, slightly below a like).
+  const WATCHLIST_WEIGHT = 4
+  for (const row of watchlistRows) {
+    const genres: string[] = row.genres ? JSON.parse(row.genres) : []
+    for (const genre of genres) {
+      genreWeights.set(genre, (genreWeights.get(genre) || 0) + WATCHLIST_WEIGHT)
+    }
+    if (row.year) {
+      const decade = Math.floor(row.year / 10) * 10
+      decadeWeights.set(decade, (decadeWeights.get(decade) || 0) + WATCHLIST_WEIGHT)
     }
   }
 

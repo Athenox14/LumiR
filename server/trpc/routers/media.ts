@@ -3,10 +3,11 @@ import os from 'os'
 import { router, protectedProcedure, adminProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
 import { db, sqlite } from '../../db'
-import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downloads, userProfiles } from '../../db/schema'
+import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downloads, userProfiles, watchlist } from '../../db/schema'
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
+import { getMediaStats, mediaQualityModifier } from '../../utils/mediaStatsEngine'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
@@ -62,7 +63,20 @@ function getDecadeKey(year: number | null | undefined) {
   return `${Math.floor(year / 10) * 10}s`
 }
 
-function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeof calculateUserPreferences>, profileData: Record<string, any> | null | undefined) {
+function getDaypart(hour: number): string {
+  if (hour < 6) return 'night'
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'afternoon'
+  return 'evening'
+}
+
+type ScoreExtras = {
+  statsModifier?: number
+  watchlistGenres?: Set<string>
+  now?: Date
+}
+
+function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeof calculateUserPreferences>, profileData: Record<string, any> | null | undefined, extras?: ScoreExtras) {
   const genres = candidate.genres ? JSON.parse(candidate.genres) : []
   const baseScore = preferences ? calculateMatchScore(genres, candidate.year, candidate.rating, preferences) : 0
   const profile = profileData || {}
@@ -74,7 +88,9 @@ function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeo
   const navigation = profile.navigation || {}
   const temporal = profile.temporal || {}
   const device = profile.device || {}
+  const binge = profile.binge || {}
   const tags = preferenceProfile.tags || {}
+  const now = extras?.now || new Date()
 
   let score = baseScore
 
@@ -144,6 +160,53 @@ function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeo
   if ((tags['completion-positive'] || 0) > 0 && genres.some((genre: string) => (preferenceProfile.genreScores?.[genre] || 0) > 0)) {
     score += 2
   }
+
+  // ── Content metadata signals ────────────────────────────────────────────
+  // Keywords / themes overlap
+  let candidateKeywords: string[] = []
+  try { candidateKeywords = candidate.keywords ? JSON.parse(candidate.keywords) : [] } catch { candidateKeywords = [] }
+  for (const kw of candidateKeywords.slice(0, 12)) {
+    score += normalizeScore(preferenceProfile.keywordScores, kw, 10)
+  }
+
+  // Director / composer affinity
+  score += normalizeScore(preferenceProfile.directorScores, candidate.director, 8)
+  score += normalizeScore(preferenceProfile.composerScores, candidate.composer, 5)
+
+  // Age-rating (certification) affinity
+  score += normalizeScore(preferenceProfile.certificationScores, candidate.certification, 5)
+
+  // Collection / saga: same franchise as something the user engaged with
+  score += normalizeScore(preferenceProfile.collectionScores, candidate.collectionName, 12)
+
+  // Popularity (crowd signal) + novelty (recent releases)
+  if (typeof candidate.popularity === 'number' && candidate.popularity > 0) {
+    score += Math.min(4, Math.log10(1 + candidate.popularity))
+  }
+  if (getRecencyBucket(candidate.year) === 'recent') score += 2
+
+  // ── Genre × moment ──────────────────────────────────────────────────────
+  // Boost genres the user tends to watch at the *current* weekday × daypart.
+  const momentKey = `${now.getDay()}-${getDaypart(now.getHours())}`
+  const momentGenres = (temporal.genreMoment || {})[momentKey] || {}
+  for (const genre of genres) {
+    score += normalizeScore(momentGenres, genre, 8)
+  }
+
+  // ── Binge / saga continuation ───────────────────────────────────────────
+  if ((binge.bingeSessions || 0) > 0 && candidate.collectionName
+      && (preferenceProfile.collectionScores?.[candidate.collectionName] || 0) > 0) {
+    score += 3
+  }
+
+  // ── Watchlist affinity ──────────────────────────────────────────────────
+  const watchlistGenres = extras?.watchlistGenres
+  if (watchlistGenres && genres.some((g: string) => watchlistGenres.has(g))) {
+    score += 3
+  }
+
+  // ── Title-level audience quality (abandonment curve, effective completion…)
+  score += extras?.statsModifier || 0
 
   return Math.round(score)
 }
@@ -286,7 +349,7 @@ export const mediaRouter = router({
       }
 
       // Get audio and subtitle tracks
-      const [audio, subtitles, progress, myRatingRow] = await Promise.all([
+      const [audio, subtitles, progress, myRatingRow, watchlistRow] = await Promise.all([
         db.select().from(audioTracks).where(eq(audioTracks.mediaId, input)),
         db.select().from(subtitleTracks).where(eq(subtitleTracks.mediaId, input)),
         db
@@ -298,6 +361,11 @@ export const mediaRouter = router({
           .select({ rating: mediaRatings.rating })
           .from(mediaRatings)
           .where(and(eq(mediaRatings.userId, ctx.user.id), eq(mediaRatings.mediaId, input)))
+          .limit(1),
+        db
+          .select({ id: watchlist.id })
+          .from(watchlist)
+          .where(and(eq(watchlist.userId, ctx.user.id), eq(watchlist.mediaId, input)))
           .limit(1),
       ])
 
@@ -351,6 +419,7 @@ export const mediaRouter = router({
         myRating: (myRatingRow[0]?.rating as 1 | -1) || null,
         likesCount: likesCount?.count || 0,
         dislikesCount: dislikesCount?.count || 0,
+        inWatchlist: !!watchlistRow[0],
       }
     }),
 
@@ -978,6 +1047,74 @@ export const mediaRouter = router({
       return { success: true }
     }),
 
+  // ── Watchlist ────────────────────────────────────────────────────────────
+  // Toggle a media item in the user's watchlist. Returns the new state.
+  toggleWatchlist: protectedProcedure
+    .input(z.object({ mediaId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const [existing] = await db
+        .select({ id: watchlist.id })
+        .from(watchlist)
+        .where(and(eq(watchlist.userId, ctx.user.id), eq(watchlist.mediaId, input.mediaId)))
+        .limit(1)
+
+      if (existing) {
+        await db.delete(watchlist).where(eq(watchlist.id, existing.id))
+        return { inWatchlist: false }
+      }
+
+      // Guard against dangling references
+      const [exists] = await db.select({ id: media.id }).from(media).where(eq(media.id, input.mediaId)).limit(1)
+      if (!exists) throw new TRPCError({ code: 'NOT_FOUND', message: 'Media not found' })
+
+      const { v4: uuidv4 } = await import('uuid')
+      await db.insert(watchlist).values({
+        id: uuidv4(),
+        userId: ctx.user.id,
+        mediaId: input.mediaId,
+        createdAt: new Date(),
+      })
+      return { inWatchlist: true }
+    }),
+
+  // Whether a specific media item is in the user's watchlist
+  watchlistStatus: protectedProcedure
+    .input(z.object({ mediaId: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const [row] = await db
+        .select({ id: watchlist.id })
+        .from(watchlist)
+        .where(and(eq(watchlist.userId, ctx.user.id), eq(watchlist.mediaId, input.mediaId)))
+        .limit(1)
+      return { inWatchlist: !!row }
+    }),
+
+  // The user's full watchlist (most recently added first)
+  getWatchlist: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).default(30) }).optional())
+    .query(async ({ input, ctx }) => {
+      const limit = input?.limit ?? 30
+      const rows = sqlite.prepare(`
+        SELECT m.id, m.title, m.poster_path as posterPath, m.year, m.rating,
+               m.media_type as mediaType, m.season, m.episode, w.created_at as addedAt
+        FROM watchlist w
+        JOIN media m ON m.id = w.media_id
+        WHERE w.user_id = ?
+        ORDER BY w.created_at DESC
+        LIMIT ?
+      `).all(ctx.user.id, limit) as any[]
+      return rows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        posterPath: r.posterPath,
+        year: r.year,
+        rating: r.rating,
+        mediaType: r.mediaType,
+        season: r.season,
+        episode: r.episode,
+      }))
+    }),
+
   // Personalized recommendation sections
   personalizedSections: protectedProcedure
     .query(async ({ ctx }) => {
@@ -1109,10 +1246,24 @@ export const mediaRouter = router({
         WHERE user_id = ?
       `).all(ctx.user.id) as Array<{ media_id: string, rating: number }>
 
+      // Watchlisted items: surfaced in their own rail, so exclude from discovery,
+      // but use their genres as a positive affinity signal.
+      const watchlistRows = sqlite.prepare(`
+        SELECT m.id as id, m.genres as genres
+        FROM watchlist w JOIN media m ON m.id = w.media_id
+        WHERE w.user_id = ?
+      `).all(ctx.user.id) as Array<{ id: string, genres: string | null }>
+
+      const watchlistGenres = new Set<string>()
+      for (const row of watchlistRows) {
+        try { for (const g of JSON.parse(row.genres || '[]')) watchlistGenres.add(g) } catch {}
+      }
+
       const excludedIds = new Set<string>(watchedRows.map(row => row.media_id))
       for (const row of ratedRows) {
         if (row.rating === -1) excludedIds.add(row.media_id)
       }
+      for (const row of watchlistRows) excludedIds.add(row.id)
 
       const topGenres = [...new Set([
         ...topGenresFromPreferences.slice(0, 4).map(entry => entry.genre),
@@ -1142,7 +1293,13 @@ export const mediaRouter = router({
           m.episode,
           m.genres,
           m.runtime,
-          m.cast
+          m.cast,
+          m.keywords,
+          m.director,
+          m.composer,
+          m.certification,
+          m.popularity,
+          m.collection_name as collectionName
         FROM media m
         WHERE (${genreFilter}) ${typeFilter}
         GROUP BY COALESCE(m.tmdb_id, m.title)
@@ -1150,10 +1307,17 @@ export const mediaRouter = router({
         LIMIT 150
       `).all() as any[]
 
-      const scored = candidates
-        .filter(candidate => !excludedIds.has(candidate.id))
+      const eligible = candidates.filter(candidate => !excludedIds.has(candidate.id))
+      const statsMap = getMediaStats(eligible.map(c => c.id))
+      const now = new Date()
+
+      const scored = eligible
         .map((candidate) => {
-          const matchScore = scoreCandidateWithProfile(candidate, preferences, profileData)
+          const matchScore = scoreCandidateWithProfile(candidate, preferences, profileData, {
+            statsModifier: mediaQualityModifier(statsMap.get(candidate.id)),
+            watchlistGenres,
+            now,
+          })
           return {
             id: candidate.id,
             title: candidate.title,

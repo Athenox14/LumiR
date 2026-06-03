@@ -109,6 +109,30 @@ const likePercent = computed(() => {
   return Math.round((likesCount.value / totalRatings.value) * 100)
 })
 
+// Watchlist
+const inWatchlist = ref(false)
+const watchlistLoading = ref(false)
+
+watch(media, (m) => {
+  if (m) inWatchlist.value = !!m.inWatchlist
+}, { immediate: true })
+
+async function handleToggleWatchlist() {
+  if (watchlistLoading.value) return
+  watchlistLoading.value = true
+  try {
+    const result = await trpc.media.toggleWatchlist.mutate({ mediaId: mediaId.value })
+    inWatchlist.value = result.inWatchlist
+    analyticsTrack(result.inWatchlist ? 'WATCHLIST_ADD' : 'WATCHLIST_REMOVE', mediaId.value, {
+      clientAt: new Date().toISOString(),
+    })
+  } catch (e) {
+    console.error('Failed to toggle watchlist:', e)
+  } finally {
+    watchlistLoading.value = false
+  }
+}
+
 async function handleRate(rating: 1 | -1) {
   if (ratingLoading.value) return
   ratingLoading.value = true
@@ -534,6 +558,24 @@ onMounted(() => {
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" :stroke-width="myRating === -1 ? 2.5 : 2">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M10 15v4a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3H10z M20 2h1a2 2 0 012 2v7a2 2 0 01-2 2h-1" />
                 </svg>
+              </button>
+
+              <!-- Watchlist toggle -->
+              <button
+                type="button"
+                class="flex items-center gap-1.5 px-4 py-3 rounded-xl transition-colors"
+                :class="inWatchlist ? 'bg-primary/20 text-primary' : 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white'"
+                :disabled="watchlistLoading"
+                :title="inWatchlist ? t('watchlist.inList') : t('watchlist.add')"
+                @click="handleToggleWatchlist"
+              >
+                <svg v-if="inWatchlist" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                <span class="text-sm font-medium hidden sm:inline">{{ inWatchlist ? t('watchlist.inList') : t('watchlist.add') }}</span>
               </button>
 
             </div>
