@@ -76,8 +76,12 @@ function preheatSeek(positionSec: number, force = false) {
   if (!props.src.includes('.m3u8')) return
 
   const segmentNumber = Math.floor(positionSec / 6)
-  // Don't re-preheat the same segment
-  if (segmentNumber === lastPreheatSegment) return
+  // Don't re-preheat the same segment — but ONLY for hover (non-force). A forced
+  // user seek must always reach the server: if the user clicks exactly where they
+  // last hovered, the hover already set lastPreheatSegment, and dropping the forced
+  // seek would leave ffmpeg at its old position while the player keeps requesting
+  // the (far-ahead) target segment → permanent "too far ahead" freeze.
+  if (!force && segmentNumber === lastPreheatSegment) return
   lastPreheatSegment = segmentNumber
 
   const doFetch = () => {

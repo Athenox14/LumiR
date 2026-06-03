@@ -33,11 +33,11 @@ async function submitBugReport() {
       description: description.value.trim(),
       page: page.value,
     })
-    toast.success(t('bugReport.submitted'))
+    toast.success(t('bugReport.success'))
     showModal.value = false
   }
   catch (e: any) {
-    toast.error(e.message || t('bugReport.submitError'))
+    toast.error(e.message || t('bugReport.failed'))
   }
   finally {
     submitting.value = false
