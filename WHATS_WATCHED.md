@@ -121,3 +121,49 @@ This file is a working list of the behavioral signals and usage patterns conside
 - dernier film presque lancé
 - aller-retour entre 2-3 films
 - abandon récent d'un film (remplacement probable)
+
+## Signaux ajoutés et pris en compte dans l'algo
+
+Ces signaux sont désormais réellement observés et intégrés au score de
+recommandation (voir `docs/recommendation-algorithm.md` pour le détail technique).
+
+### Goûts explicites
+- like / dislike des films (renforcé : propagé aux genres, mots-clés, réalisateur, etc.)
+- watchlist / « reprendre plus tard » (vraie fonctionnalité, signal d'intention fort)
+- genres rejetés via dislike (exclusion de la découverte)
+
+### Qualité de visionnage par titre (agrégé entre utilisateurs, anonyme)
+- courbe d'abandon par titre (position normalisée, 10 déciles)
+- pénalité d'abandon précoce (premiers 20 %)
+- complétion effective (visionné à plus de 75 %)
+- nombre de séances nécessaires pour finir un titre (« bingeabilité »)
+- taux de clic impression → ouverture de fiche
+- survol sans ouverture (hésitation au niveau du titre)
+- impressions sans clic (titre vu en rayon mais jamais ouvert)
+
+### Engagement de lecture
+- temps actif vs lecture en veille / pause (idle)
+- complétions effectives cumulées
+- arrêt après 75 % compté comme visionnage effectif
+
+### Métadonnées de contenu
+- collection / saga (affinité par franchise)
+- mots-clés / thèmes (issus de TMDB)
+- réalisateur
+- compositeur de musique
+- classification d'âge (certification)
+- popularité (signal de foule)
+- nouveauté (sorties récentes)
+
+### Contexte temporel
+- genre × moment : affinité genre selon le créneau (jour de la semaine × partie de journée)
+  - ex. action le samedi soir, dessins animés le mercredi après-midi
+- saisonnalité (répartition par mois)
+- churn : temps depuis la dernière activité, plus longue interruption, réactivations
+- jours actifs récents (fenêtre glissante)
+
+### Binge & foyer
+- détection de séances de binge (complétions rapprochées, séries de visionnages)
+- plus longue série de visionnages consécutifs
+- continuation de saga pendant une session de binge
+- signaux de co-visionnage (capturés pour profilage par foyer)

@@ -608,6 +608,13 @@ export default {
     serverLogsNote: 'Aktuelle Server-Logs werden diesem Bericht automatisch beigefügt.',
   },
 
+  watchlist: {
+    title: 'Meine Liste',
+    add: 'Zu meiner Liste hinzufügen',
+    inList: 'In meiner Liste',
+    remove: 'Aus meiner Liste entfernen',
+  },
+
   // Media edit
   mediaEdit: {
     title: 'Medieninfo bearbeiten',

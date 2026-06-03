@@ -1,6 +1,10 @@
 import { eq } from 'drizzle-orm'
-import { db } from '../db'
+import { db, sqlite } from '../db'
 import { media, userProfiles } from '../db/schema'
+import {
+  recordPlay, recordComplete, recordAbandon, recordDetailOpen,
+  recordHoverNoOpen, recordImpression, recordEffectiveCompletion,
+} from './mediaStatsEngine'
 
 type AnalyticsEvent = {
   type: string
@@ -87,6 +91,11 @@ type ProfileData = {
     decadeScores: Record<string, number>
     runtimeScores: Record<string, number>
     recencyScores: Record<string, number>
+    keywordScores: Record<string, number>
+    directorScores: Record<string, number>
+    composerScores: Record<string, number>
+    certificationScores: Record<string, number>
+    collectionScores: Record<string, number>
     tags: Record<string, number>
     lastGenres: string[]
     lastMediaIds: string[]
@@ -94,7 +103,36 @@ type ProfileData = {
   temporal: {
     hourBuckets: Record<string, number>
     weekdayBuckets: Record<string, number>
+    monthBuckets: Record<string, number>
+    // Genre affinity per "moment" (weekday × daypart) — e.g. action on Saturday
+    // night, cartoons on Wednesday afternoon. Keyed "<weekday>-<daypart>".
+    genreMoment: Record<string, Record<string, number>>
     weekendSessions: number
+  }
+  // Watch-quality engagement aggregates (active vs idle, effective completion…)
+  engagement: {
+    activeWatchSeconds: number
+    idleWatchSeconds: number
+    effectiveCompletions: number
+    sessionsToFinishTotal: number
+    finishedTitles: number
+    watchlistAdds: number
+    watchlistRemoves: number
+  }
+  // Binge / consecutive-session detection
+  binge: {
+    lastCompleteAt: string | null
+    bingeSessions: number
+    currentStreak: number
+    maxStreak: number
+    coViewingSignals: number
+  }
+  // Long-term cadence: churn and re-activation
+  churn: {
+    lastActiveAt: string | null
+    longestGapMs: number
+    reactivations: number
+    activeDays: Record<string, number>
   }
   device: {
     types: Record<string, number>
@@ -115,6 +153,11 @@ type MediaSnapshot = {
   year: number | null
   runtime: number | null
   title: string | null
+  keywords: string[]
+  director: string | null
+  composer: string | null
+  certification: string | null
+  collectionName: string | null
 }
 
 const EVENT_WEIGHTS: Record<string, number> = {
@@ -136,6 +179,9 @@ const EVENT_WEIGHTS: Record<string, number> = {
   ABANDON: -5,
   MEDIA_LIKE: 8,
   MEDIA_DISLIKE: -8,
+  WATCHLIST_ADD: 7,
+  WATCHLIST_REMOVE: -3,
+  IMPRESSION: 0,
 }
 
 function createEmptyProfileData(): ProfileData {
@@ -218,6 +264,11 @@ function createEmptyProfileData(): ProfileData {
       decadeScores: {},
       runtimeScores: {},
       recencyScores: {},
+      keywordScores: {},
+      directorScores: {},
+      composerScores: {},
+      certificationScores: {},
+      collectionScores: {},
       tags: {},
       lastGenres: [],
       lastMediaIds: [],
@@ -225,7 +276,31 @@ function createEmptyProfileData(): ProfileData {
     temporal: {
       hourBuckets: {},
       weekdayBuckets: {},
+      monthBuckets: {},
+      genreMoment: {},
       weekendSessions: 0,
+    },
+    engagement: {
+      activeWatchSeconds: 0,
+      idleWatchSeconds: 0,
+      effectiveCompletions: 0,
+      sessionsToFinishTotal: 0,
+      finishedTitles: 0,
+      watchlistAdds: 0,
+      watchlistRemoves: 0,
+    },
+    binge: {
+      lastCompleteAt: null,
+      bingeSessions: 0,
+      currentStreak: 0,
+      maxStreak: 0,
+      coViewingSignals: 0,
+    },
+    churn: {
+      lastActiveAt: null,
+      longestGapMs: 0,
+      reactivations: 0,
+      activeDays: {},
     },
     device: {
       types: {},
@@ -248,6 +323,9 @@ function toProfileData(raw: unknown): ProfileData {
     playback: { ...createEmptyProfileData().playback, ...(raw as any).playback },
     preferences: { ...createEmptyProfileData().preferences, ...(raw as any).preferences },
     temporal: { ...createEmptyProfileData().temporal, ...(raw as any).temporal },
+    engagement: { ...createEmptyProfileData().engagement, ...(raw as any).engagement },
+    binge: { ...createEmptyProfileData().binge, ...(raw as any).binge },
+    churn: { ...createEmptyProfileData().churn, ...(raw as any).churn },
     device: { ...createEmptyProfileData().device, ...(raw as any).device },
     recentSignals: Array.isArray((raw as any).recentSignals) ? (raw as any).recentSignals : [],
   }
@@ -299,7 +377,7 @@ function getRecencyBucket(year: number | null) {
 
 async function getMediaSnapshot(mediaId?: string | null): Promise<MediaSnapshot> {
   if (!mediaId) {
-    return { genres: [], cast: [], year: null, runtime: null, title: null }
+    return { genres: [], cast: [], year: null, runtime: null, title: null, keywords: [], director: null, composer: null, certification: null, collectionName: null }
   }
 
   const [entry] = await db.select({
@@ -308,6 +386,11 @@ async function getMediaSnapshot(mediaId?: string | null): Promise<MediaSnapshot>
     year: media.year,
     runtime: media.runtime,
     title: media.title,
+    keywords: media.keywords,
+    director: media.director,
+    composer: media.composer,
+    certification: media.certification,
+    collectionName: media.collectionName,
   }).from(media).where(eq(media.id, mediaId))
 
   const cast = Array.isArray(entry?.cast)
@@ -320,17 +403,92 @@ async function getMediaSnapshot(mediaId?: string | null): Promise<MediaSnapshot>
     year: entry?.year || null,
     runtime: entry?.runtime || null,
     title: entry?.title || null,
+    keywords: Array.isArray(entry?.keywords) ? entry.keywords : [],
+    director: entry?.director || null,
+    composer: entry?.composer || null,
+    certification: entry?.certification || null,
+    collectionName: entry?.collectionName || null,
   }
+}
+
+/** Coarse daypart bucket from an hour-of-day (0-23). */
+function getDaypart(hour: number): string {
+  if (hour < 6) return 'night'
+  if (hour < 12) return 'morning'
+  if (hour < 18) return 'afternoon'
+  return 'evening'
 }
 
 function recordTemporalSignals(profile: ProfileData, metadata: Record<string, any>, createdAt: Date) {
   const hour = typeof metadata.hour === 'number' ? metadata.hour : createdAt.getHours()
   const weekday = typeof metadata.weekday === 'number' ? metadata.weekday : createdAt.getDay()
+  const month = createdAt.getMonth() // 0-11
   inc(profile.temporal.hourBuckets, String(hour))
   inc(profile.temporal.weekdayBuckets, String(weekday))
+  inc(profile.temporal.monthBuckets, String(month))
   if (weekday === 0 || weekday === 6) {
     profile.temporal.weekendSessions += 1
   }
+}
+
+/** Record genre × moment affinity (weekday × daypart) for positive engagement. */
+function recordGenreMoment(profile: ProfileData, snapshot: MediaSnapshot, createdAt: Date, weight: number) {
+  if (weight <= 0 || !snapshot.genres.length) return
+  const key = `${createdAt.getDay()}-${getDaypart(createdAt.getHours())}`
+  if (!profile.temporal.genreMoment[key]) profile.temporal.genreMoment[key] = {}
+  for (const genre of snapshot.genres) {
+    inc(profile.temporal.genreMoment[key], genre, weight)
+  }
+}
+
+/** Update binge / churn cadence from a session timestamp. */
+function recordCadence(profile: ProfileData, createdAt: Date) {
+  const dayKey = createdAt.toISOString().slice(0, 10)
+  inc(profile.churn.activeDays, dayKey)
+  // Keep only the 90 most recent days so the profile document stays bounded.
+  const dayKeys = Object.keys(profile.churn.activeDays)
+  if (dayKeys.length > 90) {
+    for (const key of dayKeys.sort().slice(0, dayKeys.length - 90)) {
+      delete profile.churn.activeDays[key]
+    }
+  }
+  const last = profile.churn.lastActiveAt ? new Date(profile.churn.lastActiveAt).getTime() : null
+  if (last !== null) {
+    const gap = createdAt.getTime() - last
+    if (gap > profile.churn.longestGapMs) profile.churn.longestGapMs = gap
+    // A gap longer than 14 days followed by activity counts as a re-activation.
+    if (gap > 14 * 24 * 60 * 60 * 1000) profile.churn.reactivations += 1
+  }
+  profile.churn.lastActiveAt = createdAt.toISOString()
+}
+
+/** Number of distinct viewing sessions (WATCH_START events) before finishing a title. */
+function countSessionsToFinish(userId: string, mediaId: string | null | undefined): number {
+  if (!mediaId) return 1
+  try {
+    const row = sqlite
+      .prepare(`SELECT COUNT(*) as n FROM user_events WHERE user_id = ? AND media_id = ? AND type = 'WATCH_START'`)
+      .get(userId, mediaId) as any
+    return Math.max(1, Number(row?.n || 1))
+  } catch {
+    return 1
+  }
+}
+
+/** Detect binge streaks: completions within 6h of each other extend the streak. */
+function recordBinge(profile: ProfileData, createdAt: Date) {
+  const last = profile.binge.lastCompleteAt ? new Date(profile.binge.lastCompleteAt).getTime() : null
+  const SIX_HOURS = 6 * 60 * 60 * 1000
+  if (last !== null && createdAt.getTime() - last <= SIX_HOURS) {
+    profile.binge.currentStreak += 1
+  } else {
+    profile.binge.currentStreak = 1
+  }
+  if (profile.binge.currentStreak > profile.binge.maxStreak) {
+    profile.binge.maxStreak = profile.binge.currentStreak
+  }
+  if (profile.binge.currentStreak >= 3) profile.binge.bingeSessions += 1
+  profile.binge.lastCompleteAt = createdAt.toISOString()
 }
 
 function recordDeviceSignals(profile: ProfileData, metadata: Record<string, any>) {
@@ -347,6 +505,11 @@ function addPreferenceScore(profile: ProfileData, mediaSnapshot: MediaSnapshot, 
   inc(profile.preferences.decadeScores, getDecade(mediaSnapshot.year), amount)
   inc(profile.preferences.runtimeScores, getRuntimeBucket(mediaSnapshot.runtime), amount)
   inc(profile.preferences.recencyScores, getRecencyBucket(mediaSnapshot.year), amount)
+  for (const keyword of mediaSnapshot.keywords.slice(0, 8)) inc(profile.preferences.keywordScores, keyword, amount)
+  inc(profile.preferences.directorScores, mediaSnapshot.director, amount)
+  inc(profile.preferences.composerScores, mediaSnapshot.composer, amount)
+  inc(profile.preferences.certificationScores, mediaSnapshot.certification, amount)
+  inc(profile.preferences.collectionScores, mediaSnapshot.collectionName, amount)
   pushUnique(profile.preferences.lastGenres, mediaSnapshot.genres)
 }
 
@@ -406,6 +569,8 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
 
   recordTemporalSignals(profileData, metadata, createdAt)
   recordDeviceSignals(profileData, metadata)
+  recordCadence(profileData, createdAt)
+  recordGenreMoment(profileData, mediaSnapshot, createdAt, weight)
 
   if (event.mediaId) {
     pushUnique(profileData.preferences.lastMediaIds, [event.mediaId], 5)
@@ -482,7 +647,22 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
       profileData.browsing.totalHoverMs += hoverMs
       if (hoverMs >= 1200) profileData.browsing.longHovers += 1
       if (metadata.clickedAfterHover) profileData.browsing.clicksAfterHover += 1
+      else if (hoverMs >= 600) recordHoverNoOpen(event.mediaId) // deliberate hover, no open
       if (metadata.hesitation) profileData.browsing.hesitationSignals += 1
+      break
+    }
+    case 'IMPRESSION': {
+      // One or more cards became visible in a rail without (yet) a click.
+      const ids: string[] = Array.isArray(metadata.mediaIds) ? metadata.mediaIds : (event.mediaId ? [event.mediaId] : [])
+      for (const id of ids.slice(0, 40)) recordImpression(id)
+      break
+    }
+    case 'WATCHLIST_ADD': {
+      profileData.engagement.watchlistAdds += 1
+      break
+    }
+    case 'WATCHLIST_REMOVE': {
+      profileData.engagement.watchlistRemoves += 1
       break
     }
     case 'CARD_CLICK':
@@ -498,6 +678,10 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
       profileData.browsing.noClickBrowseMs += Number(metadata.noClickBrowseMs || 0)
       if (metadata.mostVisibleMediaId) {
         profileData.browsing.lastMostVisibleMediaId = metadata.mostVisibleMediaId
+        recordImpression(metadata.mostVisibleMediaId)
+      }
+      if (Array.isArray(metadata.visibleMediaIds)) {
+        for (const id of metadata.visibleMediaIds.slice(0, 40)) recordImpression(id)
       }
       if (metadata.hesitationScore > 1) profileData.browsing.hesitationSignals += 1
       break
@@ -505,6 +689,7 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
     case 'MEDIA_VIEW': {
       profileData.details.opened += 1
       if (metadata.repeatVisit) profileData.details.repeatVisits += 1
+      recordDetailOpen(event.mediaId)
       break
     }
     case 'MEDIA_SECTION_VIEW': {
@@ -527,10 +712,19 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
     case 'WATCH_START': {
       profileData.playback.starts += 1
       if (metadata.resume) profileData.playback.rewatches += 1
+      recordPlay(event.mediaId)
       break
     }
     case 'WATCH_PROGRESS': {
-      profileData.playback.totalWatchSeconds += Number(metadata.deltaSeconds || 0)
+      const delta = Number(metadata.deltaSeconds || 0)
+      profileData.playback.totalWatchSeconds += delta
+      // Active vs idle: a heartbeat with no position advance (paused/standby)
+      // counts as idle time; otherwise active viewing time.
+      if (metadata.paused || metadata.idle) {
+        profileData.engagement.idleWatchSeconds += delta
+      } else {
+        profileData.engagement.activeWatchSeconds += delta
+      }
       if (typeof metadata.completionRate === 'number') {
         profileData.playback.totalCompletionRate += metadata.completionRate
         const divisor = Math.max(profileData.playback.starts, 1)
@@ -557,10 +751,27 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
       profileData.playback.lastAbandonPosition = Number(metadata.position || 0)
       profileData.playback.lastAbandonReason = metadata.reason || event.type
       if (metadata.quickAbandon) profileData.playback.quickAbandons += 1
+      const ratio = Number(metadata.positionRatio || 0)
+      recordAbandon(event.mediaId, ratio)
+      // Stopped past 75% still counts as an effective watch for the title.
+      if (ratio >= 0.75) {
+        profileData.engagement.effectiveCompletions += 1
+        recordEffectiveCompletion(event.mediaId)
+      }
       break
     }
     case 'WATCH_COMPLETE': {
       profileData.playback.completes += 1
+      profileData.engagement.effectiveCompletions += 1
+      profileData.engagement.finishedTitles += 1
+      const sessionsToFinish = countSessionsToFinish(userId, event.mediaId)
+      profileData.engagement.sessionsToFinishTotal += sessionsToFinish
+      recordComplete(event.mediaId, {
+        positionRatio: Number(metadata.positionRatio || 1),
+        sessionsToFinish,
+      })
+      recordBinge(profileData, createdAt)
+      if (metadata.coViewing) profileData.binge.coViewingSignals += 1
       break
     }
     case 'WATCH_AUDIO_CHANGE': {
@@ -599,6 +810,16 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
   if (event.type === 'MEDIA_DISLIKE') {
     updateTopLevelGenreScores(scores, mediaSnapshot.genres, -8)
     addPreferenceScore(profileData, mediaSnapshot, -8)
+  }
+
+  // Adding to the watchlist is an explicit intent signal — propagate taste.
+  if (event.type === 'WATCHLIST_ADD') {
+    updateTopLevelGenreScores(scores, mediaSnapshot.genres, 7)
+    addPreferenceScore(profileData, mediaSnapshot, 7)
+  }
+  if (event.type === 'WATCHLIST_REMOVE') {
+    updateTopLevelGenreScores(scores, mediaSnapshot.genres, -3)
+    addPreferenceScore(profileData, mediaSnapshot, -3)
   }
 
   if (event.type === 'WATCH_STOP' && Number(metadata.positionRatio || 0) < 0.2) {

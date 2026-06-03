@@ -608,6 +608,13 @@ export default {
     serverLogsNote: 'Les logs serveur récents seront automatiquement joints à ce signalement.',
   },
 
+  watchlist: {
+    title: 'Ma liste',
+    add: 'Ajouter à ma liste',
+    inList: 'Dans ma liste',
+    remove: 'Retirer de ma liste',
+  },
+
   // Media edit
   mediaEdit: {
     title: 'Modifier les infos du média',

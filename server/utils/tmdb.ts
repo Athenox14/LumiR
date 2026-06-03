@@ -48,6 +48,11 @@ export interface TmdbInfo {
   originalTitle?: string
   collectionId?: number
   collectionName?: string
+  keywords?: string[]
+  director?: string
+  composer?: string
+  certification?: string
+  popularity?: number
 }
 
 export interface TmdbPersonInfo {
@@ -139,8 +144,8 @@ export async function getTmdbInfo(tmdbId: number, type: 'movie' | 'tv'): Promise
   try {
     const client = await getClient()
     const data: any = type === 'tv'
-      ? await client.tvInfo({ id: tmdbId, append_to_response: 'credits,recommendations', language: 'fr-FR' })
-      : await client.movieInfo({ id: tmdbId, append_to_response: 'credits,recommendations', language: 'fr-FR' })
+      ? await client.tvInfo({ id: tmdbId, append_to_response: 'credits,recommendations,keywords,content_ratings', language: 'fr-FR' })
+      : await client.movieInfo({ id: tmdbId, append_to_response: 'credits,recommendations,keywords,release_dates', language: 'fr-FR' })
     if (!data) return null
 
     const title = type === 'tv' ? (data.name || data.original_name) : (data.title || data.original_title)
@@ -159,6 +164,24 @@ export async function getTmdbInfo(tmdbId: number, type: 'movie' | 'tv'): Promise
       rating: r.vote_average || 0,
       releaseDate: (type === 'tv' ? r.first_air_date : r.release_date) || '',
     }))
+
+    // Keywords / themes
+    const keywords: string[] = (
+      type === 'tv'
+        ? (data.keywords?.results || [])
+        : (data.keywords?.keywords || [])
+    ).map((k: any) => k.name).filter(Boolean).slice(0, 20)
+
+    // Crew: director + music composer (drives "réalisateur / compositeur" signal)
+    const crew: any[] = data.credits?.crew || []
+    const director = crew.find((c: any) => c.job === 'Director')?.name
+      || (type === 'tv' ? (data.created_by?.[0]?.name || undefined) : undefined)
+    const composer = crew.find((c: any) =>
+      c.job === 'Original Music Composer' || c.job === 'Music' || c.job === 'Composer',
+    )?.name
+
+    // Age rating / certification (FR preferred, fallback US)
+    const certification = extractCertification(data, type)
 
     let duration: string | undefined
     if (type === 'movie' && data.runtime) duration = `${data.runtime} min`
@@ -196,11 +219,33 @@ export async function getTmdbInfo(tmdbId: number, type: 'movie' | 'tv'): Promise
       originalTitle: type === 'tv' ? data.original_name : data.original_title,
       collectionId: data.belongs_to_collection?.id || undefined,
       collectionName: data.belongs_to_collection?.name || undefined,
+      keywords, director, composer, certification,
+      popularity: typeof data.popularity === 'number' ? data.popularity : undefined,
     }
   } catch (error) {
     console.error('[TMDB] Info error:', error)
     return null
   }
+}
+
+/** Resolve an age-rating string from TMDB release_dates (movie) or content_ratings (tv). */
+function extractCertification(data: any, type: 'movie' | 'tv'): string | undefined {
+  const prefer = ['FR', 'US', 'GB']
+  if (type === 'movie') {
+    const results: any[] = data.release_dates?.results || []
+    for (const region of prefer) {
+      const entry = results.find((r: any) => r.iso_3166_1 === region)
+      const cert = entry?.release_dates?.find((d: any) => d.certification)?.certification
+      if (cert) return String(cert)
+    }
+  } else {
+    const results: any[] = data.content_ratings?.results || []
+    for (const region of prefer) {
+      const cert = results.find((r: any) => r.iso_3166_1 === region)?.rating
+      if (cert) return String(cert)
+    }
+  }
+  return undefined
 }
 
 // ===== Person =====
@@ -284,5 +329,10 @@ export function tmdbInfoToMediaFields(info: TmdbInfo, type: 'movie' | 'tv') {
     tagline: info.tagline || null, status: info.status || null, voteCount: info.voteCount || null,
     originalTitle: info.originalTitle || null,
     collectionId: info.collectionId || null, collectionName: info.collectionName || null,
+    keywords: info.keywords?.length ? info.keywords : null,
+    director: info.director || null,
+    composer: info.composer || null,
+    certification: info.certification || null,
+    popularity: typeof info.popularity === 'number' ? info.popularity : null,
   }
 }

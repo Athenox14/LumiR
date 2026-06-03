@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
+import { sql } from 'drizzle-orm'
 
 // Users & Auth
 export const users = sqliteTable('users', {
@@ -45,6 +46,12 @@ export const media = sqliteTable('media', {
   cast: text('cast', { mode: 'json' }).$type<Array<{ id?: number; name: string; character: string; profilePath: string | null }>>(),
   collectionId: integer('collection_id'),
   collectionName: text('collection_name'),
+  // Recommendation signals enriched from TMDB
+  keywords: text('keywords', { mode: 'json' }).$type<string[]>(),
+  director: text('director'),
+  composer: text('composer'),
+  certification: text('certification'), // Age rating, e.g. "PG-13", "12", "TV-MA"
+  popularity: real('popularity'),
   addedAt: integer('added_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
   lastScannedAt: integer('last_scanned_at', { mode: 'timestamp' }),
 })
@@ -91,6 +98,33 @@ export const mediaRatings = sqliteTable('media_ratings', {
   mediaId: text('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
   rating: integer('rating').notNull(), // 1 = like, -1 = dislike
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})
+
+// Watchlist (explicit "watch later" intent — strong recommendation signal)
+export const watchlist = sqliteTable('watchlist', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mediaId: text('media_id').notNull().references(() => media.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
+})
+
+// Per-title aggregated playback statistics (cross-user, anonymous).
+// Powers title-level quality signals: abandonment curve, effective completion,
+// sessions-to-finish, impression/hover click-through.
+export const mediaStats = sqliteTable('media_stats', {
+  mediaId: text('media_id').primaryKey().references(() => media.id, { onDelete: 'cascade' }),
+  impressions: integer('impressions').notNull().default(0),     // shown in a rail/list
+  hoverNoOpen: integer('hover_no_open').notNull().default(0),   // hovered, never opened
+  detailOpens: integer('detail_opens').notNull().default(0),    // opened the detail page
+  plays: integer('plays').notNull().default(0),                 // playback started
+  completes: integer('completes').notNull().default(0),         // reached the end
+  effectiveCompletes: integer('effective_completes').notNull().default(0), // watched > 75%
+  abandons: integer('abandons').notNull().default(0),
+  // Normalized-position abandonment histogram (10 deciles, 0-10%..90-100%)
+  abandonBuckets: text('abandon_buckets', { mode: 'json' }).$type<number[]>().default(sql`'[0,0,0,0,0,0,0,0,0,0]'`),
+  sessionsToFinishTotal: integer('sessions_to_finish_total').notNull().default(0),
+  finishers: integer('finishers').notNull().default(0),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
 // Settings
@@ -190,6 +224,9 @@ export type WatchProgress = typeof watchProgress.$inferSelect
 export type Setting = typeof settings.$inferSelect
 export type MediaRating = typeof mediaRatings.$inferSelect
 export type NewMediaRating = typeof mediaRatings.$inferInsert
+export type Watchlist = typeof watchlist.$inferSelect
+export type NewWatchlist = typeof watchlist.$inferInsert
+export type MediaStats = typeof mediaStats.$inferSelect
 export type OnlineWatchProgress = typeof onlineWatchProgress.$inferSelect
 export type Download = typeof downloads.$inferSelect
 export type Announcement = typeof announcements.$inferSelect

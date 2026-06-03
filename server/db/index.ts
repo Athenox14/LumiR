@@ -278,6 +278,30 @@ export function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_user_events_user_id ON user_events(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_events_created_at ON user_events(created_at);
+
+    CREATE TABLE IF NOT EXISTS watchlist (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_user_media ON watchlist(user_id, media_id);
+    CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id);
+
+    CREATE TABLE IF NOT EXISTS media_stats (
+      media_id TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+      impressions INTEGER NOT NULL DEFAULT 0,
+      hover_no_open INTEGER NOT NULL DEFAULT 0,
+      detail_opens INTEGER NOT NULL DEFAULT 0,
+      plays INTEGER NOT NULL DEFAULT 0,
+      completes INTEGER NOT NULL DEFAULT 0,
+      effective_completes INTEGER NOT NULL DEFAULT 0,
+      abandons INTEGER NOT NULL DEFAULT 0,
+      abandon_buckets TEXT DEFAULT '[0,0,0,0,0,0,0,0,0,0]',
+      sessions_to_finish_total INTEGER NOT NULL DEFAULT 0,
+      finishers INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER
+    );
   `)
 
   // Add columns for existing databases (safe to fail if already exist)
@@ -287,6 +311,12 @@ export function initializeDatabase() {
     'ALTER TABLE media ADD COLUMN cast TEXT',
     'ALTER TABLE media ADD COLUMN collection_id INTEGER',
     'ALTER TABLE media ADD COLUMN collection_name TEXT',
+    // Recommendation enrichment columns
+    'ALTER TABLE media ADD COLUMN keywords TEXT',
+    'ALTER TABLE media ADD COLUMN director TEXT',
+    'ALTER TABLE media ADD COLUMN composer TEXT',
+    'ALTER TABLE media ADD COLUMN certification TEXT',
+    'ALTER TABLE media ADD COLUMN popularity REAL',
     // User profile columns
     'ALTER TABLE users ADD COLUMN bio TEXT',
     'ALTER TABLE users ADD COLUMN is_profile_public INTEGER DEFAULT 0',
