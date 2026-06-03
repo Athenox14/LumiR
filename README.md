@@ -1,5 +1,7 @@
 # LumiR
 
+[![Downloads](https://img.shields.io/github/downloads/athenox14/lumir/total)](https://github.com/Athenox14/LumiR/releases)
+
 LumiR is a self-hosted media platform focused on a polished personal library experience: local scan, clean playback, multi-user profiles, admin tooling, setup wizard, updates, and a plugin system for optional features.
 
 LumiR is built to be simple to install, pleasant to use every day, and easy to extend without polluting the core with optional capabilities.
