@@ -615,6 +615,35 @@ export default {
     remove: 'Aus meiner Liste entfernen',
   },
 
+  reco: {
+    reason: {
+      genre: 'Weil Sie {value} mögen',
+      actor: 'Mit {value}',
+      director: 'Regie: {value}',
+      composer: 'Musik von {value}',
+      keyword: 'Thema: {value}',
+      collection: '{value}-Reihe',
+      decade: '{value}-Kino',
+      recency: 'Aus einer Ära, die Sie mögen',
+      moment: 'Perfekt für jetzt',
+      season: 'Passend zur Saison',
+      popular: 'Gerade beliebt',
+      novelty: 'Neuerscheinung',
+      acclaimed: 'Von der Kritik gefeiert',
+      fitsShort: 'Kurz und knackig',
+      fitsEpic: 'Für einen langen Abend',
+      bingeFriendly: 'Leicht am Stück zu schauen',
+      continueSaga: '{value}-Reihe fortsetzen',
+      household: 'Für die ganze Familie',
+      watchlist: 'Wie Ihre Liste',
+      recentGenres: 'Wie Ihre letzten Filme',
+      searchMatch: 'Passt zu Ihrer Suche',
+      audience: 'Von Zuschauern geliebt',
+      discover: 'Neu entdecken',
+      lingered: 'Hat Ihre Aufmerksamkeit geweckt',
+    },
+  },
+
   // Media edit
   mediaEdit: {
     title: 'Medieninfo bearbeiten',

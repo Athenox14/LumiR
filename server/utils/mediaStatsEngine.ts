@@ -111,6 +111,36 @@ export type MediaStatsRow = {
   finishers: number
 }
 
+// Materialized cache of ALL media_stats, refreshed on a timer. Reads in the
+// recommendation hot path hit this map instead of SQLite on every request.
+let statsCache: { at: number; map: Map<string, MediaStatsRow> } | null = null
+const STATS_CACHE_TTL = 60_000
+
+function loadAllStats(): Map<string, MediaStatsRow> {
+  const map = new Map<string, MediaStatsRow>()
+  const rows = stmt(`
+    SELECT media_id as mediaId, impressions, hover_no_open as hoverNoOpen, detail_opens as detailOpens,
+           plays, completes, effective_completes as effectiveCompletes, abandons,
+           abandon_buckets as abandonBuckets, sessions_to_finish_total as sessionsToFinishTotal, finishers
+    FROM media_stats
+  `).all() as any[]
+  for (const r of rows) {
+    let buckets: number[] = []
+    try { buckets = JSON.parse(r.abandonBuckets || '[]') } catch { buckets = [] }
+    map.set(r.mediaId, { ...r, abandonBuckets: Array.isArray(buckets) ? buckets : [] })
+  }
+  return map
+}
+
+/** Cached snapshot of every title's stats (≤ STATS_CACHE_TTL stale). */
+export function getAllMediaStatsCached(): Map<string, MediaStatsRow> {
+  if (statsCache && Date.now() - statsCache.at < STATS_CACHE_TTL) return statsCache.map
+  let map: Map<string, MediaStatsRow>
+  try { map = loadAllStats() } catch { map = statsCache?.map ?? new Map() }
+  statsCache = { at: Date.now(), map }
+  return map
+}
+
 export function getMediaStats(mediaIds: string[]): Map<string, MediaStatsRow> {
   const out = new Map<string, MediaStatsRow>()
   if (!mediaIds.length) return out

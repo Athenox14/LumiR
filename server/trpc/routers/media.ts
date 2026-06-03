@@ -7,7 +7,8 @@ import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downlo
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
-import { getMediaStats, mediaQualityModifier } from '../../utils/mediaStatsEngine'
+import { getAllMediaStatsCached, mediaQualityModifier } from '../../utils/mediaStatsEngine'
+import { scoreCandidate, applyMMR } from '../../utils/recoScoring'
 import { promises as fs } from 'fs'
 import { join } from 'path'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
@@ -29,186 +30,13 @@ function getCpuPercent(): number {
   return Math.min(100, Math.round(((userDelta + sysDelta) / elapsedMs / cpuCount) * 100))
 }
 
-function getMaxMapValue(record?: Record<string, number> | null) {
-  if (!record) return 0
-  const values = Object.values(record).filter(value => Number.isFinite(value))
-  return values.length ? Math.max(...values) : 0
-}
-
-function normalizeScore(record: Record<string, number> | null | undefined, key: string | null | undefined, scale: number) {
-  if (!record || !key) return 0
-  const max = getMaxMapValue(record)
-  if (max <= 0) return 0
-  return ((record[key] || 0) / max) * scale
-}
-
-function getRuntimeBucket(runtime: number | null | undefined) {
-  if (!runtime) return null
-  if (runtime < 60) return 'short'
-  if (runtime < 100) return 'standard'
-  if (runtime < 140) return 'long'
-  return 'epic'
-}
-
-function getRecencyBucket(year: number | null | undefined) {
-  if (!year) return null
-  const delta = new Date().getFullYear() - year
-  if (delta <= 2) return 'recent'
-  if (delta <= 10) return 'modern'
-  return 'classic'
-}
-
-function getDecadeKey(year: number | null | undefined) {
-  if (!year) return null
-  return `${Math.floor(year / 10) * 10}s`
-}
-
-function getDaypart(hour: number): string {
-  if (hour < 6) return 'night'
-  if (hour < 12) return 'morning'
-  if (hour < 18) return 'afternoon'
-  return 'evening'
-}
-
-type ScoreExtras = {
-  statsModifier?: number
-  watchlistGenres?: Set<string>
-  now?: Date
-}
-
-function scoreCandidateWithProfile(candidate: any, preferences: ReturnType<typeof calculateUserPreferences>, profileData: Record<string, any> | null | undefined, extras?: ScoreExtras) {
-  const genres = candidate.genres ? JSON.parse(candidate.genres) : []
-  const baseScore = preferences ? calculateMatchScore(genres, candidate.year, candidate.rating, preferences) : 0
-  const profile = profileData || {}
-  const preferenceProfile = profile.preferences || {}
-  const playback = profile.playback || {}
-  const search = profile.search || {}
-  const browsing = profile.browsing || {}
-  const details = profile.details || {}
-  const navigation = profile.navigation || {}
-  const temporal = profile.temporal || {}
-  const device = profile.device || {}
-  const binge = profile.binge || {}
-  const tags = preferenceProfile.tags || {}
-  const now = extras?.now || new Date()
-
-  let score = baseScore
-
-  for (const genre of genres) {
-    score += normalizeScore(preferenceProfile.genreScores, genre, 16)
+/** In-place Fisher-Yates shuffle (used for ε-greedy exploration picks). */
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[arr[i], arr[j]] = [arr[j]!, arr[i]!]
   }
-
-  const castEntries = Array.isArray(candidate.cast) ? candidate.cast : []
-  const actorNames = castEntries
-    .map((actor: any) => typeof actor === 'string' ? actor : actor?.name)
-    .filter(Boolean)
-  for (const actorName of actorNames.slice(0, 5)) {
-    score += normalizeScore(preferenceProfile.actorScores, actorName, 10)
-  }
-
-  score += normalizeScore(preferenceProfile.decadeScores, getDecadeKey(candidate.year), 8)
-  score += normalizeScore(preferenceProfile.runtimeScores, getRuntimeBucket(candidate.runtime), 8)
-  score += normalizeScore(preferenceProfile.recencyScores, getRecencyBucket(candidate.year), 7)
-
-  if (Array.isArray(preferenceProfile.lastGenres)) {
-    const overlap = genres.filter((genre: string) => preferenceProfile.lastGenres.includes(genre)).length
-    score += Math.min(8, overlap * 2.5)
-  }
-
-  if (Array.isArray(preferenceProfile.lastMediaIds) && preferenceProfile.lastMediaIds.includes(candidate.id)) {
-    score -= 6
-  }
-
-  if ((search.clicks || 0) > 0) score += 1
-  if ((search.refinements || 0) > 2) score += 1
-  if ((search.abandonments || 0) > 0) score += 0.5
-  if ((search.repeatedQueries && Object.keys(search.repeatedQueries).length) > 0) {
-    score += Math.min(3, Object.keys(search.repeatedQueries).length * 0.4)
-  }
-
-  if ((browsing.hesitationSignals || 0) > 3) score += 1.5
-  if ((browsing.longHovers || 0) > 0) score += 0.5
-  if ((browsing.noClickBrowseMs || 0) > 10000) score += 1
-
-  if ((details.repeatVisits || 0) > 0) score += 1
-  if ((details.playIntentCount || 0) > 0) score += 1
-  if ((details.immediateExits || 0) > 2) score -= 1
-
-  if ((playback.completes || 0) > 0) score += 1.5
-  if ((playback.quickAbandons || 0) > 0) score -= 1
-  if ((playback.rewatches || 0) > 0 && genres.some((genre: string) => (preferenceProfile.genreScores?.[genre] || 0) > 0)) {
-    score += 2
-  }
-
-  if ((navigation.sessions || 0) > 0) score += 0.5
-  if ((navigation.backtracks || 0) > 0) score += 0.5
-
-  const hourBuckets = temporal.hourBuckets || {}
-  const currentHour = String(new Date().getHours())
-  if ((hourBuckets[currentHour] || 0) > 0) score += 1
-
-  const deviceTypes = device.types || {}
-  const prefersMobile = (deviceTypes.mobile || 0) > (deviceTypes.desktop || 0)
-  if (prefersMobile && getRuntimeBucket(candidate.runtime) === 'short') score += 2
-  if (prefersMobile && getRuntimeBucket(candidate.runtime) === 'epic') score -= 1.5
-
-  if ((tags['navbar-search'] || 0) > 0 && genres.length > 0) score += 1.5
-  if ((tags['refined-search'] || 0) > 0 && (candidate.rating || 0) >= 7) score += 1.5
-  if ((tags['catalog-fatigue'] || 0) > 0 && (candidate.rating || 0) >= 7.5) score += 1
-  if ((tags['recent-abandon'] || 0) > 0 && getRuntimeBucket(candidate.runtime) === 'standard') score += 1
-  if ((tags['quick-abandon'] || 0) > 0 && getRuntimeBucket(candidate.runtime) === 'short') score += 1.5
-  if ((tags['completion-positive'] || 0) > 0 && genres.some((genre: string) => (preferenceProfile.genreScores?.[genre] || 0) > 0)) {
-    score += 2
-  }
-
-  // ── Content metadata signals ────────────────────────────────────────────
-  // Keywords / themes overlap
-  let candidateKeywords: string[] = []
-  try { candidateKeywords = candidate.keywords ? JSON.parse(candidate.keywords) : [] } catch { candidateKeywords = [] }
-  for (const kw of candidateKeywords.slice(0, 12)) {
-    score += normalizeScore(preferenceProfile.keywordScores, kw, 10)
-  }
-
-  // Director / composer affinity
-  score += normalizeScore(preferenceProfile.directorScores, candidate.director, 8)
-  score += normalizeScore(preferenceProfile.composerScores, candidate.composer, 5)
-
-  // Age-rating (certification) affinity
-  score += normalizeScore(preferenceProfile.certificationScores, candidate.certification, 5)
-
-  // Collection / saga: same franchise as something the user engaged with
-  score += normalizeScore(preferenceProfile.collectionScores, candidate.collectionName, 12)
-
-  // Popularity (crowd signal) + novelty (recent releases)
-  if (typeof candidate.popularity === 'number' && candidate.popularity > 0) {
-    score += Math.min(4, Math.log10(1 + candidate.popularity))
-  }
-  if (getRecencyBucket(candidate.year) === 'recent') score += 2
-
-  // ── Genre × moment ──────────────────────────────────────────────────────
-  // Boost genres the user tends to watch at the *current* weekday × daypart.
-  const momentKey = `${now.getDay()}-${getDaypart(now.getHours())}`
-  const momentGenres = (temporal.genreMoment || {})[momentKey] || {}
-  for (const genre of genres) {
-    score += normalizeScore(momentGenres, genre, 8)
-  }
-
-  // ── Binge / saga continuation ───────────────────────────────────────────
-  if ((binge.bingeSessions || 0) > 0 && candidate.collectionName
-      && (preferenceProfile.collectionScores?.[candidate.collectionName] || 0) > 0) {
-    score += 3
-  }
-
-  // ── Watchlist affinity ──────────────────────────────────────────────────
-  const watchlistGenres = extras?.watchlistGenres
-  if (watchlistGenres && genres.some((g: string) => watchlistGenres.has(g))) {
-    score += 3
-  }
-
-  // ── Title-level audience quality (abandonment curve, effective completion…)
-  score += extras?.statsModifier || 0
-
-  return Math.round(score)
+  return arr
 }
 
 export const mediaRouter = router({
@@ -1216,128 +1044,119 @@ export const mediaRouter = router({
     }).optional())
     .query(async ({ input, ctx }) => {
       const params = input || { limit: 12, mediaType: 'movie' as const }
+      const limit = params.limit
       const preferences = calculateUserPreferences(ctx.user.id)
       const [profile] = await db
         .select({ profileData: userProfiles.profileData })
         .from(userProfiles)
         .where(eq(userProfiles.userId, ctx.user.id))
         .limit(1)
-
       const profileData = profile?.profileData as Record<string, any> | null | undefined
-      const topGenresFromPreferences = preferences?.topGenres || []
-      const topGenresFromProfile = Object.entries((profileData?.preferences?.genreScores || {}) as Record<string, number>)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4)
-        .map(([genre]) => genre)
 
-      if ((!preferences || preferences.topGenres.length === 0) && topGenresFromProfile.length === 0) {
-        return []
-      }
-
-      const watchedRows = sqlite.prepare(`
-        SELECT media_id
-        FROM watch_progress
-        WHERE user_id = ? AND completed = 1
-      `).all(ctx.user.id) as Array<{ media_id: string }>
-
-      const ratedRows = sqlite.prepare(`
-        SELECT media_id, rating
-        FROM media_ratings
-        WHERE user_id = ?
-      `).all(ctx.user.id) as Array<{ media_id: string, rating: number }>
-
-      // Watchlisted items: surfaced in their own rail, so exclude from discovery,
-      // but use their genres as a positive affinity signal.
-      const watchlistRows = sqlite.prepare(`
-        SELECT m.id as id, m.genres as genres
-        FROM watchlist w JOIN media m ON m.id = w.media_id
-        WHERE w.user_id = ?
-      `).all(ctx.user.id) as Array<{ id: string, genres: string | null }>
-
+      // Exclusions: completed, disliked, already watchlisted.
+      const watchedRows = sqlite.prepare(`SELECT media_id FROM watch_progress WHERE user_id = ? AND completed = 1`).all(ctx.user.id) as Array<{ media_id: string }>
+      const ratedRows = sqlite.prepare(`SELECT media_id, rating FROM media_ratings WHERE user_id = ?`).all(ctx.user.id) as Array<{ media_id: string, rating: number }>
+      const watchlistRows = sqlite.prepare(`SELECT m.id as id, m.genres as genres FROM watchlist w JOIN media m ON m.id = w.media_id WHERE w.user_id = ?`).all(ctx.user.id) as Array<{ id: string, genres: string | null }>
       const watchlistGenres = new Set<string>()
-      for (const row of watchlistRows) {
-        try { for (const g of JSON.parse(row.genres || '[]')) watchlistGenres.add(g) } catch {}
-      }
-
-      const excludedIds = new Set<string>(watchedRows.map(row => row.media_id))
-      for (const row of ratedRows) {
-        if (row.rating === -1) excludedIds.add(row.media_id)
-      }
+      for (const row of watchlistRows) { try { for (const g of JSON.parse(row.genres || '[]')) watchlistGenres.add(g) } catch {} }
+      const excludedIds = new Set<string>(watchedRows.map(r => r.media_id))
+      for (const row of ratedRows) if (row.rating === -1) excludedIds.add(row.media_id)
       for (const row of watchlistRows) excludedIds.add(row.id)
 
-      const topGenres = [...new Set([
-        ...topGenresFromPreferences.slice(0, 4).map(entry => entry.genre),
-        ...topGenresFromProfile,
-      ])].slice(0, 6)
-      const genreFilter = topGenres
-        .map(genre => `m.genres LIKE '%${genre.replace(/'/g, "''")}%'`)
-        .join(' OR ')
+      const typeFilter = params.mediaType === 'all' ? '' : `AND m.media_type = '${params.mediaType}'`
+      const statsMap = getAllMediaStatsCached() // cached materialized view, off the hot path
+      const now = new Date()
 
-      if (!genreFilter) {
-        return []
+      const SELECT_COLS = `m.id, m.title, m.poster_path as posterPath, m.year, m.rating,
+        m.media_type as mediaType, m.season, m.episode, m.genres, m.runtime, m.cast,
+        m.keywords, m.director, m.composer, m.certification, m.popularity,
+        m.collection_name as collectionName`
+
+      const buildItem = (candidate: any) => {
+        const { score, reasons } = scoreCandidate(candidate, preferences, profileData, {
+          statsModifier: mediaQualityModifier(statsMap.get(candidate.id)),
+          watchlistGenres, now,
+        })
+        let genres: string[] = []
+        try { genres = candidate.genres ? JSON.parse(candidate.genres) : [] } catch { genres = [] }
+        return {
+          id: candidate.id, title: candidate.title, posterPath: candidate.posterPath,
+          year: candidate.year, rating: candidate.rating, mediaType: candidate.mediaType,
+          season: candidate.season, episode: candidate.episode,
+          matchScore: score, reasons, genres, collectionName: candidate.collectionName as string | null,
+        }
       }
 
-      const typeFilter = params.mediaType === 'all'
-        ? ''
-        : `AND m.media_type = '${params.mediaType}'`
+      // Top genres from the taste model + behavioral profile.
+      const topGenres = [...new Set([
+        ...(preferences?.topGenres || []).slice(0, 4).map(e => e.genre),
+        ...Object.entries((profileData?.preferences?.genreScores || {}) as Record<string, number>)
+          .sort((a, b) => b[1] - a[1]).slice(0, 4).map(([g]) => g),
+      ])].slice(0, 6)
 
-      const candidates = sqlite.prepare(`
-        SELECT
-          m.id,
-          m.title,
-          m.poster_path as posterPath,
-          m.year,
-          m.rating,
-          m.media_type as mediaType,
-          m.season,
-          m.episode,
-          m.genres,
-          m.runtime,
-          m.cast,
-          m.keywords,
-          m.director,
-          m.composer,
-          m.certification,
-          m.popularity,
-          m.collection_name as collectionName
-        FROM media m
+      // ── Cold start: no learned taste yet → trending/popular fallback rail ──
+      if (topGenres.length === 0) {
+        const popular = sqlite.prepare(`
+          SELECT ${SELECT_COLS} FROM media m
+          WHERE 1=1 ${typeFilter}
+          GROUP BY COALESCE(m.tmdb_id, m.title)
+          ORDER BY COALESCE(m.popularity, 0) DESC, m.rating DESC NULLS LAST, m.vote_count DESC NULLS LAST
+          LIMIT 120
+        `).all() as any[]
+        const items = popular.filter(c => !excludedIds.has(c.id)).map(buildItem)
+        for (const it of items) if (!it.reasons.length) it.reasons = [{ code: 'popular' }]
+        return applyMMR(items, limit)
+      }
+
+      const genreFilter = topGenres.map(g => `m.genres LIKE '%${g.replace(/'/g, "''")}%'`).join(' OR ')
+
+      // Exploit pool: genre-matched candidates, fully scored + ranked.
+      const exploitRows = sqlite.prepare(`
+        SELECT ${SELECT_COLS} FROM media m
         WHERE (${genreFilter}) ${typeFilter}
         GROUP BY COALESCE(m.tmdb_id, m.title)
         ORDER BY m.rating DESC NULLS LAST, m.added_at DESC
         LIMIT 150
       `).all() as any[]
 
-      const eligible = candidates.filter(candidate => !excludedIds.has(candidate.id))
-      const statsMap = getMediaStats(eligible.map(c => c.id))
-      const now = new Date()
+      const exploitScored = exploitRows
+        .filter(c => !excludedIds.has(c.id))
+        .map(buildItem)
+        .filter(c => c.matchScore >= 25)
+        .sort((a, b) => b.matchScore - a.matchScore || (b.rating || 0) - (a.rating || 0))
 
-      const scored = eligible
-        .map((candidate) => {
-          const matchScore = scoreCandidateWithProfile(candidate, preferences, profileData, {
-            statsModifier: mediaQualityModifier(statsMap.get(candidate.id)),
-            watchlistGenres,
-            now,
-          })
-          return {
-            id: candidate.id,
-            title: candidate.title,
-            posterPath: candidate.posterPath,
-            year: candidate.year,
-            rating: candidate.rating,
-            mediaType: candidate.mediaType,
-            season: candidate.season,
-            episode: candidate.episode,
-            matchScore,
-          }
-        })
-        .filter(candidate => candidate.matchScore >= 30)
-        .sort((a, b) => {
-          if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore
-          return (b.rating || 0) - (a.rating || 0)
-        })
-        .slice(0, params.limit)
+      // ── ε-greedy exploration: reserve ~15% of slots for discovery beyond the
+      // top genres so the model keeps learning instead of collapsing. ──
+      const exploreCount = Math.max(1, Math.round(limit * 0.15))
+      const exploitCount = Math.max(1, limit - exploreCount)
+      const exploitPicks = applyMMR(exploitScored, exploitCount) // diversity re-rank
+      const exploitIds = new Set(exploitPicks.map(i => i.id))
 
-      return scored
+      const exploreRows = sqlite.prepare(`
+        SELECT ${SELECT_COLS} FROM media m
+        WHERE NOT (${genreFilter}) ${typeFilter} AND m.genres IS NOT NULL
+        GROUP BY COALESCE(m.tmdb_id, m.title)
+        ORDER BY COALESCE(m.popularity, 0) DESC, m.rating DESC NULLS LAST
+        LIMIT 60
+      `).all() as any[]
+      const explorePool = exploreRows
+        .filter(c => !excludedIds.has(c.id) && !exploitIds.has(c.id))
+        .map(buildItem)
+      shuffle(explorePool)
+      const explorePicks = explorePool.slice(0, exploreCount).map((it) => {
+        if (!it.reasons.length || it.reasons[0]?.code === 'taste') it.reasons = [{ code: 'discover' }]
+        return it
+      })
+
+      const merged = [...exploitPicks, ...explorePicks]
+      // Backfill from the exploit pool if exploration came up short.
+      if (merged.length < limit) {
+        for (const it of exploitScored) {
+          if (merged.length >= limit) break
+          if (!merged.some(m => m.id === it.id)) merged.push(it)
+        }
+      }
+      return merged.slice(0, limit)
     }),
 
   // Get media without TMDB ID (admin)

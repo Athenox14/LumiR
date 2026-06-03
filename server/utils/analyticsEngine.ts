@@ -107,6 +107,8 @@ type ProfileData = {
     // Genre affinity per "moment" (weekday × daypart) — e.g. action on Saturday
     // night, cartoons on Wednesday afternoon. Keyed "<weekday>-<daypart>".
     genreMoment: Record<string, Record<string, number>>
+    // Genre affinity per month (0-11) — seasonality (horror in Oct, family in Dec)
+    genreMonth: Record<string, Record<string, number>>
     weekendSessions: number
   }
   // Watch-quality engagement aggregates (active vs idle, effective completion…)
@@ -134,6 +136,16 @@ type ProfileData = {
     reactivations: number
     activeDays: Record<string, number>
   }
+  // Household / co-viewing sub-profiles (kids vs adult viewing modes)
+  household: {
+    kidsGenreScores: Record<string, number>
+    adultGenreScores: Record<string, number>
+    lastClass: string | null
+    lastClassAt: string | null
+    coViewing: number
+  }
+  // Timestamp of the last recency-decay pass applied to the taste maps
+  decayAt: string | null
   device: {
     types: Record<string, number>
     fullscreenCount: number
@@ -278,6 +290,7 @@ function createEmptyProfileData(): ProfileData {
       weekdayBuckets: {},
       monthBuckets: {},
       genreMoment: {},
+      genreMonth: {},
       weekendSessions: 0,
     },
     engagement: {
@@ -302,6 +315,14 @@ function createEmptyProfileData(): ProfileData {
       reactivations: 0,
       activeDays: {},
     },
+    household: {
+      kidsGenreScores: {},
+      adultGenreScores: {},
+      lastClass: null,
+      lastClassAt: null,
+      coViewing: 0,
+    },
+    decayAt: null,
     device: {
       types: {},
       fullscreenCount: 0,
@@ -326,6 +347,8 @@ function toProfileData(raw: unknown): ProfileData {
     engagement: { ...createEmptyProfileData().engagement, ...(raw as any).engagement },
     binge: { ...createEmptyProfileData().binge, ...(raw as any).binge },
     churn: { ...createEmptyProfileData().churn, ...(raw as any).churn },
+    household: { ...createEmptyProfileData().household, ...(raw as any).household },
+    decayAt: typeof (raw as any).decayAt === 'string' ? (raw as any).decayAt : null,
     device: { ...createEmptyProfileData().device, ...(raw as any).device },
     recentSignals: Array.isArray((raw as any).recentSignals) ? (raw as any).recentSignals : [],
   }
@@ -439,6 +462,81 @@ function recordGenreMoment(profile: ProfileData, snapshot: MediaSnapshot, create
   for (const genre of snapshot.genres) {
     inc(profile.temporal.genreMoment[key], genre, weight)
   }
+}
+
+/** Record genre × month affinity (seasonality) for positive engagement. */
+function recordGenreMonth(profile: ProfileData, snapshot: MediaSnapshot, createdAt: Date, weight: number) {
+  if (weight <= 0 || !snapshot.genres.length) return
+  const key = String(createdAt.getMonth())
+  if (!profile.temporal.genreMonth[key]) profile.temporal.genreMonth[key] = {}
+  for (const genre of snapshot.genres) {
+    inc(profile.temporal.genreMonth[key], genre, weight)
+  }
+}
+
+// Age ratings that indicate kids / family content.
+const KIDS_CERTS = new Set(['G', 'PG', 'U', 'TV-Y', 'TV-Y7', 'TV-G', 'TV-PG', '0', '6', 'Tous publics', 'AL'])
+
+function contentClass(snapshot: MediaSnapshot): 'kids' | 'adult' {
+  const cert = (snapshot.certification || '').trim()
+  if (cert && KIDS_CERTS.has(cert)) return 'kids'
+  if (snapshot.genres.includes('Animation') || snapshot.genres.includes('Family') || snapshot.genres.includes('Familial')) return 'kids'
+  return 'adult'
+}
+
+/**
+ * Maintain household sub-profiles. Positive engagement with kids-rated content
+ * feeds the kids genre map; adult content the adult map. Rapid flips between the
+ * two classes within a session are a co-viewing signal (e.g. parents + children).
+ */
+function recordHousehold(profile: ProfileData, snapshot: MediaSnapshot, createdAt: Date, weight: number) {
+  if (weight <= 0 || !snapshot.genres.length) return
+  const cls = contentClass(snapshot)
+  const target = cls === 'kids' ? profile.household.kidsGenreScores : profile.household.adultGenreScores
+  for (const genre of snapshot.genres) inc(target, genre, weight)
+
+  const last = profile.household.lastClassAt ? new Date(profile.household.lastClassAt).getTime() : null
+  if (profile.household.lastClass && profile.household.lastClass !== cls
+      && last !== null && createdAt.getTime() - last <= 2 * 60 * 60 * 1000) {
+    profile.household.coViewing += 1
+  }
+  profile.household.lastClass = cls
+  profile.household.lastClassAt = createdAt.toISOString()
+}
+
+const DECAY_HALF_LIFE_DAYS = 75
+const DECAY_MIN_DAYS = 1 // only run a pass at most ~daily
+
+/**
+ * Exponentially decay the long-lived taste maps so recent behavior dominates.
+ * Mirrors the recency factor used in preferences.ts (half-life ~75 days).
+ */
+function applyRecencyDecay(profile: ProfileData, scores: Record<string, number>, now: Date) {
+  const lastAt = profile.decayAt ? new Date(profile.decayAt).getTime() : null
+  const elapsedDays = lastAt === null ? 0 : (now.getTime() - lastAt) / (1000 * 60 * 60 * 24)
+  profile.decayAt = now.toISOString()
+  if (lastAt === null || elapsedDays < DECAY_MIN_DAYS) return
+
+  const factor = Math.pow(0.5, elapsedDays / DECAY_HALF_LIFE_DAYS)
+  if (factor >= 0.9999) return
+
+  const decayMap = (m: Record<string, number> | undefined) => {
+    if (!m) return
+    for (const k of Object.keys(m)) {
+      m[k] *= factor
+      if (Math.abs(m[k]) < 0.01) delete m[k] // prune negligible entries
+    }
+  }
+  const p = profile.preferences
+  decayMap(p.genreScores); decayMap(p.actorScores); decayMap(p.decadeScores)
+  decayMap(p.runtimeScores); decayMap(p.recencyScores); decayMap(p.keywordScores)
+  decayMap(p.directorScores); decayMap(p.composerScores); decayMap(p.certificationScores)
+  decayMap(p.collectionScores)
+  decayMap(scores)
+  for (const k of Object.keys(profile.temporal.genreMoment)) decayMap(profile.temporal.genreMoment[k])
+  for (const k of Object.keys(profile.temporal.genreMonth)) decayMap(profile.temporal.genreMonth[k])
+  decayMap(profile.household.kidsGenreScores)
+  decayMap(profile.household.adultGenreScores)
 }
 
 /** Update binge / churn cadence from a session timestamp. */
@@ -567,10 +665,15 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
   const createdAt = metadata.clientAt ? new Date(metadata.clientAt) : new Date()
   const weight = EVENT_WEIGHTS[event.type] || 0
 
+  // Decay the long-lived taste maps before folding in the new signal.
+  applyRecencyDecay(profileData, scores, createdAt)
+
   recordTemporalSignals(profileData, metadata, createdAt)
   recordDeviceSignals(profileData, metadata)
   recordCadence(profileData, createdAt)
   recordGenreMoment(profileData, mediaSnapshot, createdAt, weight)
+  recordGenreMonth(profileData, mediaSnapshot, createdAt, weight)
+  recordHousehold(profileData, mediaSnapshot, createdAt, weight)
 
   if (event.mediaId) {
     pushUnique(profileData.preferences.lastMediaIds, [event.mediaId], 5)
