@@ -1180,7 +1180,20 @@ export const mediaRouter = router({
         LIMIT 150
       `).all() as any[]
 
-      // Fill semantic similarity map now that we have all candidate IDs
+      // ── ε-greedy exploration: reserve ~15% of slots for discovery beyond the
+      // top genres so the model keeps learning instead of collapsing. ──
+      const exploreCount = Math.max(1, Math.round(limit * 0.15))
+      const exploitCount = Math.max(1, limit - exploreCount)
+
+      const exploreRows = sqlite.prepare(`
+        SELECT ${SELECT_COLS} FROM media m
+        WHERE NOT (${genreFilter}) ${typeFilter} AND m.genres IS NOT NULL
+        GROUP BY COALESCE(m.tmdb_id, m.title)
+        ORDER BY COALESCE(m.popularity, 0) DESC, m.rating DESC NULLS LAST
+        LIMIT 60
+      `).all() as any[]
+
+      // Fill semantic similarity map now that both candidate pools are known.
       if ((candidateSimMap as any).__tasteVec) {
         const tasteVec: Float32Array = (candidateSimMap as any).__tasteVec
         const cosFn: (a: Float32Array, b: Float32Array) => number = (candidateSimMap as any).__cosineFn
@@ -1203,20 +1216,9 @@ export const mediaRouter = router({
         .filter(c => c.matchScore >= 25)
         .sort((a, b) => b.matchScore - a.matchScore || (b.rating || 0) - (a.rating || 0))
 
-      // ── ε-greedy exploration: reserve ~15% of slots for discovery beyond the
-      // top genres so the model keeps learning instead of collapsing. ──
-      const exploreCount = Math.max(1, Math.round(limit * 0.15))
-      const exploitCount = Math.max(1, limit - exploreCount)
       const exploitPicks = applyMMR(exploitScored, exploitCount) // diversity re-rank
       const exploitIds = new Set(exploitPicks.map(i => i.id))
 
-      const exploreRows = sqlite.prepare(`
-        SELECT ${SELECT_COLS} FROM media m
-        WHERE NOT (${genreFilter}) ${typeFilter} AND m.genres IS NOT NULL
-        GROUP BY COALESCE(m.tmdb_id, m.title)
-        ORDER BY COALESCE(m.popularity, 0) DESC, m.rating DESC NULLS LAST
-        LIMIT 60
-      `).all() as any[]
       const explorePool = exploreRows
         .filter(c => !excludedIds.has(c.id) && !exploitIds.has(c.id) && !likelySeen(c))
         .map(buildItem)
