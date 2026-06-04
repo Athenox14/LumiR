@@ -446,7 +446,7 @@ export function scoreCandidate(
   // Only fires when embeddings have been generated. Weighted by cinephile score
   // so synopsis-aware users benefit more. Minimum threshold 0.05 avoids noise.
   if (typeof ctx.semanticSimilarity === 'number' && ctx.semanticSimilarity > 0.05) {
-    add(ctx.semanticSimilarity * 10 * (0.5 + 0.5 * style.cinephile), 'semantic')
+    add(ctx.semanticSimilarity * 18 * (0.5 + 0.5 * style.cinephile), 'semantic')
   }
 
   // ── calibrate to 0-100 and pick reasons ──

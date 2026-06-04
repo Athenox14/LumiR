@@ -1095,10 +1095,15 @@ export const mediaRouter = router({
         // Check if any embeddings exist (cheap early exit)
         const embCount = (sqlite.prepare(`SELECT COUNT(*) as n FROM media_embeddings`).get() as any)?.n ?? 0
         if (embCount > 0) {
-          // Gather IDs of positive interactions: liked + recently viewed/interacted
+          // Gather IDs of positive interactions: liked + events from the last N days
+          const TASTE_WINDOW_DAYS = 7
+          const windowStart = Math.floor(Date.now() / 1000) - TASTE_WINDOW_DAYS * 86400
+          const recentEventRows = sqlite.prepare(
+            `SELECT DISTINCT media_id FROM user_events WHERE user_id = ? AND media_id IS NOT NULL AND created_at >= ?`
+          ).all(ctx.user.id, windowStart) as Array<{ media_id: string }>
           const likedIds = ratedRows.filter(r => r.rating === 1).map(r => r.media_id).slice(0, 15)
-          const recentIds = ((profileData?.preferences?.lastMediaIds || []) as string[]).slice(0, 15)
-          const tasteIds = [...new Set([...likedIds, ...recentIds])].slice(0, 25)
+          const recentIds = recentEventRows.map(r => r.media_id)
+          const tasteIds = [...new Set([...likedIds, ...recentIds])].slice(0, 40)
 
           if (tasteIds.length > 0) {
             const ph = tasteIds.map(() => '?').join(',')
