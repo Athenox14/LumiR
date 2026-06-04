@@ -20,7 +20,7 @@ const PRESENTABLE_REASONS = new Set([
   'genre', 'actor', 'director', 'composer', 'keyword', 'collection', 'decade',
   'recency', 'moment', 'season', 'popular', 'novelty', 'acclaimed', 'fitsShort',
   'fitsEpic', 'bingeFriendly', 'continueSaga', 'household', 'watchlist',
-  'recentGenres', 'searchMatch', 'audience', 'discover', 'lingered',
+  'recentGenres', 'searchMatch', 'audience', 'discover', 'lingered', 'semantic',
 ])
 export type CandidateScore = { score: number; raw: number; reasons: ScoreReason[] }
 
@@ -31,6 +31,8 @@ export type ScoreContext = {
   lastQuery?: string | null
   /** Fraction of catalog items that carry each genre (0..1). Used for IDF weighting. */
   catalogGenreFreqs?: Record<string, number>
+  /** Cosine similarity between candidate synopsis and the user's taste embedding (0..1). */
+  semanticSimilarity?: number
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -439,6 +441,13 @@ export function scoreCandidate(
 
   // 17) Title-level audience quality (abandonment curve, effective completion…)
   if (ctx.statsModifier) add(ctx.statsModifier, 'audience')
+
+  // 18) Semantic synopsis similarity to user's taste embedding.
+  // Only fires when embeddings have been generated. Weighted by cinephile score
+  // so synopsis-aware users benefit more. Minimum threshold 0.05 avoids noise.
+  if (typeof ctx.semanticSimilarity === 'number' && ctx.semanticSimilarity > 0.05) {
+    add(ctx.semanticSimilarity * 10 * (0.5 + 0.5 * style.cinephile), 'semantic')
+  }
 
   // ── calibrate to 0-100 and pick reasons ──
   const raw = score

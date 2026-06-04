@@ -1085,15 +1085,58 @@ export const mediaRouter = router({
       const statsMap = getAllMediaStatsCached() // cached materialized view, off the hot path
       const now = new Date()
 
+      // ── Semantic taste embedding ────────────────────────────────────────────
+      // Build a user taste vector from recently liked / watched items' synopses.
+      // Only runs when the media_embeddings table is populated (embeddings job ran).
+      const candidateSimMap = new Map<string, number>()
+      try {
+        const { bufferToFloat32, cosineSimilarity, weightedAverageEmbedding, DIMS } = await import('../../utils/embeddingEngine')
+
+        // Check if any embeddings exist (cheap early exit)
+        const embCount = (sqlite.prepare(`SELECT COUNT(*) as n FROM media_embeddings`).get() as any)?.n ?? 0
+        if (embCount > 0) {
+          // Gather IDs of positive interactions: liked + recently viewed/interacted
+          const likedIds = ratedRows.filter(r => r.rating === 1).map(r => r.media_id).slice(0, 15)
+          const recentIds = ((profileData?.preferences?.lastMediaIds || []) as string[]).slice(0, 15)
+          const tasteIds = [...new Set([...likedIds, ...recentIds])].slice(0, 25)
+
+          if (tasteIds.length > 0) {
+            const ph = tasteIds.map(() => '?').join(',')
+            const tasteEmbRows = sqlite.prepare(
+              `SELECT media_id, embedding FROM media_embeddings WHERE media_id IN (${ph})`
+            ).all(...tasteIds) as Array<{ media_id: string; embedding: Buffer }>
+
+            if (tasteEmbRows.length > 0) {
+              // Weight by position: most recent (liked first, then recent) = higher weight
+              const weighted = tasteEmbRows.map((row, i) => ({
+                vec: bufferToFloat32(row.embedding),
+                weight: 1 - i * (0.5 / tasteEmbRows.length), // linear decay 1.0 → 0.5
+              }))
+              const tasteVec = weightedAverageEmbedding(weighted)
+
+              if (tasteVec) {
+                // Pre-load all candidate embeddings in one query (filled later once we have IDs)
+                // We'll compute sims lazily using a sentinel and fill the map after candidate rows are fetched
+                // Store taste vec for use in buildItem below
+                ;(candidateSimMap as any).__tasteVec = tasteVec
+                ;(candidateSimMap as any).__cosineFn = cosineSimilarity
+                ;(candidateSimMap as any).__toFloat32 = bufferToFloat32
+              }
+            }
+          }
+        }
+      } catch { /* embeddings not available — silently skip semantic signal */ }
+
       const SELECT_COLS = `m.id, m.title, m.poster_path as posterPath, m.year, m.rating,
         m.media_type as mediaType, m.season, m.episode, m.genres, m.runtime, m.cast,
         m.keywords, m.director, m.composer, m.certification, m.popularity,
         m.collection_name as collectionName`
 
       const buildItem = (candidate: any) => {
+        const semanticSimilarity = candidateSimMap.get(candidate.id)
         const { score, reasons } = scoreCandidate(candidate, preferences, profileData, {
           statsModifier: mediaQualityModifier(statsMap.get(candidate.id)),
-          watchlistGenres, catalogGenreFreqs, now,
+          watchlistGenres, catalogGenreFreqs, semanticSimilarity, now,
         })
         let genres: string[] = []
         try { genres = candidate.genres ? JSON.parse(candidate.genres) : [] } catch { genres = [] }
@@ -1136,6 +1179,23 @@ export const mediaRouter = router({
         ORDER BY m.rating DESC NULLS LAST, m.added_at DESC
         LIMIT 150
       `).all() as any[]
+
+      // Fill semantic similarity map now that we have all candidate IDs
+      if ((candidateSimMap as any).__tasteVec) {
+        const tasteVec: Float32Array = (candidateSimMap as any).__tasteVec
+        const cosFn: (a: Float32Array, b: Float32Array) => number = (candidateSimMap as any).__cosineFn
+        const toF32: (b: Buffer) => Float32Array = (candidateSimMap as any).__toFloat32
+        const allIds = [...new Set([...exploitRows, ...exploreRows].map((c: any) => c.id))]
+        if (allIds.length > 0) {
+          const ph = allIds.map(() => '?').join(',')
+          const cEmbRows = sqlite.prepare(
+            `SELECT media_id, embedding FROM media_embeddings WHERE media_id IN (${ph})`
+          ).all(...allIds) as Array<{ media_id: string; embedding: Buffer }>
+          for (const row of cEmbRows) {
+            candidateSimMap.set(row.media_id, cosFn(tasteVec, toF32(row.embedding)))
+          }
+        }
+      }
 
       const exploitScored = exploitRows
         .filter(c => !excludedIds.has(c.id) && !likelySeen(c))

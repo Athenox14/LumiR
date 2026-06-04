@@ -288,6 +288,13 @@ export function initializeDatabase() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_watchlist_user_media ON watchlist(user_id, media_id);
     CREATE INDEX IF NOT EXISTS idx_watchlist_user ON watchlist(user_id);
 
+    CREATE TABLE IF NOT EXISTS media_embeddings (
+      media_id TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+      embedding BLOB NOT NULL,
+      model_version TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS media_stats (
       media_id TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
       impressions INTEGER NOT NULL DEFAULT 0,

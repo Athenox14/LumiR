@@ -103,6 +103,60 @@ async function cacheImages() {
   }
 }
 
+// Synopsis embeddings
+const embedError = ref('')
+const stoppingEmbed = ref(false)
+
+const { data: embedStatus, refresh: refreshEmbedStatus } = useAsyncData(
+  'embed-status',
+  () => trpc.library.embedStatus.query()
+)
+
+let embedPollInterval: NodeJS.Timeout | null = null
+
+watch(() => embedStatus.value?.status, (status) => {
+  const active = status === 'model_loading' || status === 'running'
+  if (active) {
+    if (!embedPollInterval) embedPollInterval = setInterval(() => refreshEmbedStatus(), 1500)
+  } else {
+    if (embedPollInterval) { clearInterval(embedPollInterval); embedPollInterval = null }
+  }
+})
+
+onUnmounted(() => {
+  if (embedPollInterval) clearInterval(embedPollInterval)
+})
+
+async function startEmbed(onlyNew = true) {
+  embedError.value = ''
+  try {
+    await trpc.library.startEmbed.mutate({ onlyNew })
+    await refreshEmbedStatus()
+    if (!embedPollInterval) embedPollInterval = setInterval(() => refreshEmbedStatus(), 1500)
+  } catch (e: any) {
+    embedError.value = e.message || t('adminLibrary.embedFailed')
+  }
+}
+
+async function stopEmbed() {
+  stoppingEmbed.value = true
+  try {
+    await trpc.library.stopEmbed.mutate()
+  } catch (e: any) {
+    embedError.value = e.message
+  } finally {
+    stoppingEmbed.value = false
+  }
+}
+
+function formatEta(sec: number | null | undefined): string {
+  if (sec === null || sec === undefined) return '…'
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return `${m}m ${s}s`
+}
+
 function formatDate(date: Date | null | undefined): string {
   if (!date) return t('adminLibrary.never')
   return new Date(date).toLocaleString()
@@ -225,6 +279,99 @@ function formatDate(date: Date | null | undefined): string {
         <p class="text-sm text-green-500">
           {{ t('adminLibrary.cacheResult', { cached: cacheResult.cached, skipped: cacheResult.skipped, failed: cacheResult.failed }) }}
         </p>
+      </div>
+    </div>
+
+    <!-- Synopsis Embeddings -->
+    <div class="mb-6 p-6 bg-surface border border-border rounded-xl">
+      <div class="flex items-start justify-between">
+        <div class="flex-1 mr-4">
+          <h3 class="font-semibold text-text-primary mb-1">{{ t('adminLibrary.embeddings') }}</h3>
+          <p class="text-sm text-text-secondary">{{ t('adminLibrary.embeddingsDesc') }}</p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <UiButton
+            v-if="embedStatus?.status === 'model_loading' || embedStatus?.status === 'running'"
+            variant="secondary"
+            :loading="stoppingEmbed"
+            @click="stopEmbed"
+          >
+            {{ t('adminLibrary.stop') }}
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            :disabled="embedStatus?.status === 'model_loading' || embedStatus?.status === 'running'"
+            :loading="embedStatus?.status === 'model_loading' || embedStatus?.status === 'running'"
+            @click="startEmbed(true)"
+          >
+            {{ (embedStatus?.status === 'model_loading' || embedStatus?.status === 'running')
+              ? t('adminLibrary.embedding')
+              : t('adminLibrary.embedNew') }}
+          </UiButton>
+          <UiButton
+            variant="secondary"
+            size="sm"
+            :disabled="embedStatus?.status === 'model_loading' || embedStatus?.status === 'running'"
+            @click="startEmbed(false)"
+          >
+            {{ t('adminLibrary.embedAll') }}
+          </UiButton>
+        </div>
+      </div>
+
+      <!-- Model loading phase -->
+      <div v-if="embedStatus?.status === 'model_loading'" class="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <div class="flex items-center gap-2">
+          <svg class="animate-spin w-4 h-4 text-blue-400 shrink-0" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+          </svg>
+          <p class="text-sm text-blue-400">
+            {{ embedStatus.downloadMsg || t('adminLibrary.embedLoadingModel') }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Running phase -->
+      <div v-if="embedStatus?.status === 'running'" class="mt-4">
+        <div class="flex justify-between text-sm text-text-muted mb-2">
+          <span>{{ embedStatus.processed }} / {{ embedStatus.total }} {{ t('adminLibrary.films') }}</span>
+          <span>
+            {{ embedStatus.speedPerSec }} {{ t('adminLibrary.filmsPerSec') }}
+            · ETA {{ formatEta(embedStatus.etaSec) }}
+          </span>
+        </div>
+        <div class="h-2 bg-surface-secondary rounded-full overflow-hidden">
+          <div
+            class="h-full bg-primary transition-all duration-300"
+            :style="{ width: `${embedStatus.percent}%` }"
+          />
+        </div>
+        <div class="text-right text-xs text-text-muted mt-1">{{ embedStatus.percent }}%</div>
+      </div>
+
+      <!-- Completed -->
+      <div v-if="embedStatus?.status === 'completed'" class="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+        <p class="text-sm text-green-500">
+          {{ t('adminLibrary.embedCompleted', { count: embedStatus.processed }) }}
+        </p>
+      </div>
+
+      <!-- Cancelled -->
+      <div v-if="embedStatus?.status === 'cancelled'" class="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+        <p class="text-sm text-yellow-500">
+          {{ t('adminLibrary.embedCancelled', { processed: embedStatus.processed, total: embedStatus.total }) }}
+        </p>
+      </div>
+
+      <!-- Failed -->
+      <div v-if="embedStatus?.status === 'failed'" class="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+        <p class="text-sm text-red-500">{{ embedStatus.error || t('adminLibrary.embedFailed') }}</p>
+      </div>
+
+      <!-- Error -->
+      <div v-if="embedError" class="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+        <p class="text-sm text-red-500">{{ embedError }}</p>
       </div>
     </div>
 
