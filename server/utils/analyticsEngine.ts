@@ -87,6 +87,9 @@ type ProfileData = {
   }
   preferences: {
     genreScores: Record<string, number>
+    genreIntentScores: Record<string, number>  // watchlist_add + like + complete
+    genreEngageScores: Record<string, number>  // watch_start + long detail + play_intent
+    genreBrowseScores: Record<string, number>  // hover + view + card_click
     actorScores: Record<string, number>
     decadeScores: Record<string, number>
     runtimeScores: Record<string, number>
@@ -272,6 +275,9 @@ function createEmptyProfileData(): ProfileData {
     },
     preferences: {
       genreScores: {},
+      genreIntentScores: {},
+      genreEngageScores: {},
+      genreBrowseScores: {},
       actorScores: {},
       decadeScores: {},
       runtimeScores: {},
@@ -528,7 +534,8 @@ function applyRecencyDecay(profile: ProfileData, scores: Record<string, number>,
     }
   }
   const p = profile.preferences
-  decayMap(p.genreScores); decayMap(p.actorScores); decayMap(p.decadeScores)
+  decayMap(p.genreScores); decayMap(p.genreIntentScores); decayMap(p.genreEngageScores)
+  decayMap(p.genreBrowseScores); decayMap(p.actorScores); decayMap(p.decadeScores)
   decayMap(p.runtimeScores); decayMap(p.recencyScores); decayMap(p.keywordScores)
   decayMap(p.directorScores); decayMap(p.composerScores); decayMap(p.certificationScores)
   decayMap(p.collectionScores)
@@ -609,6 +616,30 @@ function addPreferenceScore(profile: ProfileData, mediaSnapshot: MediaSnapshot, 
   inc(profile.preferences.certificationScores, mediaSnapshot.certification, amount)
   inc(profile.preferences.collectionScores, mediaSnapshot.collectionName, amount)
   pushUnique(profile.preferences.lastGenres, mediaSnapshot.genres)
+}
+
+const INTENT_EVENTS = new Set(['WATCHLIST_ADD', 'MEDIA_LIKE', 'WATCH_COMPLETE'])
+const ENGAGE_EVENTS = new Set(['WATCH_START', 'MEDIA_PLAY_INTENT', 'MEDIA_DETAIL_ENGAGEMENT'])
+
+function addTieredPreferenceScore(
+  profile: ProfileData,
+  mediaSnapshot: MediaSnapshot,
+  eventType: string,
+  amount: number,
+  metadata: Record<string, any>,
+) {
+  if (!mediaSnapshot.genres.length || amount <= 0) return
+  const p = profile.preferences
+  for (const genre of mediaSnapshot.genres) {
+    if (INTENT_EVENTS.has(eventType)) {
+      inc(p.genreIntentScores, genre, amount)
+    } else if (ENGAGE_EVENTS.has(eventType) &&
+      (eventType !== 'MEDIA_DETAIL_ENGAGEMENT' || (metadata.timeOnPageMs || 0) > 5000)) {
+      inc(p.genreEngageScores, genre, amount)
+    } else {
+      inc(p.genreBrowseScores, genre, amount)
+    }
+  }
 }
 
 function updateTopLevelGenreScores(scores: Record<string, number>, mediaGenres: string[], amount: number) {
@@ -903,11 +934,13 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
   if (weight !== 0 && mediaSnapshot.genres.length) {
     updateTopLevelGenreScores(scores, mediaSnapshot.genres, weight)
     addPreferenceScore(profileData, mediaSnapshot, weight)
+    addTieredPreferenceScore(profileData, mediaSnapshot, event.type, weight, metadata)
   }
 
   if (event.type === 'MEDIA_LIKE') {
     updateTopLevelGenreScores(scores, mediaSnapshot.genres, 8)
     addPreferenceScore(profileData, mediaSnapshot, 8)
+    addTieredPreferenceScore(profileData, mediaSnapshot, 'MEDIA_LIKE', 8, metadata)
   }
 
   if (event.type === 'MEDIA_DISLIKE') {
@@ -919,6 +952,7 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
   if (event.type === 'WATCHLIST_ADD') {
     updateTopLevelGenreScores(scores, mediaSnapshot.genres, 7)
     addPreferenceScore(profileData, mediaSnapshot, 7)
+    addTieredPreferenceScore(profileData, mediaSnapshot, 'WATCHLIST_ADD', 7, metadata)
   }
   if (event.type === 'WATCHLIST_REMOVE') {
     updateTopLevelGenreScores(scores, mediaSnapshot.genres, -3)
@@ -931,6 +965,7 @@ export async function processEvent(userId: string, event: AnalyticsEvent) {
 
   if (event.type === 'WATCH_COMPLETE' && Number(metadata.positionRatio || 0) >= 0.9) {
     addPreferenceScore(profileData, mediaSnapshot, 3)
+    addTieredPreferenceScore(profileData, mediaSnapshot, 'WATCH_COMPLETE', 3, metadata)
   }
 
   updateTags(profileData, event, metadata, weight)

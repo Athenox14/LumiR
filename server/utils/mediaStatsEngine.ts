@@ -132,6 +132,47 @@ function loadAllStats(): Map<string, MediaStatsRow> {
   return map
 }
 
+// ── Catalog genre frequency (for IDF weighting in scoring) ───────────────────
+
+let genreFreqCache: { at: number; data: Record<string, Record<string, number>> } | null = null
+const GENRE_FREQ_TTL = 30 * 60 * 1000 // 30 min
+
+/**
+ * Returns a map of genre → fraction of catalog items carrying that genre,
+ * keyed by media_type ('movie', 'tv'). Pass null for the combined catalog.
+ * Result is cached for 30 minutes.
+ */
+export function getCatalogGenreFreqs(mediaType: string | null): Record<string, number> {
+  if (genreFreqCache && Date.now() - genreFreqCache.at < GENRE_FREQ_TTL) {
+    return genreFreqCache.data[mediaType ?? 'all'] ?? {}
+  }
+  const freqs: Record<string, Record<string, number>> = { all: {}, movie: {}, tv: {} }
+  try {
+    const rows = sqlite.prepare(`SELECT genres, media_type FROM media WHERE genres IS NOT NULL`).all() as Array<{ genres: string; media_type: string }>
+    const totals: Record<string, number> = { all: 0, movie: 0, tv: 0 }
+    const counts: Record<string, Record<string, number>> = { all: {}, movie: {}, tv: {} }
+    for (const row of rows) {
+      let genres: string[] = []
+      try { genres = JSON.parse(row.genres) } catch { continue }
+      totals.all++
+      totals[row.media_type] = (totals[row.media_type] || 0) + 1
+      for (const g of genres) {
+        counts.all[g] = (counts.all[g] || 0) + 1
+        counts[row.media_type] = counts[row.media_type] || {}
+        counts[row.media_type][g] = (counts[row.media_type][g] || 0) + 1
+      }
+    }
+    for (const type of ['all', 'movie', 'tv']) {
+      const total = totals[type] || 1
+      for (const [g, cnt] of Object.entries(counts[type] || {})) {
+        freqs[type][g] = cnt / total
+      }
+    }
+  } catch {}
+  genreFreqCache = { at: Date.now(), data: freqs }
+  return freqs[mediaType ?? 'all'] ?? {}
+}
+
 /** Cached snapshot of every title's stats (≤ STATS_CACHE_TTL stale). */
 export function getAllMediaStatsCached(): Map<string, MediaStatsRow> {
   if (statsCache && Date.now() - statsCache.at < STATS_CACHE_TTL) return statsCache.map

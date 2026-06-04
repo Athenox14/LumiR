@@ -29,6 +29,8 @@ export type ScoreContext = {
   watchlistGenres?: Set<string>
   statsModifier?: number
   lastQuery?: string | null
+  /** Fraction of catalog items that carry each genre (0..1). Used for IDF weighting. */
+  catalogGenreFreqs?: Record<string, number>
 }
 
 // ── small helpers ─────────────────────────────────────────────────────────────
@@ -267,10 +269,31 @@ export function scoreCandidate(
   // 1) Base taste model (genre/decade/rating) — already 0..100, weighted down.
   add((preferences ? calculateMatchScore(genres, candidate.year, candidate.rating, preferences) : 0) * 0.4, 'taste')
 
-  // 2) Genre affinity (+ anti-genre demotion)
+  // 2) Genre affinity (+ anti-genre demotion).
+  // If tiered scores are populated, use intent/engage/browse tiers with
+  // differentiated weights (10 + 4 + 2 = 16 max, same ceiling as before).
+  // IDF dampens genres that are ubiquitous in the catalog so only discriminating
+  // genres contribute strongly.
   const trust = 0.5 + 0.5 * style.trustsProfile
+  const hasIntentTier = maxPositive(pref.genreIntentScores) > 0
+    || maxPositive(pref.genreEngageScores) > 0
+    || maxPositive(pref.genreBrowseScores) > 0
   for (const genre of genres) {
-    add(posScore(pref.genreScores, genre, 16) * trust, 'genre', genre)
+    const idf = ctx.catalogGenreFreqs
+      ? Math.log2(1 + 1 / Math.max(0.01, ctx.catalogGenreFreqs[genre] || 0))
+      : 1
+    const idfCapped = Math.min(idf, 3.5) // cap so rare genres don't explode
+    if (hasIntentTier) {
+      const intentMax = maxPositive(pref.genreIntentScores)
+      const engageMax = maxPositive(pref.genreEngageScores)
+      const browseMax = maxPositive(pref.genreBrowseScores)
+      const iScore = intentMax > 0 ? ((pref.genreIntentScores?.[genre] || 0) / intentMax) * 10 : 0
+      const eScore = engageMax > 0 ? ((pref.genreEngageScores?.[genre] || 0) / engageMax) * 4 : 0
+      const bScore = browseMax > 0 ? ((pref.genreBrowseScores?.[genre] || 0) / browseMax) * 2 : 0
+      add((iScore + eScore + bScore) * trust * idfCapped, 'genre', genre)
+    } else {
+      add(posScore(pref.genreScores, genre, 16) * trust * idfCapped, 'genre', genre)
+    }
     add(negScore(pref.genreScores, genre, 14), 'antiGenre', genre)
   }
 
@@ -358,6 +381,25 @@ export function scoreCandidate(
     add((style.cinephile + effCaution) * 2 + 1, 'acclaimed')
   }
 
+  // 11b) Completion prediction: cross runtime bucket with the user's measured
+  // completion rate and current hour to estimate if this title will actually
+  // get watched to a satisfying depth.
+  const avgComp = (profile.playback?.avgCompletionRate as number) || 0
+  if (avgComp > 0) {
+    if ((rb === 'long' || rb === 'epic') && avgComp < 0.6) {
+      // The user abandons most things — long content is a poor bet.
+      add(-(0.6 - avgComp) * 5, 'completionRisk')
+    }
+    if (rb === 'short' && avgComp < 0.5) {
+      // Short content is the user's only realistic completion bet.
+      add((0.5 - avgComp) * 3, 'completionFit')
+    }
+    // Late night (22h-2h) penalty for epics: session will likely be cut short.
+    const h = now.getHours()
+    const lateNight = h >= 22 || h < 2
+    if (lateNight && rb === 'epic') add(-1.5, 'completionRisk')
+  }
+
   // 12) Sessions-to-finish as an effort signal (item #8)
   if (style.avgSessionsToFinish > 2 && !style.binger && (rb === 'long' || rb === 'epic')) add(-3, 'hardToFinish')
   if (style.binger && (rb === 'long' || rb === 'epic')) add(2, 'bingeFriendly')
@@ -367,13 +409,15 @@ export function scoreCandidate(
     add(3, 'continueSaga', candidate.collectionName)
   }
 
-  // 14) Household / co-viewing: blend kids sub-profile during likely family moments
+  // 14) Household / co-viewing: blend kids sub-profile during likely family moments.
+  // When lastClass is 'adult' and it's not a family moment, skip kids blending entirely.
   if ((household.coViewing || 0) > 0) {
     const isFamilyMoment = getDaypart(now.getHours()) === 'afternoon' || now.getDay() === 0 || now.getDay() === 6
     const isKids = (candidate.certification && KIDS_CERTS_RUNTIME(candidate.certification)) || genres.some(g => KIDS_GENRES.has(g))
-    if (isKids) {
+    const adultSession = household.lastClass === 'adult' && !isFamilyMoment
+    if (isKids && !adultSession) {
       for (const genre of genres) add(posScore(household.kidsGenreScores, genre, isFamilyMoment ? 8 : 4), 'household', genre)
-    } else {
+    } else if (!isKids) {
       for (const genre of genres) add(posScore(household.adultGenreScores, genre, 4), 'household', genre)
     }
   }
