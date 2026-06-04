@@ -1090,7 +1090,7 @@ export const mediaRouter = router({
       // Only runs when the media_embeddings table is populated (embeddings job ran).
       const candidateSimMap = new Map<string, number>()
       try {
-        const { bufferToFloat32, cosineSimilarity, weightedAverageEmbedding, DIMS } = await import('../../utils/embeddingEngine')
+        const { bufferToFloat32, cosineSimilarity, weightedAverageEmbedding } = await import('../../utils/embeddingEngine')
 
         // Check if any embeddings exist (cheap early exit)
         const embCount = (sqlite.prepare(`SELECT COUNT(*) as n FROM media_embeddings`).get() as any)?.n ?? 0

@@ -530,6 +530,7 @@ function applyRecencyDecay(profile: ProfileData, scores: Record<string, number>,
     if (!m) return
     for (const k of Object.keys(m)) {
       m[k] *= factor
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       if (Math.abs(m[k]) < 0.01) delete m[k] // prune negligible entries
     }
   }
@@ -554,6 +555,7 @@ function recordCadence(profile: ProfileData, createdAt: Date) {
   const dayKeys = Object.keys(profile.churn.activeDays)
   if (dayKeys.length > 90) {
     for (const key of dayKeys.sort().slice(0, dayKeys.length - 90)) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       delete profile.churn.activeDays[key]
     }
   }
