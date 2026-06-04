@@ -7,7 +7,7 @@ import { media, audioTracks, subtitleTracks, watchProgress, mediaRatings, downlo
 import { eq, and, like, desc, asc, sql, or, isNull } from 'drizzle-orm'
 import { getTmdbInfo, searchTmdb, tmdbInfoToMediaFields } from '../../utils/tmdb'
 import { calculateUserPreferences, calculateMatchScore } from '../../utils/preferences'
-import { getAllMediaStatsCached, mediaQualityModifier } from '../../utils/mediaStatsEngine'
+import { getAllMediaStatsCached, mediaQualityModifier, getCatalogGenreFreqs } from '../../utils/mediaStatsEngine'
 import { scoreCandidate, applyMMR } from '../../utils/recoScoring'
 import { promises as fs } from 'fs'
 import { join } from 'path'
@@ -1063,6 +1063,24 @@ export const mediaRouter = router({
       for (const row of ratedRows) if (row.rating === -1) excludedIds.add(row.media_id)
       for (const row of watchlistRows) excludedIds.add(row.id)
 
+      // Catalog genre frequency map for IDF weighting in scoreCandidate.
+      const catalogGenreFreqs = getCatalogGenreFreqs(params.mediaType === 'all' ? null : params.mediaType)
+
+      // Actor score proxy for "probably already seen": if 2+ of the top-3 cast
+      // all have an actorScore above the 75th percentile, the film was likely watched.
+      const actorScores = (profileData?.preferences?.actorScores || {}) as Record<string, number>
+      const actorVals = Object.values(actorScores).filter(v => v > 0).sort((a, b) => a - b)
+      const actorP75 = actorVals[Math.floor(actorVals.length * 0.75)] ?? 0
+      function likelySeen(candidate: any): boolean {
+        if (!actorP75 || actorP75 < 5) return false
+        const cast: string[] = (Array.isArray(candidate.cast)
+          ? candidate.cast
+          : (() => { try { return JSON.parse(candidate.cast || '[]') } catch { return [] } })()
+        ).map((a: any) => (typeof a === 'string' ? a : a?.name)).filter(Boolean).slice(0, 3)
+        if (cast.length < 2) return false
+        return cast.filter((a: string) => (actorScores[a] || 0) >= actorP75).length >= 2
+      }
+
       const typeFilter = params.mediaType === 'all' ? '' : `AND m.media_type = '${params.mediaType}'`
       const statsMap = getAllMediaStatsCached() // cached materialized view, off the hot path
       const now = new Date()
@@ -1075,7 +1093,7 @@ export const mediaRouter = router({
       const buildItem = (candidate: any) => {
         const { score, reasons } = scoreCandidate(candidate, preferences, profileData, {
           statsModifier: mediaQualityModifier(statsMap.get(candidate.id)),
-          watchlistGenres, now,
+          watchlistGenres, catalogGenreFreqs, now,
         })
         let genres: string[] = []
         try { genres = candidate.genres ? JSON.parse(candidate.genres) : [] } catch { genres = [] }
@@ -1120,7 +1138,7 @@ export const mediaRouter = router({
       `).all() as any[]
 
       const exploitScored = exploitRows
-        .filter(c => !excludedIds.has(c.id))
+        .filter(c => !excludedIds.has(c.id) && !likelySeen(c))
         .map(buildItem)
         .filter(c => c.matchScore >= 25)
         .sort((a, b) => b.matchScore - a.matchScore || (b.rating || 0) - (a.rating || 0))
@@ -1140,7 +1158,7 @@ export const mediaRouter = router({
         LIMIT 60
       `).all() as any[]
       const explorePool = exploreRows
-        .filter(c => !excludedIds.has(c.id) && !exploitIds.has(c.id))
+        .filter(c => !excludedIds.has(c.id) && !exploitIds.has(c.id) && !likelySeen(c))
         .map(buildItem)
       shuffle(explorePool)
       const explorePicks = explorePool.slice(0, exploreCount).map((it) => {
