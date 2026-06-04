@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { router, adminProcedure, protectedProcedure } from '../trpc'
 import { TRPCError } from '@trpc/server'
-import { db } from '../../db'
+import { db, sqlite } from '../../db'
 import { media, audioTracks, subtitleTracks, settings, scanHistory, downloads } from '../../db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
@@ -96,7 +96,124 @@ let currentScan: {
 
 let scanAbortFlag = false
 
+// ── Embedding job state ────────────────────────────────────────────────────
+
+type EmbedState = {
+  status: 'model_loading' | 'running' | 'completed' | 'failed' | 'cancelled'
+  total: number
+  processed: number
+  startedAt: number
+  speedPerSec: number
+  etaSec: number | null
+  error: string | null
+  downloadMsg: string | null
+}
+
+let currentEmbed: EmbedState | null = null
+let embedAbortFlag = false
+
+async function runEmbedLibrary(onlyNew: boolean) {
+  try {
+    const { getEmbeddingPipeline, embedText, float32ToBuffer, MODEL_VERSION } = await import('../../utils/embeddingEngine')
+
+    // Load (or download) the model
+    currentEmbed!.status = 'model_loading'
+    const pipe = await getEmbeddingPipeline((msg) => {
+      if (currentEmbed) currentEmbed.downloadMsg = msg
+    })
+
+    if (embedAbortFlag) { currentEmbed!.status = 'cancelled'; return }
+
+    // Fetch items to embed
+    const rows = (onlyNew
+      ? sqlite.prepare(`
+          SELECT m.id, m.overview, m.title FROM media m
+          LEFT JOIN media_embeddings me ON me.media_id = m.id
+          WHERE m.overview IS NOT NULL AND m.overview != ''
+            AND me.media_id IS NULL
+          ORDER BY m.added_at DESC`).all()
+      : sqlite.prepare(`
+          SELECT id, overview, title FROM media
+          WHERE overview IS NOT NULL AND overview != ''
+          ORDER BY added_at DESC`).all()
+    ) as Array<{ id: string; overview: string; title: string }>
+
+    currentEmbed!.status = 'running'
+    currentEmbed!.total = rows.length
+    currentEmbed!.downloadMsg = null
+    currentEmbed!.startedAt = Date.now() // reset timer from model-load phase
+
+    const insertEmbed = sqlite.prepare(
+      `INSERT OR REPLACE INTO media_embeddings (media_id, embedding, model_version, created_at) VALUES (?, ?, ?, ?)`
+    )
+
+    for (const row of rows) {
+      if (embedAbortFlag) { currentEmbed!.status = 'cancelled'; return }
+      try {
+        const vec = await embedText(row.overview, pipe)
+        insertEmbed.run(row.id, float32ToBuffer(vec), MODEL_VERSION, Date.now())
+        currentEmbed!.processed++
+        const elapsedSec = (Date.now() - currentEmbed!.startedAt) / 1000
+        currentEmbed!.speedPerSec = currentEmbed!.processed / Math.max(0.001, elapsedSec)
+        const remaining = currentEmbed!.total - currentEmbed!.processed
+        currentEmbed!.etaSec = remaining / Math.max(0.001, currentEmbed!.speedPerSec)
+      } catch (e: any) {
+        console.error(`[Embed] Failed for ${row.id} ("${row.title}"): ${e.message}`)
+      }
+    }
+
+    if (currentEmbed!.status !== 'cancelled') currentEmbed!.status = 'completed'
+  } catch (e: any) {
+    if (currentEmbed) { currentEmbed.status = 'failed'; currentEmbed.error = e.message }
+    console.error('[Embed] Fatal error:', e)
+  }
+}
+
 export const libraryRouter = router({
+  // ── Embedding ──────────────────────────────────────────────────────────────
+
+  embedStatus: protectedProcedure.query(() => {
+    if (!currentEmbed) return null
+    const pct = currentEmbed.total > 0
+      ? Math.round((currentEmbed.processed / currentEmbed.total) * 100) : 0
+    return {
+      status: currentEmbed.status,
+      total: currentEmbed.total,
+      processed: currentEmbed.processed,
+      percent: pct,
+      speedPerSec: Math.round(currentEmbed.speedPerSec * 10) / 10,
+      etaSec: currentEmbed.etaSec !== null ? Math.round(currentEmbed.etaSec) : null,
+      error: currentEmbed.error,
+      downloadMsg: currentEmbed.downloadMsg,
+    }
+  }),
+
+  startEmbed: adminProcedure
+    .input(z.object({ onlyNew: z.boolean().default(true) }).optional())
+    .mutation(async ({ input }) => {
+      if (currentEmbed?.status === 'model_loading' || currentEmbed?.status === 'running') {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Embedding already in progress' })
+      }
+      embedAbortFlag = false
+      currentEmbed = {
+        status: 'model_loading', total: 0, processed: 0,
+        startedAt: Date.now(), speedPerSec: 0, etaSec: null,
+        error: null, downloadMsg: null,
+      }
+      runEmbedLibrary(input?.onlyNew ?? true)
+      return { status: 'started' }
+    }),
+
+  stopEmbed: adminProcedure.mutation(() => {
+    if (!currentEmbed || (currentEmbed.status !== 'model_loading' && currentEmbed.status !== 'running')) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'No embedding in progress' })
+    }
+    embedAbortFlag = true
+    return { success: true }
+  }),
+
+  // ── Scan ───────────────────────────────────────────────────────────────────
+
   // Get scan status
   scanStatus: protectedProcedure.query(async () => {
     if (currentScan) {
@@ -550,6 +667,18 @@ async function scanLibrary(scanId: string, mediaPath: string) {
 
     // Pre-cache all library images in background (fire and forget)
     cacheLibraryImages().catch(err => console.error('[Scan] Image pre-cache failed:', err.message))
+
+    // Auto-embed new synopses if there are unembedded items and no embed is running
+    if (currentScan!.newFiles > 0 && currentEmbed?.status !== 'model_loading' && currentEmbed?.status !== 'running') {
+      console.log(`[Scan] Auto-embedding ${currentScan!.newFiles} new film(s) synopsis`)
+      embedAbortFlag = false
+      currentEmbed = {
+        status: 'model_loading', total: 0, processed: 0,
+        startedAt: Date.now(), speedPerSec: 0, etaSec: null,
+        error: null, downloadMsg: null,
+      }
+      runEmbedLibrary(true)
+    }
 
   } catch (error: any) {
     currentScan!.status = 'failed'

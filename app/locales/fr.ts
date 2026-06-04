@@ -346,6 +346,17 @@ export default {
     cacheImages: 'Télécharger les images',
     caching: 'Téléchargement...',
     cacheResult: '{cached} nouvelles images téléchargées, {skipped} déjà en cache, {failed} échouées',
+    embeddings: 'Embeddings de Synopsis',
+    embeddingsDesc: 'Vectoriser les synopsis avec multilingual-e5-small (int8) pour enrichir les recommandations sémantiques.',
+    embedNew: 'Embedder les nouveaux',
+    embedAll: 'Tout re-embedder',
+    embedding: 'Embedding en cours…',
+    embedLoadingModel: 'Chargement du modèle ONNX (premier lancement : ~90 Mo)…',
+    films: 'films',
+    filmsPerSec: 'films/s',
+    embedCompleted: '{count} synopsis embarqués avec succès.',
+    embedCancelled: 'Annulé après {processed} / {total} films.',
+    embedFailed: 'Échec de l\'embedding.',
   },
 
   // Admin settings

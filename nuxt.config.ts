@@ -73,7 +73,12 @@ export default defineNuxtConfig({
     },
     alias: {
       '#lumir-external-plugins': getExternalPluginsDir(),
-    }
+    },
+    externals: {
+      // Prevent Nitro from bundling the ONNX runtime — it contains native binaries
+      // that must stay as-is in node_modules.
+      external: ['@huggingface/transformers', 'onnxruntime-node'],
+    },
   },
 
   vite: {

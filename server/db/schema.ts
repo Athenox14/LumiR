@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, blob } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 // Users & Auth
@@ -210,6 +210,14 @@ export const userEvents = sqliteTable('user_events', {
   mediaId: text('media_id'),
   metadata: text('metadata', { mode: 'json' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
+})
+
+// Synopsis embeddings (multilingual-e5-small int8, 384 dims stored as BLOB)
+export const mediaEmbeddings = sqliteTable('media_embeddings', {
+  mediaId: text('media_id').primaryKey().references(() => media.id, { onDelete: 'cascade' }),
+  embedding: blob('embedding', { mode: 'buffer' }).$type<Buffer>().notNull(),
+  modelVersion: text('model_version').notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().$defaultFn(() => new Date()),
 })
 
 // Type exports
