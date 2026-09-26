@@ -1,5 +1,5 @@
 import { db } from '../db'
-import { settings } from '../db/schema'
+import { settings, scanHistory } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { triggerAutoScan } from '../trpc/routers/library'
 
@@ -60,9 +60,26 @@ async function setupAutoScan() {
   }, intervalMs)
 }
 
+/**
+ * A scan's progress lives in memory: if the process died mid-scan (crash,
+ * restart, redeploy), its history row stays "running" forever and the UI shows
+ * a scan that never ends. At startup no scan can be running yet, so any such
+ * row is an orphan.
+ */
+async function closeOrphanScans() {
+  const orphans = await db
+    .update(scanHistory)
+    .set({ status: 'failed', completedAt: new Date(), errors: ['Interrupted: the server restarted during the scan'] })
+    .where(eq(scanHistory.status, 'running'))
+    .returning({ id: scanHistory.id })
+  if (orphans.length) console.log(`[AutoScan] Closed ${orphans.length} scan(s) interrupted by a restart`)
+}
+
 export default defineNitroPlugin(() => {
   // Wait a bit for DB to be fully ready, then setup auto-scan
   setTimeout(() => {
-    setupAutoScan().catch(console.error)
+    closeOrphanScans()
+      .catch(console.error)
+      .finally(() => setupAutoScan().catch(console.error))
   }, 5000)
 })

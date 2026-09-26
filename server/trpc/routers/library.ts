@@ -76,11 +76,39 @@ function parseFilename(filename: string): { title: string; year: number | null; 
   }
 }
 
+// Pseudo-filesystems: never media, and endless to walk (/proc/<pid>/root → /).
+const SYSTEM_DIRS = ['proc', 'sys', 'dev', 'run']
+
+/**
+ * Refuses a media path that would make the scan walk the whole machine.
+ * `/` was accepted: the scan then crawled /proc, where /proc/<pid>/root links
+ * back to `/`, so it never ended — memory grew until V8 aborted the process
+ * (~1 min in a 512 MiB container), the scan stayed "running" forever and the
+ * next one hit the same wall 24 h later.
+ */
+export function mediaPathProblem(mediaPath: string): string | null {
+  const normalized = mediaPath.replace(/\/+$/, '') || '/'
+  if (normalized === '/') return 'Media path cannot be the filesystem root "/". Point it at your media folder (e.g. /media).'
+  const first = normalized.split('/')[1]
+  if (first && SYSTEM_DIRS.includes(first)) return `Media path cannot be a system directory (/${first}).`
+  return null
+}
+
 // Scan directory recursively for video files
 async function scanDirectory(dirPath: string): Promise<string[]> {
   const exts = VIDEO_EXTENSIONS.map(e => e.slice(1)).join(',')
   const pattern = `**/*.{${exts}}`
-  return fg(pattern, { cwd: dirPath, absolute: true, dot: false })
+  return fg(pattern, {
+    cwd: dirPath,
+    absolute: true,
+    dot: false,
+    // A symlink loop (or a link to a parent) makes the walk infinite.
+    followSymbolicLinks: false,
+    // One unreadable folder (permissions, flaky network mount) must not fail
+    // the whole scan.
+    suppressErrors: true,
+    ignore: SYSTEM_DIRS.map(d => `${d}/**`),
+  })
 }
 
 // Scan status tracking
@@ -272,6 +300,10 @@ export const libraryRouter = router({
     }
 
     const mediaPath = mediaPathSetting.value as string
+    const problem = mediaPathProblem(mediaPath)
+    if (problem) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: problem })
+    }
 
     // Verify path exists
     let stat
@@ -712,6 +744,11 @@ export async function triggerAutoScan(): Promise<boolean> {
   }
 
   const mediaPath = mediaPathSetting.value as string
+  const problem = mediaPathProblem(mediaPath)
+  if (problem) {
+    console.log(`[AutoScan] ${problem} Skipping.`)
+    return false
+  }
 
   try {
     const stat = await fs.stat(mediaPath)
