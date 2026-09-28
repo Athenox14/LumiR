@@ -25,8 +25,18 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATABASE_PATH=/data/lumir.db
 
+# ffmpeg/ffprobe : PAS fournis par ffmpeg-static dans .output. Nitro (node-file-trace)
+# ne suit pas le binaire telecharge par le postinstall d'ffmpeg-static (chemin
+# resolu dynamiquement, hors de son analyse statique) : l'image finale ne
+# contenait AUCUN binaire ffmpeg (verifie en prod, `find / -iname ffmpeg*` vide),
+# donc mediaEngine.ts echouait a chaque probe/lecture — ecran noir silencieux.
+# Paquet apt : source fiable, et mediaEngine.resolveBinary() retombe deja sur
+# `which ffmpeg`/`which ffprobe` en l'absence d'ffmpeg-static.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # `.output` embarque les dependances tracees par Nitro, y compris le .node de
-# better-sqlite3 et le binaire d'ffmpeg-static.
+# better-sqlite3.
 COPY --from=build /app/.output ./.output
 
 # /data : base SQLite. /media : bibliotheque de films, montee par l'hote ou par
