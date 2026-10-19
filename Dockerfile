@@ -32,7 +32,11 @@ ENV NODE_ENV=production \
 # donc mediaEngine.ts echouait a chaque probe/lecture — ecran noir silencieux.
 # Paquet apt : source fiable, et mediaEngine.resolveBinary() retombe deja sur
 # `which ffmpeg`/`which ffprobe` en l'absence d'ffmpeg-static.
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+#
+# `apt-get upgrade` : l'image de base node:22-bookworm-slim n'est reconstruite qu'a son rythme, et les correctifs
+# de securite Debian (perl-base, openssl...) arrivent entre deux versions. Sans cette ligne, un build du jour
+# embarque les paquets perimes de la base (alertes Trivy sur perl-base 5.36.0-7+deb12u3).
+RUN apt-get update && apt-get -y upgrade && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # `.output` embarque les dependances tracees par Nitro, y compris le .node de
