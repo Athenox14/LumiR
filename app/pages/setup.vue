@@ -84,6 +84,8 @@ async function handleSubmit() {
       <UiInput
         v-model="email"
         type="email"
+        name="email"
+        autocomplete="username"
         :label="t('auth.email')"
         :placeholder="t('setup.adminEmailPlaceholder')"
         required
@@ -92,6 +94,8 @@ async function handleSubmit() {
       <UiInput
         v-model="password"
         type="password"
+        name="new-password"
+        autocomplete="new-password"
         :label="t('auth.password')"
         :placeholder="t('auth.newPasswordPlaceholder')"
         required
@@ -100,6 +104,8 @@ async function handleSubmit() {
       <UiInput
         v-model="confirmPassword"
         type="password"
+        name="confirm-password"
+        autocomplete="new-password"
         :label="t('auth.confirmPassword')"
         :placeholder="t('auth.repeatPassword')"
         required

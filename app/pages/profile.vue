@@ -309,6 +309,8 @@ async function handleSubmit() {
             <UiInput
               v-model="currentPassword"
               type="password"
+              name="current-password"
+              autocomplete="current-password"
               :label="t('auth.currentPassword')"
               :placeholder="t('auth.currentPasswordPlaceholder')"
             />
@@ -316,6 +318,8 @@ async function handleSubmit() {
             <UiInput
               v-model="newPassword"
               type="password"
+              name="new-password"
+              autocomplete="new-password"
               :label="t('auth.newPassword')"
               :placeholder="t('auth.newPasswordPlaceholder')"
             />
@@ -323,6 +327,8 @@ async function handleSubmit() {
             <UiInput
               v-model="confirmPassword"
               type="password"
+              name="confirm-password"
+              autocomplete="new-password"
               :label="t('auth.confirmPassword')"
               :placeholder="t('auth.repeatPassword')"
             />

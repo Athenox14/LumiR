@@ -58,6 +58,8 @@ async function handleSubmit() {
       <UiInput
         v-model="identifier"
         type="text"
+        name="username"
+        autocomplete="username"
         :label="t('auth.emailOrDisplayName')"
         :placeholder="t('auth.emailOrDisplayNamePlaceholder')"
         required
@@ -66,6 +68,8 @@ async function handleSubmit() {
       <UiInput
         v-model="password"
         type="password"
+        name="password"
+        autocomplete="current-password"
         :label="t('auth.password')"
         :placeholder="t('auth.passwordPlaceholder')"
         required
