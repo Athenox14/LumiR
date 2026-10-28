@@ -2,6 +2,8 @@
 interface Props {
   modelValue?: string
   type?: string
+  name?: string
+  autocomplete?: string
   placeholder?: string
   label?: string
   error?: string
@@ -21,7 +23,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: string]
 }>()
 
-const inputId = `input-${Math.random().toString(36).slice(2, 9)}`
+const inputId = `input-${useId()}`
 </script>
 
 <template>
@@ -37,6 +39,8 @@ const inputId = `input-${Math.random().toString(36).slice(2, 9)}`
     <input
       :id="inputId"
       :type="type"
+      :name="name"
+      :autocomplete="autocomplete"
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
@@ -49,6 +53,7 @@ const inputId = `input-${Math.random().toString(36).slice(2, 9)}`
         error ? 'border-red-500 focus:ring-red-500' : 'border-border hover:border-border-secondary',
       ]"
       @input="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
+      @change="emit('update:modelValue', ($event.target as HTMLInputElement).value)"
     >
     <p v-if="error" class="text-sm text-red-500">
       {{ error }}
