@@ -431,7 +431,7 @@ async function togglePlugin(pluginId: string) {
     </div>
 
     <!-- Admin sections (Library / Users / Settings) -->
-    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+    <div class="grid sm:grid-cols-2 gap-4 mb-8">
       <NuxtLink
         v-for="section in adminSections"
         :key="section.to"
