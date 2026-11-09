@@ -279,6 +279,28 @@ export function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_user_events_user_id ON user_events(user_id);
     CREATE INDEX IF NOT EXISTS idx_user_events_created_at ON user_events(created_at);
 
+    -- Next-visit / next-film predictions, compared against what really happens
+    CREATE TABLE IF NOT EXISTS visit_predictions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      predicted_visit_at INTEGER,
+      visit_confidence REAL,
+      predicted_media TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      actual_visit_at INTEGER,
+      visit_error_min REAL,
+      visit_hit INTEGER,
+      actual_media_id TEXT,
+      actual_media_title TEXT,
+      movie_outcome TEXT,
+      assisted INTEGER NOT NULL DEFAULT 0,
+      resolved_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_visit_predictions_user ON visit_predictions(user_id, status);
+
     CREATE TABLE IF NOT EXISTS watchlist (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

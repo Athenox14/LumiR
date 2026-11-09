@@ -212,6 +212,27 @@ export const userEvents = sqliteTable('user_events', {
   createdAt: integer('created_at', { mode: 'timestamp' }).$defaultFn(() => new Date()),
 })
 
+// Next-visit / next-film predictions (admin "Algorithme" page). Timestamps are
+// in milliseconds. A row is `pending` until the user's next watch, then `resolved`.
+export const visitPredictions = sqliteTable('visit_predictions', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  predictedVisitAt: integer('predicted_visit_at'),
+  visitConfidence: real('visit_confidence'),
+  predictedMedia: text('predicted_media', { mode: 'json' }),
+  status: text('status', { enum: ['pending', 'resolved'] }).notNull().default('pending'),
+  actualVisitAt: integer('actual_visit_at'),
+  visitErrorMin: real('visit_error_min'),
+  visitHit: integer('visit_hit', { mode: 'boolean' }),
+  actualMediaId: text('actual_media_id'),
+  actualMediaTitle: text('actual_media_title'),
+  movieOutcome: text('movie_outcome'), // hit1 | hit3 | miss | no_watch | other_type
+  assisted: integer('assisted', { mode: 'boolean' }).notNull().default(false),
+  resolvedAt: integer('resolved_at'),
+})
+
 // Synopsis embeddings (multilingual-e5-small int8, 384 dims stored as BLOB)
 export const mediaEmbeddings = sqliteTable('media_embeddings', {
   mediaId: text('media_id').primaryKey().references(() => media.id, { onDelete: 'cascade' }),
@@ -237,5 +258,6 @@ export type NewWatchlist = typeof watchlist.$inferInsert
 export type MediaStats = typeof mediaStats.$inferSelect
 export type OnlineWatchProgress = typeof onlineWatchProgress.$inferSelect
 export type Download = typeof downloads.$inferSelect
+export type VisitPrediction = typeof visitPredictions.$inferSelect
 export type Announcement = typeof announcements.$inferSelect
 export type NewAnnouncement = typeof announcements.$inferInsert

@@ -105,3 +105,31 @@ audio/subtitle usage, churn cadence and the recent-signal log all feed the score
 - Learned (regression/GBDT) weights trained on the offline harness labels.
 - Bandit-tuned exploration rate per user.
 - Embedding-based similarity for MMR instead of genre overlap.
+
+## Next-visit / next-film prediction (admin → Algorithme)
+
+`server/utils/visitPredictor.ts` keeps one **pending prediction** per user
+(`visit_predictions` table): the most likely next visit time and the top-3 films.
+
+- **Visit time** — recency-weighted weekday × hour histogram of session starts
+  (`PAGE_VIEW` with `sessionStart`), shrunk toward the user's all-week profile,
+  converted into a "first visit" probability over the next 7 days. Estimate = most
+  likely hour; confidence = probability mass within ±2 h.
+- **Films** — unfinished films (resume bonus, decays with age) + watchlist bonus +
+  the regular `scoreCandidate()` score evaluated at the predicted moment.
+- **Comparison with reality** — a new session records the real visit
+  (`recordVisit`), the first `WATCH_START` of that visit resolves the prediction
+  (`recordWatchStart`: top-1 / top-3 / miss / other type), then the next prediction
+  is created. A visit with no film for 12 h is closed as "no watch". An hourly
+  Nitro job (`server/plugins/visit-predictions.ts`) refreshes pending predictions.
+- **Accuracy** shown in the admin page: visit within ±2 h, film top-1, film top-3,
+  and an overall mean of visit and top-3.
+
+### Predictive launch (setting `algoPredictiveLaunch`, off by default)
+
+When enabled, on the first home visit of a browser session the client calls
+`algorithm.launchTarget`: the start of up to `algoPreloadCount` (1–3) films is
+preheated (same ffmpeg preheat as the player) and the user is redirected to the
+top film. These visits are flagged `assisted` and excluded from the pure film
+accuracy (the redirect would otherwise make predictions self-fulfilling); they are
+reported separately as an acceptance rate.

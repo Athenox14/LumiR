@@ -7,6 +7,7 @@ import { libraryRouter } from './library'
 import { announcementsRouter } from './announcements'
 import { bugReportRouter } from './bugReport'
 import { analyticsRouter } from './analytics'
+import { algorithmRouter } from './algorithm'
 import { getPluginTrpcRouters } from '../../utils/pluginRouters'
 
 export const appRouter = router({
@@ -18,6 +19,7 @@ export const appRouter = router({
   announcements: announcementsRouter,
   bugReport: bugReportRouter,
   analytics: analyticsRouter,
+  algorithm: algorithmRouter,
   ...getPluginTrpcRouters(),
 })
 
