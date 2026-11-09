@@ -315,6 +315,9 @@ export default {
 
   // Admin algorithm page
   algo: {
+    confidence: 'Confiance',
+    visitWindow: 'Fenêtre de ±2 h autour de cette heure',
+    filmN: 'Film n°{n}',
     title: 'Algorithme',
     subtitle: 'Ce que l\'algorithme sait de chaque utilisateur, ce qu\'il prévoit (prochaine visite, prochain film) et sa précision réelle.',
     cardDesc: 'Prédictions de visite et de films, précision et profils comportementaux',

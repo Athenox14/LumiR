@@ -15,7 +15,7 @@ type Movie = {
   year: number | null
   score: number
   share: number
-  reasons: string[]
+  reasons: Array<string | { code: string, value?: string | null }>
   resume: boolean
 }
 
@@ -119,10 +119,19 @@ function outcomeClass(o: string | null) {
   return 'bg-surface-secondary text-text-muted'
 }
 
-function reasonLabel(code: string) {
+function reasonLabel(reason: string | { code: string, value?: string | null }) {
+  const code = typeof reason === 'string' ? reason : reason.code
+  const value = typeof reason === 'string' ? '' : (reason.value ?? '')
   const key = code === 'resume' ? 'algo.reasonResume' : code === 'watchlist' ? 'algo.reasonWatchlist' : `reco.reason.${code}`
-  const label = t(key)
-  return label === key ? code : label
+  const label = t(key, { value })
+  return label === key ? code : label.replace(/\s+$/, '')
+}
+
+function confidenceClass(share: number) {
+  const pct = share * 100
+  if (pct >= 40) return 'bg-green-500/10 text-green-400'
+  if (pct >= 20) return 'bg-amber-500/10 text-amber-400'
+  return 'bg-surface-secondary text-text-muted'
 }
 
 function sortEntries(record: Record<string, number> | null | undefined, limit = 6) {
@@ -328,15 +337,22 @@ async function adjustScore(userId: string, genre: string, currentScore: number) 
             </div>
           </div>
 
-          <!-- Prediction -->
-          <div class="grid lg:grid-cols-3 gap-4">
+          <!-- Prediction (2x2: next visit + 3 films) -->
+          <div class="grid sm:grid-cols-2 gap-4">
             <div class="p-4 bg-background border border-border rounded-xl">
-              <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('algo.nextVisit') }}</p>
+              <div class="flex items-center justify-between gap-2">
+                <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('algo.nextVisit') }}</p>
+                <span
+                  v-if="u.prediction.visitAt"
+                  class="text-[11px] px-2 py-0.5 rounded-full"
+                  :class="confidenceClass(u.prediction.visitConfidence || 0)"
+                >
+                  {{ t('algo.confidence') }} {{ Math.round((u.prediction.visitConfidence || 0) * 100) }}%
+                </span>
+              </div>
               <template v-if="u.prediction.visitAt">
-                <p class="text-lg font-semibold text-text-primary mt-1 capitalize">{{ fmtDateTime(u.prediction.visitAt) }}</p>
-                <p class="text-xs text-text-muted mt-1">
-                  {{ t('algo.visitConfidence', { pct: Math.round((u.prediction.visitConfidence || 0) * 100) }) }}
-                </p>
+                <p class="text-lg font-semibold text-text-primary mt-2 capitalize">{{ fmtDateTime(u.prediction.visitAt) }}</p>
+                <p class="text-xs text-text-muted mt-1">{{ t('algo.visitWindow') }}</p>
               </template>
               <p v-else class="text-sm text-text-muted mt-2">{{ t('algo.notEnoughData') }}</p>
               <p v-if="u.prediction.visitedAt" class="text-xs text-green-400 mt-2">
@@ -346,35 +362,33 @@ async function adjustScore(userId: string, genre: string, currentScore: number) 
               <p v-else class="text-xs text-text-muted mt-2">{{ t('algo.updatedAt', { when: fmtShort(u.prediction.updatedAt) }) }}</p>
             </div>
 
-            <div class="lg:col-span-2 p-4 bg-background border border-border rounded-xl">
-              <div class="flex items-center justify-between">
-                <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('algo.nextFilms') }}</p>
-                <span v-if="u.prediction.assisted" class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400">{{ t('algo.assistedBadge') }}</span>
-              </div>
-              <div v-if="u.prediction.movies.length" class="grid sm:grid-cols-3 gap-3 mt-3">
-                <div v-for="(m, i) in (u.prediction.movies as Movie[])" :key="m.id" class="flex gap-3">
-                  <img
-                    v-if="m.posterPath"
-                    :src="m.posterPath"
-                    :alt="m.title"
-                    class="w-12 h-[4.5rem] object-cover rounded-md bg-surface-secondary shrink-0"
-                    loading="lazy"
-                  >
-                  <div v-else class="w-12 h-[4.5rem] rounded-md bg-surface-secondary shrink-0" />
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-text-primary leading-tight">
-                      <span class="text-text-muted">#{{ i + 1 }}</span> {{ m.title }}
-                    </p>
-                    <p class="text-xs text-text-muted mt-0.5">
-                      {{ m.year || '' }} · {{ t('algo.score') }} {{ m.score }}
-                    </p>
-                    <p class="text-[11px] text-primary mt-0.5">
-                      {{ m.reasons.map(reasonLabel).join(' · ') }}
-                    </p>
-                  </div>
+            <div v-for="(m, i) in (u.prediction.movies as Movie[])" :key="m.id" class="p-4 bg-background border border-border rounded-xl flex gap-3">
+              <img
+                v-if="m.posterPath"
+                :src="m.posterPath"
+                :alt="m.title"
+                class="w-14 h-20 object-cover rounded-md bg-surface-secondary shrink-0"
+                loading="lazy"
+              >
+              <div v-else class="w-14 h-20 rounded-md bg-surface-secondary shrink-0" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-xs uppercase tracking-wide text-text-muted">
+                    {{ t('algo.filmN', { n: i + 1 }) }}
+                    <span v-if="u.prediction.assisted && i === 0" class="ml-1 normal-case text-amber-400">· {{ t('algo.assistedBadge') }}</span>
+                  </p>
+                  <span class="text-[11px] px-2 py-0.5 rounded-full shrink-0" :class="confidenceClass(m.share)">
+                    {{ t('algo.confidence') }} {{ Math.round(m.share * 100) }}%
+                  </span>
                 </div>
+                <p class="text-sm font-medium text-text-primary leading-tight mt-1">{{ m.title }}</p>
+                <p class="text-xs text-text-muted mt-0.5">{{ m.year || '' }} · {{ t('algo.score') }} {{ m.score }}</p>
+                <p class="text-[11px] text-primary mt-1">{{ m.reasons.map(reasonLabel).join(' · ') }}</p>
               </div>
-              <p v-else class="text-sm text-text-muted mt-2">{{ t('algo.notEnoughData') }}</p>
+            </div>
+            <div v-if="!u.prediction.movies.length" class="p-4 bg-background border border-border rounded-xl sm:col-span-1">
+              <p class="text-xs uppercase tracking-wide text-text-muted">{{ t('algo.nextFilms') }}</p>
+              <p class="text-sm text-text-muted mt-2">{{ t('algo.notEnoughData') }}</p>
             </div>
           </div>
 
