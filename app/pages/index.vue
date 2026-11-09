@@ -34,10 +34,36 @@ const { data: stats } = useAsyncData(
   'stats',
   () => trpc.media.stats.query()
 )
+
+// Predictive launch (admin option, off by default): on the first home visit of a
+// browser session, jump straight to the film the algorithm expects the user to watch.
+const launching = ref(false)
+onMounted(async () => {
+  const userId = user.value?.id
+  if (!userId) return
+  const key = `lumir:launch:${userId}`
+  try {
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch { return }
+  launching.value = true
+  try {
+    const target = await trpc.algorithm.launchTarget.mutate()
+    if (target?.mediaId) {
+      await navigateTo(`/watch/${target.mediaId}`)
+      return
+    }
+  } catch { /* fall back to the normal home page */ }
+  launching.value = false
+})
 </script>
 
 <template>
   <div class="p-6 space-y-8">
+    <div v-if="launching" class="fixed inset-0 z-50 bg-background flex items-center justify-center">
+      <div class="w-10 h-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+    </div>
+
     <!-- Welcome -->
     <div>
       <h1 class="text-2xl font-bold text-text-primary">

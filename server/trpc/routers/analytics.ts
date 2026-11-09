@@ -5,6 +5,7 @@ import { userEvents, userProfiles, users } from '../../db/schema'
 import { processEvent } from '../../utils/analyticsEngine'
 import { evaluateRecommendations } from '../../utils/recoEval'
 import { eq } from 'drizzle-orm'
+import { recordVisit, recordWatchStart } from '../../utils/visitPredictor'
 import { getActiveUsers, recordUserActivity, suppressUserForNextCheck } from '../../utils/activityTracker'
 
 const jsonValueSchema: z.ZodTypeAny = z.lazy(() => z.union([
@@ -32,6 +33,11 @@ export const analyticsRouter = router({
       if (input.type === 'PAGE_VIEW') {
         recordUserActivity(ctx.user.id, typeof input.metadata?.path === 'string' ? input.metadata.path : null)
       }
+      // Compare reality with the pending next-visit / next-film prediction.
+      try {
+        if (input.type === 'PAGE_VIEW' && input.metadata?.sessionStart === true) recordVisit(ctx.user.id)
+        else if (input.type === 'WATCH_START' && input.mediaId) recordWatchStart(ctx.user.id, input.mediaId)
+      } catch (err) { console.error('[Algorithm] prediction tracking failed:', err) }
       processEvent(ctx.user.id, input).catch(console.error)
       return { success: true }
     }),
