@@ -60,8 +60,9 @@ export type PredictedMovie = {
   posterPath: string | null
   year: number | null
   score: number
+  /** Confidence 0-1: how likely this film is the pick among the candidates (softmax of scores). */
   share: number
-  reasons: string[]
+  reasons: Array<{ code: string, value?: string | null }>
   resume: boolean
 }
 
@@ -293,7 +294,12 @@ export function predictMovies(userId: string, atMs = Date.now(), n = 3): Predict
       now: at, statsModifier: mediaQualityModifier(statsMap.get(c.id)), watchlistGenres, catalogGenreFreqs,
     })
     const b = bonus.get(c.id)
-    return { c, score: base.score + (b?.amount || 0), reasons: [...(b?.reasons || []), ...base.reasons.map(r => r.code)], resume: !!b?.resume }
+    const reasons: Array<{ code: string, value?: string | null }> = [...(b?.reasons || []).map(code => ({ code })), ...base.reasons]
+    const seen = new Set<string>()
+    return {
+      c, score: base.score + (b?.amount || 0), resume: !!b?.resume,
+      reasons: reasons.filter(r => !seen.has(r.code) && !!seen.add(r.code)),
+    }
   }).sort((a, b) => b.score - a.score)
 
   const top = scored.slice(0, 15)
@@ -306,7 +312,7 @@ export function predictMovies(userId: string, atMs = Date.now(), n = 3): Predict
     year: x.c.year ?? null,
     score: round(x.score, 1),
     share: round(Math.exp(x.score / 10) / expSum, 3),
-    reasons: [...new Set(x.reasons)].slice(0, 3),
+    reasons: x.reasons.slice(0, 3),
     resume: x.resume,
   }))
 }
