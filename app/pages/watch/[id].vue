@@ -50,13 +50,19 @@ const streamUrl = computed(() => {
 
 // Text-based subtitle codecs that ffmpeg can convert to WebVTT
 // Bitmap codecs (hdmv_pgs_subtitle, dvd_subtitle, dvb_subtitle) require burn-in
-const TEXT_SUBTITLE_CODECS = new Set(['subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'text', 'srt'])
+const TEXT_SUBTITLE_CODECS = new Set([
+  'subrip', 'ass', 'ssa', 'mov_text', 'webvtt', 'web', 'text', 'srt',
+  'sami', 'mpl', 'mpl2', 'ttml', 'dfxp', 'xml', 'sbv', 'stl', 'lrc',
+  'pjs', 'rt', 'realtext', 'sub',
+])
 
 // Transform DB subtitle tracks into URLs for the VideoPlayer (text subtitles only)
 const subtitleUrls = computed(() => {
   if (!media.value?.subtitleTracks?.length) return []
   return media.value.subtitleTracks
-    .filter(track => !track.codec || TEXT_SUBTITLE_CODECS.has(track.codec))
+    .filter(track => !track.filePath
+      ? (!track.codec || TEXT_SUBTITLE_CODECS.has(track.codec))
+      : (!track.codec || track.codec !== 'sup'))
     .map(track => ({
       url: `/api/stream/${mediaId.value}/subtitle/${track.trackIndex}`,
       lang: track.language || 'und',
@@ -68,7 +74,7 @@ const subtitleUrls = computed(() => {
 const burnInSubtitles = computed(() => {
   if (!media.value?.subtitleTracks?.length) return []
   return media.value.subtitleTracks
-    .filter(track => track.codec && !TEXT_SUBTITLE_CODECS.has(track.codec))
+    .filter(track => !track.filePath && track.codec && !TEXT_SUBTITLE_CODECS.has(track.codec))
     .map(track => ({
       trackIndex: track.trackIndex,
       lang: track.language || 'und',
