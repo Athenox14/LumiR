@@ -13,12 +13,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const trackIndex = parseInt(trackIndexParam, 10)
-  if (isNaN(trackIndex) || trackIndex < 0) {
+  if (isNaN(trackIndex)) {
     throw createError({ statusCode: 400, message: 'Invalid track index' })
   }
 
   const [trackInfo] = await db
-    .select({ codec: subtitleTracks.codec })
+    .select({ codec: subtitleTracks.codec, filePath: subtitleTracks.filePath })
     .from(subtitleTracks)
     .where(and(eq(subtitleTracks.mediaId, id), eq(subtitleTracks.trackIndex, trackIndex)))
     .limit(1)
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const [mediaItem] = await db
-    .select({ filePath: media.filePath })
+    .select({ filePath: media.filePath, runtime: media.runtime })
     .from(media)
     .where(eq(media.id, id))
     .limit(1)
@@ -45,7 +45,13 @@ export default defineEventHandler(async (event) => {
 
   try {
     const session = await MediaEngine.createSession(mediaItem.filePath, id, mediaItem.runtime ? mediaItem.runtime * 60 : undefined)
-    const vttContent = await session.getSubtitle(trackIndex)
+    let vttContent: string
+    if (trackInfo.filePath) {
+      await fs.access(trackInfo.filePath)
+      vttContent = await session.getExternalSubtitle(trackInfo.filePath)
+    } else {
+      vttContent = await session.getSubtitle(trackIndex)
+    }
 
     setHeader(event, 'Content-Type', 'text/vtt; charset=utf-8')
     setHeader(event, 'Cache-Control', 'public, max-age=86400')

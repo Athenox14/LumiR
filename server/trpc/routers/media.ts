@@ -10,7 +10,7 @@ import { calculateUserPreferences, calculateMatchScore } from '../../utils/prefe
 import { getAllMediaStatsCached, mediaQualityModifier, getCatalogGenreFreqs } from '../../utils/mediaStatsEngine'
 import { scoreCandidate, applyMMR } from '../../utils/recoScoring'
 import { promises as fs } from 'fs'
-import { join } from 'path'
+import { extname, join } from 'path'
 // Note: matchScore is only used for personalizedSections filtering, not exposed to clients
 
 // CPU usage tracking (delta-based)
@@ -532,6 +532,77 @@ export const mediaRouter = router({
       await db.update(media).set({ filePath: input.filePath }).where(eq(media.id, input.id))
 
       return { success: true, filePath: input.filePath }
+    }),
+
+  // Admin: Add or replace an external subtitle file
+  setExternalSubtitle: adminProcedure
+    .input(z.object({
+      id: z.string(),
+      filePath: z.string().min(1),
+      language: z.string().nullish(),
+      title: z.string().nullish(),
+    }))
+    .mutation(async ({ input }) => {
+      const [item] = await db
+        .select({ id: media.id })
+        .from(media)
+        .where(eq(media.id, input.id))
+        .limit(1)
+
+      if (!item) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Media not found' })
+      }
+
+      const supported = new Set([
+        '.ass', '.ssa', '.srt', '.sub', '.sup', '.vtt', '.webvtt',
+        '.smi', '.sami', '.mpl', '.mpl2', '.ttml', '.dfxp', '.xml',
+        '.sbv', '.stl', '.lrc', '.pjs', '.rt', '.realtext',
+      ])
+      const extension = extname(input.filePath).toLowerCase()
+      if (!supported.has(extension)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Unsupported subtitle file extension: ${extension || '(none)'}`,
+        })
+      }
+
+      try {
+        await fs.access(input.filePath)
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Subtitle file not found on disk' })
+      }
+
+      const existing = await db
+        .select({ trackIndex: subtitleTracks.trackIndex, filePath: subtitleTracks.filePath })
+        .from(subtitleTracks)
+        .where(eq(subtitleTracks.mediaId, input.id))
+        .orderBy(asc(subtitleTracks.trackIndex))
+
+      let trackIndex = -1
+      const externalIndexes = existing
+        .filter(track => track.filePath !== null)
+        .map(track => track.trackIndex)
+        .filter(index => index < 0)
+      if (externalIndexes.length > 0) trackIndex = Math.min(...externalIndexes) - 1
+
+      const { v4: uuidv4 } = await import('uuid')
+      await db.delete(subtitleTracks).where(and(
+        eq(subtitleTracks.mediaId, input.id),
+        eq(subtitleTracks.filePath, input.filePath),
+      ))
+      await db.insert(subtitleTracks).values({
+        id: uuidv4(),
+        mediaId: input.id,
+        trackIndex,
+        language: input.language || null,
+        codec: extension.slice(1),
+        title: input.title || null,
+        filePath: input.filePath,
+        isDefault: false,
+        isForced: false,
+      })
+
+      return { success: true, trackIndex, filePath: input.filePath }
     }),
 
   // Admin: Delete media

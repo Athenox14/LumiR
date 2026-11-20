@@ -575,6 +575,41 @@ class FFmpegSession {
     })
   }
 
+  /** Convert an external subtitle file to WebVTT using ffmpeg. */
+  async getExternalSubtitle(filePath: string): Promise<string> {
+    const ffmpeg = await getFfmpegPath()
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-hide_banner', '-y',
+        '-i', filePath,
+        '-map', '0:s:0',
+        '-c:s', 'webvtt',
+        '-f', 'webvtt',
+        'pipe:1',
+      ]
+
+      const proc = spawn(ffmpeg, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+
+      const chunks: Buffer[] = []
+      proc.stdout!.on('data', (d: Buffer) => chunks.push(d))
+
+      let stderr = ''
+      proc.stderr!.on('data', (d: Buffer) => { stderr += d.toString() })
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(Buffer.concat(chunks).toString('utf-8'))
+        } else {
+          reject(new Error(`External subtitle conversion failed (code ${code}): ${stderr.slice(-300)}`))
+        }
+      })
+
+      proc.on('error', reject)
+    })
+  }
+
   /** Preheat: just start ffmpeg from the beginning so segments start appearing */
   async preheat() {
     if (this.process) return // Already running
