@@ -6,7 +6,7 @@ import { media, audioTracks, subtitleTracks, settings, scanHistory, downloads } 
 import { eq, desc } from 'drizzle-orm'
 import { v4 as uuidv4 } from 'uuid'
 import { promises as fs } from 'fs'
-import { basename } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import fg from 'fast-glob'
 import ptt from 'parse-torrent-title'
 import { searchTmdb, getTmdbInfo, tmdbInfoToMediaFields } from '../../utils/tmdb'
@@ -16,12 +16,59 @@ import { cacheLibraryImages } from '../../utils/imageCache'
 
 // Video file extensions to scan
 const VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v']
+const EXTERNAL_SUBTITLE_EXTENSIONS = new Set([
+  '.ass', '.ssa', '.srt', '.sub', '.sup', '.vtt', '.webvtt',
+  '.smi', '.sami', '.mpl', '.mpl2', '.ttml', '.dfxp', '.xml',
+  '.sbv', '.stl', '.lrc', '.pjs', '.rt', '.realtext',
+])
+
+function inferSubtitleLanguage(fileName: string): string | null {
+  const tokens = basename(fileName)
+    .replace(/\.[^.]+$/, '')
+    .split(/[._-]/)
+    .filter(Boolean)
+  const languageCodes = new Set([
+    'ar', 'bg', 'ca', 'cs', 'da', 'de', 'el', 'en', 'es', 'et', 'fi',
+    'fr', 'he', 'hi', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'lt', 'lv',
+    'nl', 'no', 'pl', 'pt', 'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'th',
+    'tr', 'uk', 'vi', 'zh',
+  ])
+  return tokens.find(token => languageCodes.has(token.toLowerCase()))?.toLowerCase() || null
+}
+
+async function findExternalSubtitles(filePath: string): Promise<Array<{ filePath: string; language: string | null }>> {
+  const directory = dirname(filePath)
+  const videoName = basename(filePath, extname(filePath))
+  let entries: string[]
+  try {
+    entries = await fg('*', { cwd: directory, absolute: true, dot: false, onlyFiles: true })
+  } catch {
+    return []
+  }
+
+  return entries
+    .filter(candidate => {
+      const extension = extname(candidate).toLowerCase()
+      if (!EXTERNAL_SUBTITLE_EXTENSIONS.has(extension)) return false
+      const candidateName = basename(candidate, extension)
+      return candidateName === videoName || candidateName.startsWith(`${videoName}.`)
+    })
+    .sort((a, b) => a.localeCompare(b))
+    .map(candidate => ({
+      filePath: candidate,
+      language: inferSubtitleLanguage(candidate),
+    }))
+}
 
 // Extract and store audio/subtitle track info for a media file
 async function storeStreamTracks(mediaId: string, filePath: string) {
   try {
     const streams = await extractStreams(filePath)
-    if (streams.length === 0) return
+
+    const previousTracks = await db
+      .select()
+      .from(subtitleTracks)
+      .where(eq(subtitleTracks.mediaId, mediaId))
 
     // Delete old entries
     await db.delete(audioTracks).where(eq(audioTracks.mediaId, mediaId))
@@ -55,8 +102,50 @@ async function storeStreamTracks(mediaId: string, filePath: string) {
       }
     }
 
+    const externalSubtitles = await findExternalSubtitles(filePath)
+    for (const [index, subtitle] of externalSubtitles.entries()) {
+      const extension = extname(subtitle.filePath).slice(1).toLowerCase()
+      const previous = previousTracks.find(track =>
+        track.filePath && track.filePath === subtitle.filePath
+      )
+      await db.insert(subtitleTracks).values({
+        id: uuidv4(),
+        mediaId,
+        trackIndex: -(index + 1),
+        language: previous?.language || subtitle.language,
+        codec: previous?.codec || extension,
+        title: previous?.title || basename(subtitle.filePath),
+        filePath: subtitle.filePath,
+        isDefault: previous?.isDefault || false,
+        isForced: previous?.isForced || false,
+      })
+    }
+
+    let manualIndex = -(externalSubtitles.length + 1)
+    for (const previous of previousTracks) {
+      if (!previous.filePath) continue
+      const alreadyDiscovered = externalSubtitles.some(subtitle =>
+        subtitle.filePath === previous.filePath
+      )
+      if (alreadyDiscovered) continue
+      await db.insert(subtitleTracks).values({
+        id: uuidv4(),
+        mediaId,
+        trackIndex: manualIndex--,
+        language: previous.language,
+        codec: previous.codec,
+        title: previous.title,
+        filePath: previous.filePath,
+        isDefault: previous.isDefault,
+        isForced: previous.isForced,
+      })
+    }
+
     const audioCount = streams.filter(s => s.codecType === 'audio').length
-    const subCount = streams.filter(s => s.codecType === 'subtitle').length
+    const externalCount = externalSubtitles.length + previousTracks.filter(track =>
+      track.filePath && !externalSubtitles.some(subtitle => subtitle.filePath === track.filePath)
+    ).length
+    const subCount = streams.filter(s => s.codecType === 'subtitle').length + externalCount
     if (audioCount > 0 || subCount > 0) {
       console.log(`[Scan] Stored tracks for ${mediaId}: ${audioCount} audio, ${subCount} subtitle`)
     }
@@ -560,6 +649,7 @@ async function scanLibrary(scanId: string, mediaPath: string) {
           const needsFetch = !existing.tmdbId || !existing.cast
           if (isRecentlyScan && !needsFetch) {
             // File was scanned recently and has complete data — skip
+            await storeStreamTracks(existing.id, filePath)
             currentScan!.processedFiles++
             continue
           }

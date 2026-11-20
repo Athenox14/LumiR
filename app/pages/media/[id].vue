@@ -17,7 +17,7 @@ const overviewSectionRef = ref<HTMLElement | null>(null)
 const castSectionRef = ref<HTMLElement | null>(null)
 const metadataSectionRef = ref<HTMLElement | null>(null)
 
-const { data: media, pending, error } = useAsyncData(
+const { data: media, pending, error, refresh: refreshMedia } = useAsyncData(
   `media-${mediaId.value}`,
   () => trpc.media.getById.query(mediaId.value)
 )
@@ -166,6 +166,11 @@ const showSettingsModal = ref(false)
 const editFilePath = ref('')
 const filePathSaving = ref(false)
 const filePathSaved = ref(false)
+const editSubtitlePath = ref('')
+const editSubtitleLanguage = ref('')
+const editSubtitleTitle = ref('')
+const subtitleSaving = ref(false)
+const subtitleSaved = ref(false)
 
 async function saveFilePath() {
   if (!media.value || filePathSaving.value) return
@@ -181,6 +186,27 @@ async function saveFilePath() {
     console.error('Failed to update file path:', e)
   } finally {
     filePathSaving.value = false
+  }
+}
+
+async function saveExternalSubtitle() {
+  if (!media.value || subtitleSaving.value || !editSubtitlePath.value.trim()) return
+  subtitleSaving.value = true
+  subtitleSaved.value = false
+  try {
+    await trpc.media.setExternalSubtitle.mutate({
+      id: mediaId.value,
+      filePath: editSubtitlePath.value.trim(),
+      language: editSubtitleLanguage.value.trim() || null,
+      title: editSubtitleTitle.value.trim() || null,
+    })
+    subtitleSaved.value = true
+    editSubtitlePath.value = ''
+    await refreshMedia()
+  } catch (e) {
+    console.error('Failed to add external subtitle:', e)
+  } finally {
+    subtitleSaving.value = false
   }
 }
 
@@ -889,6 +915,42 @@ onMounted(() => {
                   </p>
                 </div>
               </div>
+
+                <!-- External subtitle file (admin only) -->
+                <div v-if="isAdmin" class="border-t border-border pt-4 space-y-3">
+                  <label class="block text-sm font-medium text-text-primary">{{ t('media.subtitles') }}</label>
+                  <input
+                    v-model="editSubtitlePath"
+                    type="text"
+                    class="w-full px-4 py-2.5 bg-background border border-white/10 rounded-xl text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    placeholder="/media/movie.fr.srt"
+                  >
+                  <div class="grid grid-cols-2 gap-3">
+                    <input
+                      v-model="editSubtitleLanguage"
+                      type="text"
+                      class="w-full px-4 py-2.5 bg-background border border-white/10 rounded-xl text-text-primary text-sm"
+                      placeholder="fr"
+                    >
+                    <input
+                      v-model="editSubtitleTitle"
+                      type="text"
+                      class="w-full px-4 py-2.5 bg-background border border-white/10 rounded-xl text-text-primary text-sm"
+                      placeholder="Français"
+                    >
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <button
+                      type="button"
+                      class="px-4 py-2 bg-primary hover:bg-primary-hover text-white text-sm font-medium rounded-xl transition-colors disabled:opacity-50"
+                      :disabled="subtitleSaving || !editSubtitlePath.trim()"
+                      @click="saveExternalSubtitle"
+                    >
+                      {{ subtitleSaving ? t('media.saving') : t('common.save') }}
+                    </button>
+                    <span v-if="subtitleSaved" class="text-sm text-green-400">{{ t('media.saved') }}</span>
+                  </div>
+                </div>
 
               <!-- TMDB Re-identification (admin only) -->
               <div v-if="isAdmin" class="border-t border-border pt-4 space-y-3">
