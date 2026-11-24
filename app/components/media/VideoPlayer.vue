@@ -459,17 +459,17 @@ onUnmounted(() => {
       v-if="title || backUrl"
       class="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent z-30 pointer-events-none"
     >
-      <div class="flex items-center gap-3 px-4 pt-4 pb-12 pointer-events-auto">
+      <div class="flex items-center gap-3 px-4 pt-4 pb-12 pointer-events-none">
         <NuxtLink
           v-if="backUrl"
           :to="backUrl"
-          class="flex-shrink-0 p-2 rounded-lg hover:bg-white/10 transition-colors"
+          class="flex-shrink-0 p-2 rounded-lg hover:bg-white/10 transition-colors pointer-events-auto"
         >
           <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
         </NuxtLink>
-        <p v-if="title" class="text-white text-lg font-medium truncate">{{ title }}</p>
+        <p v-if="title" class="text-white text-lg font-medium truncate min-w-0 pr-28 pointer-events-none">{{ title }}</p>
       </div>
     </div>
 
